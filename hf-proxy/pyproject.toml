@@ -1,0 +1,18 @@
+[project]
+name = "hf-proxy"
+version = "0.1.0"
+description = "HuggingFace adapter for custom LLM models"
+readme = "README.md"
+authors = [
+    { name = "Sergey Penkovsky", email = "sergey.penkovsky@gmail.com" }
+]
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.3.0",
+    "transformers>=4.44.0",
+    "datasets>=2.20.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.8.22,<0.9.0"]
+build-backend = "uv_build"

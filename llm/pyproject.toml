@@ -1,0 +1,17 @@
+[project]
+name = "llm"
+version = "0.1.0"
+description = "Research library for LLM architectures"
+readme = "README.md"
+authors = [
+    { name = "Sergey Penkovsky", email = "sergey.penkovsky@gmail.com" }
+]
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.3.0",
+    "numpy>=1.24.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.8.22,<0.9.0"]
+build-backend = "uv_build"
