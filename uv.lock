@@ -1417,6 +1417,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "accelerate" },
     { name = "hf-proxy" },
+    { name = "ipykernel" },
     { name = "llm" },
     { name = "tqdm" },
 ]
@@ -1439,6 +1440,7 @@ requires-dist = [
     { name = "accelerate", specifier = ">=0.26.0" },
     { name = "black", marker = "extra == 'dev'", specifier = ">=24.0.0" },
     { name = "hf-proxy", editable = "hf-proxy" },
+    { name = "ipykernel" },
     { name = "jupyter", marker = "extra == 'dev'", specifier = ">=1.0.0" },
     { name = "llm", editable = "llm" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.8.0" },
