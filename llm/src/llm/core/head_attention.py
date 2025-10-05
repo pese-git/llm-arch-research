@@ -45,7 +45,7 @@ class HeadAttention(nn.Module):
         mask = torch.tril(torch.ones(max_seq_len, max_seq_len))
         self.register_buffer('_tril_mask', mask.bool() if hasattr(torch, 'bool') else mask.byte())
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, use_cache: bool = True, cache: tuple = None) -> tuple:
         """
         Прямой проход через слой внимания.
         
@@ -69,16 +69,24 @@ class HeadAttention(nn.Module):
         if seq_len > self._max_seq_len:
             raise ValueError(f"Длина последовательности {seq_len} превышает максимум {self._max_seq_len}")
 
-        # 1. Линейные преобразования
         k = self._k(x)  # [B, T, hs]
         q = self._q(x)  # [B, T, hs]
+        v = self._v(x)  # [B, T, hs]
+
+        if cache is not None:
+            k_cache, v_cache = cache
+            k = torch.cat([k_cache, k], dim=1)  # [B, cache_len + T, hs]
+            v = torch.cat([v_cache, v], dim=1)  # [B, cache_len + T, hs]
         
-        # 2. Вычисление scores
         scores = q @ k.transpose(-2, -1) / sqrt(self._head_size)
         
-        # 3. Применение causal маски
-        scores = scores.masked_fill(~self._tril_mask[:seq_len, :seq_len], float('-inf'))
+        if cache is None:
+            scores = scores.masked_fill(~self._tril_mask[:seq_len, :seq_len], float('-inf'))
         
-        # 4. Softmax и умножение на V
         weights = F.softmax(scores, dim=-1)
-        return weights @ self._v(x)
+        x_out = weights @ v  # [B, T, hs]
+
+        if use_cache is True:
+            return (x_out, (k, v))
+        else:
+            return (x_out, None)
