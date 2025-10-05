@@ -197,6 +197,77 @@ class BPETokenizer(BaseTokenizer):
             else:
                 tokens.append(self.unk_token)  # Специальное значение
         return tokens
+    
+    def save(self, filepath: str):
+        """
+        Сохраняет токенизатор в файл.
+        
+        Args:
+            filepath: Путь для сохранения
+        """
+        import json
+        
+        # Преобразуем кортежи в строки для JSON сериализации
+        merges_serializable = {f"{k[0]},{k[1]}": v for k, v in self.merges.items()}
+        
+        config = {
+            'vocab': self.vocab,
+            'vocab_size': self.vocab_size,
+            'pad_token': self.pad_token,
+            'unk_token': self.unk_token,
+            'bos_token': self.bos_token,
+            'eos_token': self.eos_token,
+            'tokenizer_type': self.__class__.__name__,
+            'merges': merges_serializable,
+            'vocab_list': self.vocab_list
+        }
+        
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(config, f, ensure_ascii=False, indent=2)
+    
+    @classmethod
+    def load(cls, filepath: str):
+        """
+        Загружает токенизатор из файла.
+        
+        Args:
+            filepath: Путь к файлу
+            
+        Returns:
+            BPETokenizer: Загруженный токенизатор
+        """
+        import json
+        
+        with open(filepath, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+        
+        # Создаем экземпляр токенизатора
+        tokenizer = cls()
+        tokenizer.vocab = config['vocab']
+        tokenizer.vocab_size = config['vocab_size']
+        tokenizer.pad_token = config['pad_token']
+        tokenizer.unk_token = config['unk_token']
+        tokenizer.bos_token = config['bos_token']
+        tokenizer.eos_token = config['eos_token']
+        tokenizer.vocab_list = config['vocab_list']
+        
+        # Восстанавливаем кортежи из строк
+        tokenizer.merges = {}
+        for k, v in config['merges'].items():
+            parts = k.split(',')
+            if len(parts) == 2:
+                tokenizer.merges[(parts[0], parts[1])] = v
+        
+        # Создаем обратный словарь
+        tokenizer.inverse_vocab = {v: k for k, v in tokenizer.vocab.items()}
+        
+        # Обновляем ID специальных токенов
+        tokenizer.pad_token_id = tokenizer.vocab.get(tokenizer.pad_token)
+        tokenizer.unk_token_id = tokenizer.vocab.get(tokenizer.unk_token)
+        tokenizer.bos_token_id = tokenizer.vocab.get(tokenizer.bos_token)
+        tokenizer.eos_token_id = tokenizer.vocab.get(tokenizer.eos_token)
+        
+        return tokenizer
 
 
 class SimpleBPETokenizer(BPETokenizer):

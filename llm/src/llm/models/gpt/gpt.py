@@ -215,10 +215,10 @@ class GPT(BaseModel):
                 masked_logits = logits_scaled.clone()
                 vocab_size = logits_scaled.size(-1)
 
-                # создаём маску: 1, если токен НЕ в topk_indices
-                mask = torch.ones_like(logits_scaled, dtype=torch.uint8)
-                mask.scatter_(1, topk_indices, 0)  # 0 там, где top-k индексы
-                masked_logits[mask.byte()] = float('-inf')
+                # создаём маску: True, если токен НЕ в topk_indices
+                mask = torch.ones_like(logits_scaled, dtype=torch.bool if hasattr(torch, 'bool') else torch.uint8)
+                mask.scatter_(1, topk_indices, False if hasattr(torch, 'bool') else 0)  # False там, где top-k индексы
+                masked_logits[mask] = float('-inf')
 
                 logits_scaled = masked_logits
 
@@ -230,13 +230,13 @@ class GPT(BaseModel):
                 # 3. Посчитаем кумулятивную сумму вероятностей:
                 cum_probs = torch.cumsum(sorted_probs, dim=-1)  # [B, vocab_size]
                 # 4. Определим маску: оставить токены, пока сумма < top_p
-                sorted_mask = (cum_probs <= top_p).byte()  # [B, vocab_size]
+                sorted_mask = (cum_probs <= top_p)  # [B, vocab_size]
                 # Гарантируем, что хотя бы первый токен останется
-                sorted_mask[:, 0] = 1
+                sorted_mask[:, 0] = True
                 # 5. Преобразуем маску обратно в оригинальный порядок:
-                # Создаём полную маску из 0
-                mask = torch.zeros_like(probs, dtype=torch.uint8)
-                # Устанавливаем 1 в местах нужных токенов
+                # Создаём полную маску из False
+                mask = torch.zeros_like(probs, dtype=torch.bool if hasattr(torch, 'bool') else torch.uint8)
+                # Устанавливаем True в местах нужных токенов
                 mask.scatter_(dim=1, index=sorted_indices, src=sorted_mask)
                 # 6. Зануляем логиты токенов вне топ-p:
                 logits_scaled[~mask] = float('-inf')
