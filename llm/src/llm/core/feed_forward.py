@@ -1,5 +1,16 @@
 from torch import nn
 import torch
+import math
+
+class GELU(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.sqrt_2_over_pi = torch.sqrt(torch.tensor(2.0) / math.pi)
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return 0.5 * x * (1 + torch.tanh(
+            self.sqrt_2_over_pi * (x + 0.044715 * torch.pow(x, 3))
+        ))
 
 class FeedForward(nn.Module):
     """
@@ -37,7 +48,7 @@ class FeedForward(nn.Module):
     >>> output_double = ff(x_double)
     >>> print(output_double.dtype)  # torch.float64
     """
-    def __init__(self, emb_size: int, dropout: float = 0.1):
+    def __init__(self, emb_size: int, dropout: float = 0.1, activation: str = "relu"):
         """
         Инициализация слоя Feed Forward Network.
         
@@ -49,7 +60,14 @@ class FeedForward(nn.Module):
         # Первый линейный слой (расширение размерности)
         self._layer1 = nn.Linear(emb_size, emb_size * 4)
         # ReLU активация
-        self._relu = nn.ReLU()
+        if activation == "relu":
+            self._activation = nn.ReLU()
+        elif activation == "gelu":
+            self._activation = nn.GELU()
+        elif activation == "gelu_exact":
+            self._activation = GELU()
+        else:
+            raise ValueError(f"Unknown activation: {activation}")
         # Второй линейный слой (сжатие обратно)
         self._layer2 = nn.Linear(emb_size * 4, emb_size)
         # Dropout
@@ -75,6 +93,6 @@ class FeedForward(nn.Module):
             
         # Пропустим тензор x по очереди через все созданные слои
         x = self._layer1(x)
-        x = self._relu(x)
+        x = self._activation(x)
         x = self._layer2(x)
         return self._dropout(x)

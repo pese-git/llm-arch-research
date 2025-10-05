@@ -88,7 +88,7 @@ class Decoder(nn.Module):
         4. Добавляем residual connection и LayerNorm
         """
         # Self-Attention блок
-        attention = self._heads(x, mask)
+        attention, _ = self._heads(x, mask, use_cache=False, cache=None)
         out = self._norm1(attention + x)
         
         # FeedForward блок

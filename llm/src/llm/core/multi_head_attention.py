@@ -58,7 +58,7 @@ class MultiHeadAttention(nn.Module):
         self._layer = nn.Linear(head_size * num_heads, emb_size)
         self._dropout = nn.Dropout(dropout)
 
-    def forward(self, x: torch.Tensor, mask: torch.Tensor = None):
+    def forward(self, x: torch.Tensor, mask: torch.Tensor = None, use_cache: bool = True, cache: list = None):
         """
         Прямой проход через слой многоголового внимания.
 
@@ -90,7 +90,15 @@ class MultiHeadAttention(nn.Module):
         -> Dropout: [4, 100, 512]
         """
         # 1. Вычисляем attention для каждой головы
-        attention_outputs = [head(x) for head in self._heads]
+        attention_results = []
+        for i, head in enumerate(self._heads):
+            head_cache = cache[i] if cache is not None else None
+            result = head(x, use_cache=use_cache, cache=head_cache)
+            attention_results.append(result)
+        
+        outputs, caches = zip(*attention_results)
+        attention_outputs = list(outputs)
+        kv_caches = list(caches)
         
         # 2. Объединяем результаты всех голов
         concatenated_attention = torch.cat(attention_outputs, dim=-1)
@@ -101,4 +109,7 @@ class MultiHeadAttention(nn.Module):
         # 4. Применяем dropout для регуляризации
         final_output = self._dropout(projected_output)
         
-        return final_output
+        if use_cache is True:
+            return (final_output, kv_caches)
+        else:
+            return (final_output, None)

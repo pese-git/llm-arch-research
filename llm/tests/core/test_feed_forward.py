@@ -19,7 +19,7 @@ class TestFeedForward:
         # Check internal layers
         assert hasattr(ff, '_layer1')
         assert hasattr(ff, '_layer2')
-        assert hasattr(ff, '_relu')
+        assert hasattr(ff, '_activation')
         assert hasattr(ff, '_dropout')
         
         # Check layer dimensions
@@ -78,7 +78,7 @@ class TestFeedForward:
         
         # Manually compute expected output without dropout for deterministic comparison
         hidden = ff._layer1(random_float_inputs)
-        activated = ff._relu(hidden)
+        activated = ff._activation(hidden)
         expected_output = ff._layer2(activated)
         
         # Compare with forward pass in eval mode (no dropout)

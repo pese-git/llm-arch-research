@@ -40,7 +40,7 @@ class PositionalEmbeddings(nn.Module):
             embedding_dim=emb_size
         )
 
-    def forward(self, seq_len: int) -> Tensor:
+    def forward(self, seq_len: int, start_pos: int = 0) -> Tensor:
         """
         Возвращает позиционные эмбеддинги для заданной длины последовательности.
         
@@ -59,32 +59,8 @@ class PositionalEmbeddings(nn.Module):
         """
         if seq_len < 1 or seq_len > self.max_seq_len:
             raise IndexError(f"Длина {seq_len} должна быть от 1 до {self.max_seq_len}")
-        positions = torch.arange(seq_len, device=self.embedding.weight.device)
+        if start_pos == 0:
+            positions = torch.arange(seq_len, device=self.embedding.weight.device)
+        else:
+            positions = torch.arange(start=start_pos, end=start_pos + seq_len, device=self.embedding.weight.device)
         return self.embedding(positions)
-
-if __name__ == "__main__":
-    # Демонстрация работы
-    print("Пример использования PositionalEmbeddings:")
-    pos_emb = PositionalEmbeddings(max_seq_len=50, emb_size=128)
-    
-    # Пример 1: Базовое использование
-    print("\n1. Базовый пример:")
-    emb = pos_emb(10)
-    print(f"Форма выходного тензора: {emb.shape}")
-    print(f"Среднее значение: {emb.mean().item():.4f}")
-    
-    # Пример 2: Интеграция с моделью
-    print("\n2. Пример интеграции с моделью:")
-    class DemoModel(nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.pos_emb = PositionalEmbeddings(50, 128)
-            
-        def forward(self, x):
-            pos = self.pos_emb(x.size(1))
-            return x + pos  # Добавляем позиционную информацию
-            
-    model = DemoModel()
-    input_tensor = torch.randn(2, 10, 128)  # [batch, seq, features]
-    output = model(input_tensor)
-    print(f"Вход: {input_tensor.shape}, Выход: {output.shape}")
