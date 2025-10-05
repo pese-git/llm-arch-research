@@ -98,7 +98,7 @@ def test_multi_head_attention():
     batch_size, seq_len = 2, 16
     inputs = torch.randn(batch_size, seq_len, emb_size)
     
-    output = attention(inputs)
+    output, _ = attention(inputs)
     
     assert output.shape == inputs.shape
     print("✅ Multi-head attention test passed")
