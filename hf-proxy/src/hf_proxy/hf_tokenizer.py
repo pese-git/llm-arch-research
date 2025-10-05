@@ -56,10 +56,24 @@ class HFTokenizerAdapter:
         add_special_tokens = kwargs.get('add_special_tokens', True)
         
         # Кодируем текст
-        input_ids = self.llm_tokenizer.encode(
-            text, 
-            add_special_tokens=add_special_tokens
-        )
+        #input_ids = self.llm_tokenizer.encode(
+        #    text, 
+        #    add_special_tokens=add_special_tokens
+        #)
+        if isinstance(text, str):
+            input_ids = self.llm_tokenizer.encode(
+                text, 
+                add_special_tokens=add_special_tokens
+            )
+            input_ids = [input_ids]  # <-- оборачиваем в batch
+        else:
+            # Список строк, батч-режим!
+            input_ids = [
+                self.llm_tokenizer.encode(
+                    t,
+                    add_special_tokens=add_special_tokens
+                ) for t in text
+            ]
         
         # Применяем truncation
         if truncation and max_length is not None and len(input_ids) > max_length:

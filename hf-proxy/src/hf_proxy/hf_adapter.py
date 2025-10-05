@@ -99,7 +99,11 @@ class HFGPTAdapter(PreTrainedModel):
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
         
         # Основной forward pass
-        logits = self.llm_model(input_ids)
+        outputs = self.llm_model(input_ids)
+        if isinstance(outputs, tuple):
+            logits = outputs[0]
+        else:
+            logits = outputs
         
         loss = None
         if labels is not None:
