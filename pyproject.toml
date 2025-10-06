@@ -12,6 +12,8 @@ dependencies = [
     "llm",
     "tqdm>=4,<5",
     "ipykernel",
+    "torch==2.8.0",
+    "matplotlib==3.10.6",
 ]
 
 [project.optional-dependencies]

@@ -1,24 +1,25 @@
 from torch import nn
 import torch
 import math
+from .gelu import GELU
 
-class GELU(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.sqrt_2_over_pi = torch.sqrt(torch.tensor(2.0) / math.pi)
-    
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return 0.5 * x * (1 + torch.tanh(
-            self.sqrt_2_over_pi * (x + 0.044715 * torch.pow(x, 3))
-        ))
 
 class FeedForward(nn.Module):
     """
-    Слой прямой связи (Feed Forward Network) для архитектуры трансформеров.
-    
+    Классический слой прямого распространения (FeedForward, или FFN) для архитектуры Transformer.
+
     Этот слой состоит из двух линейных преобразований с расширением внутренней размерности
     в 4 раза и механизмом dropout для регуляризации. Между линейными слоями применяется
     активация ReLU.
+
+    Научная суть:
+        - После внимания каждому токену применяется одинаковая двухслойная нейросеть.
+        - Дает глубокую нелинейность; позволяет модели не только сопоставлять, но и моделировать сложные связи между токенами.
+        - Изначально предложен в «Attention is All You Need» (Vaswani et al., 2017).
+        
+        Формула:
+            FFN(x) = Dropout(W2·act(W1·x))
+            где act — ReLU, GELU и др., обычно expansion x4.
 
     Алгоритм работы:
     1. Входной тензор x (размерность: [batch_size, seq_len, emb_size])
@@ -32,21 +33,17 @@ class FeedForward(nn.Module):
     - Добавляет нелинейность в архитектуру трансформера
     - Обеспечивает взаимодействие между различными размерностями эмбеддингов
     - Работает независимо для каждого токена в последовательности
-
-    Примеры использования:
     
-    >>> # Инициализация слоя
-    >>> ff = FeedForward(emb_size=512, dropout=0.1)
-    >>>
-    >>> # Прямой проход
-    >>> x = torch.randn(32, 10, 512)  # [batch_size, seq_len, emb_size]
-    >>> output = ff(x)
-    >>> print(output.shape)  # torch.Size([32, 10, 512])
-    >>>
-    >>> # Работа с разными типами данных
-    >>> x_double = torch.randn(32, 10, 512, dtype=torch.float64)
-    >>> output_double = ff(x_double)
-    >>> print(output_double.dtype)  # torch.float64
+    Args:
+        emb_size (int): размерность входных эмбеддингов
+        dropout (float): вероятность(dropout)
+        activation (str): нелинейная функция (relu, gelu, gelu_exact)
+    
+    Пример:
+        >>> ff = FeedForward(emb_size=512, dropout=0.1)
+        >>> x = torch.randn(32, 10, 512)
+        >>> output = ff(x)
+        >>> print(output.shape)  # torch.Size([32, 10, 512])
     """
     def __init__(self, emb_size: int, dropout: float = 0.1, activation: str = "relu"):
         """

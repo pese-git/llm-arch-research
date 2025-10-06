@@ -2,39 +2,45 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from math import sqrt
+from .rope import RoPE
 
 class HeadAttention(nn.Module):
     """
-    Реализация одного головного механизма внимания из архитектуры Transformer.
-    Выполняет scaled dot-product attention с маскированием будущих позиций (causal attention).
-    
-    Основной алгоритм:
-    1. Линейные преобразования входных данных в Q (query), K (key), V (value)
-    2. Вычисление scores = Q·K^T / sqrt(d_k)
-    3. Применение causal маски (заполнение -inf будущих позиций)
-    4. Softmax для получения весов внимания
-    5. Умножение весов на значения V
-    
-    Пример использования:
-    >>> attention = HeadAttention(emb_size=64, head_size=32, max_seq_len=128)
-    >>> x = torch.randn(1, 10, 64)  # [batch_size, seq_len, emb_size]
-    >>> output = attention(x)  # [1, 10, 32]
-    
-    Параметры:
-        emb_size (int): Размер входного эмбеддинга
-        head_size (int): Размерность выхода головы внимания
-        max_seq_len (int): Максимальная длина последовательности
-    
+    Одноголовый механизм внимания (scaled dot-product attention) — фундаментальный строительный блок всех современных Transformer.
+
+    Научная суть:
+        - Attention учит модель самостоятельно "выбирать" важные связи между словами, независимо от их положения.
+        - Механизм causal mask гарантирует невозможность "заглядывания в будущее" при генерации (авторегрессия).
+        
+        Формула:
+            Attention(Q, K, V) = softmax(QK^T / sqrt(d_k)) · V
+            (Q — запросы, K — ключи, V — значения; d_k — размерность ключа)
+        
+        Поддерживает Rotary Position Encoding (RoPE) для относительного позиционного кодирования.
+
+    Args:
+        emb_size (int): размер входного эмбеддинга
+        head_size (int): размерность attention-головы
+        max_seq_len (int): максимальная длина последовательности
+        rope (RoPE, optional): экземпляр RoPE для позиций
+
     Примечания:
     - Использует нижнетреугольную маску для предотвращения "заглядывания в будущее"
     - Автоматически адаптируется к разным версиям PyTorch
     - Поддерживает batch-обработку входных данных
+    
+    Пример использования:
+        >>> attention = HeadAttention(emb_size=64, head_size=32, max_seq_len=128)
+        >>> x = torch.randn(1, 10, 64)
+        >>> output, _ = attention(x)
+        >>> print(output.shape)  # torch.Size([1, 10, 32])
     """
-    def __init__(self, emb_size: int, head_size: int, max_seq_len: int):
+    def __init__(self, emb_size: int, head_size: int, max_seq_len: int, rope: RoPE = None):
         super().__init__()
         self._emb_size = emb_size
         self._head_size = head_size
         self._max_seq_len = max_seq_len
+        self._rope = rope
 
         # Линейные преобразования для Q, K, V
         self._k = nn.Linear(emb_size, head_size)
@@ -72,6 +78,11 @@ class HeadAttention(nn.Module):
         k = self._k(x)  # [B, T, hs]
         q = self._q(x)  # [B, T, hs]
         v = self._v(x)  # [B, T, hs]
+
+        if self._rope is not None:
+            # ✅ Применяем RoPE к Q и K (НЕ к V!)
+            q = self._rope(q)  # [B, T, hs]
+            k = self._rope(k)  # [B, T, hs]
 
         if cache is not None:
             k_cache, v_cache = cache

@@ -1,24 +1,58 @@
-# llm/models/gpt/gpt2.py
+"""
+Классическая GPT (Generative Pre-trained Transformer), OpenAI 2018.
+
+Научная суть:
+    - Первая массовая архитектура языка на основе исключительно self-attention механизмов (трансформер-декодер).
+    - Обучается сначала на задаче языкового моделирования (unsupervised), далее дообучается на downstream-задачах (transfer learning).
+    - Обеспечивает длинную память и “глобальный” контекст благодаря attention.
+
+    Ключевые элементы:
+    - masked self-attention (causal)
+    - LayerNorm ПОСЛЕ attention и FFN (что отличает от GPT2)
+    - GELU активация
+    - Absolute learned positional embeddings
+
+    Подробнее: Radford et al., "Improving Language Understanding by Generative Pre-Training", arXiv:1801.10198
+    https://cdn.openai.com/research-covers/language-unsupervised/language_understanding_paper.pdf
+
+    Пример использования:
+        >>> model = GPT({"vocab_size": 50257, ...})
+        >>> logits = model(input_ids)
+        >>> out = model.generate(input_ids, max_length=30)
+    """
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from typing import Optional, Dict
 from llm.core.base_model import BaseModel
 from llm.core.decoder import Decoder
 from llm.core.token_embeddings import TokenEmbeddings
 from llm.core.positional_embeddings import PositionalEmbeddings
 
+
 class GPT(BaseModel):
-    """GPT-like трансформер для генерации текста
+    """
+    Original GPT (Generative Pre-trained Transformer) модель.
+    
+    Первая версия трансформерной архитектуры от OpenAI, предназначенная
+    для генеративного предобучения на текстовых данных.
     
     Args:
-        vocab_size: Размер словаря
-        max_seq_len: Макс. длина последовательности
-        emb_size: Размерность эмбеддингов
-        num_heads: Количество голов внимания
-        head_size: Размерность голов внимания
-        num_layers: Количество слоёв декодера
-        dropout: Вероятность dropout (default=0.1)
-        device: Устройство (default='cpu')
+        config: Словарь конфигурации с параметрами:
+            - vocab_size: Размер словаря токенов
+            - embed_dim: Размерность векторных представлений
+            - num_heads: Количество голов внимания
+            - num_layers: Количество декодерных слоев
+            - max_position_embeddings: Максимальная длина последовательности
+            - dropout: Вероятность dropout
+    
+    Attributes:
+        _token_embeddings: Слой векторных представлений токенов
+        _position_embeddings: Слой позиционных эмбеддингов
+        _decoders: Список декодерных слоев
+        _norm: Финальный слой нормализации
+        _linear: Выходной линейный слой
     """
     def __init__(self, config):
         super().__init__(config)

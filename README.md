@@ -24,16 +24,26 @@ llm-arch-research/
 │   └── src/llm/
 │       ├── core/         # базовые компоненты
 │       │   ├── base_model.py
+│       │   ├── cached_decoder.py    # Декодер с кэшированием
 │       │   ├── decoder.py
 │       │   ├── multi_head_attention.py
 │       │   ├── head_attention.py
 │       │   ├── feed_forward.py
 │       │   ├── token_embeddings.py
-│       │   └── positional_embeddings.py
-│       ├── models/gpt/   # GPT и GPT-2 реализация
-│       │   ├── gpt.py
-│       │   ├── gpt2.py
-│       │   └── __init__.py
+│       │   ├── positional_embeddings.py
+│       │   ├── rope.py              # Rotary Positional Embeddings
+│       │   ├── rms_norm.py          # RMS Normalization
+│       │   ├── swi_glu.py           # SwiGLU активация
+│       │   ├── silu.py              # SiLU активация
+│       │   └── gelu.py              # GELU активация
+│       ├── models/       # Реализации моделей
+│       │   ├── gpt/      # GPT и GPT-2 архитектуры
+│       │   │   ├── gpt.py
+│       │   │   ├── gpt2.py
+│       │   │   └── __init__.py
+│       │   └── llama/    # LLaMA архитектура
+│       │       ├── llama.py
+│       │       └── __init__.py
 │       ├── training/     # утилиты обучения
 │       │   ├── dataset.py
 │       │   ├── trainer.py

@@ -1,37 +1,38 @@
 from torch import nn
 import torch
 from .head_attention import HeadAttention
+from .rope import RoPE
 
 class MultiHeadAttention(nn.Module):
     """
-    Реализация механизма многоголового внимания (Multi-Head Attention) из архитектуры Transformer.
+    Мультиголовый (многоголовый) механизм внимания — ключевой компонент любого Transformer.
 
-    Основные характеристики:
-    - Параллельная обработка входных данных несколькими головами внимания
-    - Поддержка маскирования (causal mask и пользовательские маски)
-    - Финальная проекция с dropout регуляризацией
+    Научная суть:
+        - Модель параллельно агрегирует информацию через несколько подпространств (головы),
+          чтобы видеть разные связи в последовательности (разный контекст, локально/глобально).
+        - Каждый attention блок работает независимо, выход конкатенируется.
+        - Механизм предложен в статье "Attention is All You Need" (Vaswani et al., 2017).
+        
+        Формула внимания для одной головы:
+            Attention(Q, K, V) = softmax(QK^T/sqrt(d_k))·V
+        Мультиголовый:
+            MultiHead(Q, K, V) = Concat([head_i])*W^O
 
-    Математическое описание:
-    MultiHead(Q, K, V) = Concat(head_1, ..., head_h)W^O
-    где head_i = Attention(QW_i^Q, KW_i^K, VW_i^V)
+    Args:
+        num_heads (int): количество attention "голов"
+        emb_size (int): размерности входа и выхода
+        head_size (int): размер одной attention-головы (emb_size/num_heads)
+        max_seq_len (int): максимальная длина последовательности
+        rope (RoPE, optional): если задан, используется Rotary Positional Encoding
+        dropout (float): вероятность регуляризации
 
-    Примеры использования:
-
-    1. Базовый пример:
-    >>> mha = MultiHeadAttention(num_heads=8, emb_size=512, head_size=64, max_seq_len=1024)
-    >>> x = torch.randn(2, 50, 512)  # [batch_size, seq_len, emb_size]
-    >>> output = mha(x)  # [2, 50, 512]
-
-    2. С использованием маски:
-    >>> mask = torch.tril(torch.ones(50, 50))  # Causal mask
-    >>> output = mha(x, mask)
-
-    3. Интеграция в Transformer:
-    >>> # В составе Transformer слоя
-    >>> self.attention = MultiHeadAttention(...)
-    >>> x = self.attention(x, mask)
+    Пример использования:
+        >>> mha = MultiHeadAttention(num_heads=8, emb_size=512, head_size=64, max_seq_len=1024)
+        >>> x = torch.randn(2, 50, 512)
+        >>> out, cache = mha(x)
+        >>> print(out.shape)
     """
-    def __init__(self, num_heads: int, emb_size: int, head_size: int, max_seq_len: int, dropout: float = 0.1):
+    def __init__(self, num_heads: int, emb_size: int, head_size: int, max_seq_len: int, rope: RoPE = None, dropout: float = 0.1):
         """
         Инициализация многоголового внимания.
 
@@ -52,7 +53,8 @@ class MultiHeadAttention(nn.Module):
             HeadAttention(
                 emb_size=emb_size, 
                 head_size=head_size, 
-                max_seq_len=max_seq_len
+                max_seq_len=max_seq_len,
+                rope=rope,
             ) for _ in range(num_heads)
         ])
         self._layer = nn.Linear(head_size * num_heads, emb_size)
@@ -60,7 +62,8 @@ class MultiHeadAttention(nn.Module):
 
     def forward(self, x: torch.Tensor, mask: torch.Tensor = None, use_cache: bool = True, cache: list = None):
         """
-        Прямой проход через слой многоголового внимания.
+        Прямой проход (forward):
+        Для каждого токена оценивает "важность" остальных токенов сразу через несколько attention-блоков.
 
         Подробное описание преобразований тензоров:
         1. Входной тензор [batch_size, seq_len, emb_size] разделяется на N голов:
@@ -73,13 +76,20 @@ class MultiHeadAttention(nn.Module):
         4. Линейная проекция:
            - Выход: [batch_size, seq_len, emb_size]
         5. Применение dropout
+        
+        Args:
+            x (Tensor[float]): [batch, seq_len, emb_size] — вход
+            mask (Optional[Tensor[bool]]): маска позиции [seq_len, seq_len]
+            use_cache (bool): использовать ли key-value кэш (для генерации)
+            cache (list): предыдущие значения KV для ускорения
 
-        Аргументы:
-            x (torch.Tensor): Входной тензор формы [batch_size, seq_len, emb_size]
-            mask (torch.Tensor, optional): Маска внимания формы [seq_len, seq_len]
+        Returns:
+            out (Tensor[float]): [batch, seq_len, emb_size] — результат MHA
+            kv_caches (list): списки новых KV-кэшей (если используется)
 
-        Возвращает:
-            torch.Tensor: Выходной тензор формы [batch_size, seq_len, emb_size]
+        Типичный паттерн:
+            Вход: [batch, seq, emb] → N голов [batch, seq, head_size] →
+                → concat [batch, seq, N*head_size] → проекция → dropout
 
         Пример преобразований для emb_size=512, num_heads=8:
         Вход: [4, 100, 512]
@@ -88,6 +98,10 @@ class MultiHeadAttention(nn.Module):
         -> Конкатенация: [4, 100, 512]
         -> Проекция: [4, 100, 512]
         -> Dropout: [4, 100, 512]
+        
+        Пример:
+            >>> out, caches = mha(x)
+            >>> out.shape   # [batch, seq_len, emb_size]
         """
         # 1. Вычисляем attention для каждой головы
         attention_results = []

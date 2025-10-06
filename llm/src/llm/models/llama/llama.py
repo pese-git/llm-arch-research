@@ -1,91 +1,76 @@
-"""
-GPT-2 — масштабируемый автогерессивный языковой трансформер второго поколения от OpenAI (2019).
-
-Научная суть:
-    - В сравнении с классическим GPT, layer normalization теперь применяется ПЕРЕД attention и FFN.
-    - Позволило сильно увеличить глубину и размер модели (GPT2-модели имеют от 117M до 1.5B параметров).
-    - Используется GELU активация; эффективное кэширование KV attention для генерации.
-
-Формула attention-блока:
-    LN(x) → Attention → рез. связь → LN → FFN → рез. связь
-
-Подробнее:
-    Radford et al. "Language Models are Unsupervised Multitask Learners"
-    https://cdn.openai.com/better-language-models/language-models.pdf
-
-Пример использования:
-    >>> model = GPT2({"vocab_size": 50257, ...})
-    >>> logits = model(input_ids)
-    >>> out = model.generate(input_ids, max_length=30)
-"""
 import torch
 from torch import nn, Tensor
 import torch.nn.functional as F
+
 from llm.core.base_model import BaseModel
 from llm.core.token_embeddings import TokenEmbeddings
-from llm.core.positional_embeddings import PositionalEmbeddings
+from llm.core.swi_glu import SwiGLU
+from llm.core.rms_norm import RMSNorm
+from llm.core.rope import RoPE
 from llm.core.cached_decoder import CachedDecoder
-from llm.core.feed_forward import FeedForward
 
-class GPT2(BaseModel):
+
+
+class Llama(BaseModel):
     """
-    GPT2 — автогерессивная языковая модель, архитектура Transformer, предложенная OpenAI.
+    LLaMA (Large Language Model Meta AI) — высокоэффективная масштабируемая языковая модель, разработанная Meta AI Research.
 
-    Научная суть:
-        - Масштабируемый автогерессивный трансформер для предсказания токенов слева направо.
-        - Главное отличие от классической GPT: порядок layer normalization ПЕРЕД attention и FFN.
-        - Используется GELU, efficient KV-cache, несет наследие классической GPT, но делает архитектуру глубже/шире.
-    
+    Ключевые идеи:
+        - Rotary Positional Encoding (RoPE) вместо стандартных позиционных эмбеддингов
+        - RMSNorm (Root Mean Square LayerNorm) вместо LayerNorm
+        - SwiGLU как нелинейность вместо ReLU/GELU (больше экспрессивности)
+        - Глубокая оптимизация inference (большая экономия памяти и FLOPs)
+    Подробнее: https://arxiv.org/abs/2302.13971
+
     Args:
         config (dict): параметры архитектуры (vocab_size, embed_dim, num_heads, num_layers, max_position_embeddings, dropout)
-
-    Пример использования:
-        >>> model = GPT2({"vocab_size": 50257, ...})
-        >>> logits = model(input_ids)
-        >>> out = model.generate(input_ids, max_length=20)
+    Пример:
+        >>> model = Llama({...})
+        >>> logits, cache = model(input_ids, use_cache=True)
+        >>> out = model.generate(input_ids, max_new_tokens=20)
     """
-    def __init__(self, config):
+    def __init__(self,config):
         super().__init__(config)
 
         # Инициализация слоев
         self._max_seq_len = config["max_position_embeddings"]
         self._token_embeddings = TokenEmbeddings(
-            vocab_size=config["vocab_size"], 
+         vocab_size=config["vocab_size"], 
             emb_size=config["embed_dim"]
         )
-        self._position_embeddings = PositionalEmbeddings(
-            max_seq_len=config["max_position_embeddings"], 
-            emb_size=config["embed_dim"]
+        self._position_embeddings = RoPE(
+            head_size=config["embed_dim"] // config["num_heads"],
+            max_seq_len=config["max_position_embeddings"]
         )
+
         self._dropout = nn.Dropout(config["dropout"])
-        # head_size = emb_size // num_heads
         self._decoders = nn.ModuleList([CachedDecoder(
+            norm_layer=RMSNorm,
             num_heads=config["num_heads"],
             emb_size=config["embed_dim"],
             head_size=config["embed_dim"] // config["num_heads"],
-            feed_forward_layer=FeedForward(
+            feed_forward_layer=SwiGLU(
                 emb_size=config["embed_dim"], 
                 dropout=config["dropout"], 
-                activation="gelu"
             ),
             max_seq_len=config["max_position_embeddings"],
-            dropout=config["dropout"] 
+            rope=self._position_embeddings,
+            dropout=config["dropout"], 
         ) for _ in range(config["num_layers"])])
-        self._norm = nn.LayerNorm(config["embed_dim"])
+        self._norm = RMSNorm(config["embed_dim"])
         self._linear = nn.Linear(config["embed_dim"], config["vocab_size"])
 
     def forward(self, x: torch.Tensor, use_cache: bool = True, cache: list = None) -> tuple:
         """
-        Прямой проход GPT2:
-        - Все слои работают как autoregressive transformer (masked self-attention).
-        - При use_cache=True возвращает также новый кэш KV attention (ускоряет генерацию).
+        Прямой проход через LLaMA (inference/train): авторегрессионное предсказание токенов.
+
         Args:
-            x (Tensor): Входные индексы токенов [batch, seq_len]
-            use_cache (bool): Кэшировать KV attention для ускорения autoregressive генерации
-            cache (list|None): Список KV-кэшей от предыдущих шагов (или None)
+            x (Tensor[int]): входные токены [batch, seq_len]
+            use_cache (bool): использовать ли кэш (ускоряет генерацию)
+            cache (list|None): ключи и значения attention для autoregressive режима
         Returns:
             logits (Tensor): [batch, seq_len, vocab_size]
-            cache (list): новый кэш если use_cache=True, иначе None
+            new_cache (list|None): новый кэш attention (если use_cache)
         Пример:
             >>> logits, cache = model.forward(x, use_cache=True)
         """
@@ -95,26 +80,26 @@ class GPT2(BaseModel):
         
         
         # Вычисление start_pos из кэша (если кэш передан)
-        if cache is not None:
-            # При кэше обрабатываем только один токен (последний)
-            seq_len = 1
-            # Вычисляем start_pos из самого нижнего уровня кэша
-            if cache and cache[0] and cache[0][0]:
-                key_cache, _ = cache[0][0]  # Первый декодер, первая голова
-                start_pos = key_cache.size(1)  # cache_len
-            else:
-                start_pos = 0
-        else:
-            # Без кэша работаем как раньше
-            start_pos = 0
-            seq_len = x.size(1)
+        #if cache is not None:
+        #    # При кэше обрабатываем только один токен (последний)
+        #    seq_len = 1
+        #    # Вычисляем start_pos из самого нижнего уровня кэша
+        #    if cache and cache[0] and cache[0][0]:
+        #        key_cache, _ = cache[0][0]  # Первый декодер, первая голова
+        #        start_pos = key_cache.size(1)  # cache_len
+        #    else:
+        #        start_pos = 0
+        #else:
+        #    # Без кэша работаем как раньше
+        #    start_pos = 0
+        #    seq_len = x.size(1)
 
         # Эмбеддинги токенов и позиций
         tok_out = self._token_embeddings(x)  # [batch, seq_len, emb_size]
-        pos_out = self._position_embeddings(seq_len, start_pos=start_pos)  # [seq_len, emb_size]
+       #pos_out = self._position_embeddings(x)  # [batch, seq_len, emb_size]
         
         # Комбинирование
-        out = self._dropout(tok_out + pos_out.unsqueeze(0))  # [batch, seq_len, emb_size]
+        out = self._dropout(tok_out)  # [batch, seq_len, emb_size]
         
         # Стек декодеров с передачей кэша
         new_cache = []
@@ -148,22 +133,25 @@ class GPT2(BaseModel):
         use_cache: bool = True
     ) -> torch.Tensor:
         """
-        Генерация текста с использованием autoregressive трансформера (GPT2).
-        Поддерживаются greedy, sampling, top-k/top-p (nucleus sampling) режимы.
+        Генерация текста c помощью LLaMA (autoregressive Transformer).
+       Поддерживается:
+        - greedy и вероятностное сэмплирование (top-k, top-p, temperature)
+        - кэш attention для ускорения генерации длинных последовательностей
+
         Args:
             x (Tensor[int]): начальная последовательность [batch, seq_len]
-            max_new_tokens (int): сколько токенов сгенерировать
-            do_sample (bool): использовать стохастическое сэмплирование вместо жадного выбора
-            temperature (float): коэффициент сглаживания логитов (низкое — более консервативно)
-            top_k (int|None): ограничить выбор top-k наиболее вероятных токенов
-            top_p (float|None): ограничить суммарную вероятность (nucleus sampling)
-            use_cache (bool): ускорять autoregressive инференс
+            max_new_tokens (int): сколько новых токенов сгенерировать
+            do_sample (bool): использовать стохастику (True) или жадный выбор (False)
+            temperature (float): масштаб для softmax (важно для sampling)
+            top_k (int|None): ограничение на количество кандидатов (top-k sampling)
+            top_p (float|None): nucleus sampling
+            use_cache (bool): ускоряет autoregressive при длинной генерации
         Returns:
-            output (Tensor[int]): сгенерированный тензор токенов [batch, seq_len + max_new_tokens]
+            output (Tensor[int]): [batch, seq_len + max_new_tokens]
         Пример:
-            >>> prompt = tokenizer.encode('Привет', return_tensors="pt")
-            >>> output = model.generate(prompt, max_new_tokens=20, do_sample=True)
-            >>> print(tokenizer.decode(output[0]))
+            >>> prompt = tokenizer.encode('Meta AI', return_tensors="pt")
+            >>> generated = model.generate(prompt, max_new_tokens=30, do_sample=True)
+            >>> print(tokenizer.decode(generated[0]))
         """
         cache = None
 
@@ -237,6 +225,8 @@ class GPT2(BaseModel):
             # 6. Добавляем его к последовательности
             x = torch.cat([x, next_token], dim=1)  # [batch_size, seq_len+1]
         return x
+
+
 
     @property
     def max_seq_len(self) -> int:
