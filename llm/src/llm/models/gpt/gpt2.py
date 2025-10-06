@@ -5,7 +5,7 @@ from llm.core.base_model import BaseModel
 from llm.core.token_embeddings import TokenEmbeddings
 from llm.core.positional_embeddings import PositionalEmbeddings
 from llm.core.cached_decoder import CachedDecoder
-
+from llm.core.feed_forward import FeedForward
 
 class GPT2(BaseModel):
     def __init__(self, config):
@@ -27,6 +27,11 @@ class GPT2(BaseModel):
             num_heads=config["num_heads"],
             emb_size=config["embed_dim"],
             head_size=config["embed_dim"] // config["num_heads"],
+            feed_forward_layer=FeedForward(
+                emb_size=config["embed_dim"], 
+                dropout=config["dropout"], 
+                activation="gelu"
+            ),
             max_seq_len=config["max_position_embeddings"],
             dropout=config["dropout"] 
         ) for _ in range(config["num_layers"])])

@@ -4,6 +4,7 @@ import torch
 from torch import nn
 from .feed_forward import FeedForward
 from .multi_head_attention import MultiHeadAttention
+from .rope import RoPE
 
 class CachedDecoder(nn.Module):
     """
@@ -12,11 +13,14 @@ class CachedDecoder(nn.Module):
     """
     def __init__(
         self,
+        feed_forward_layer: nn.Module,  # Обязательный параметр
         num_heads: int,
         emb_size: int,
         head_size: int,
         max_seq_len: int,
         dropout: float = 0.1,
+        norm_layer: type = nn.LayerNorm,  # Класс
+        rope: RoPE = None,
         activation: str = "gelu",
     ):
         super().__init__()
@@ -25,11 +29,12 @@ class CachedDecoder(nn.Module):
             emb_size=emb_size,
             head_size=head_size,
             max_seq_len=max_seq_len,
+            rope=rope,
             dropout=dropout,
         )
-        self._ff = FeedForward(emb_size=emb_size, dropout=dropout, activation=activation)
-        self._norm1 = nn.LayerNorm(emb_size)
-        self._norm2 = nn.LayerNorm(emb_size)
+        self._ff = feed_forward_layer
+        self._norm1 = norm_layer(emb_size)
+        self._norm2 = norm_layer(emb_size)
 
     def forward(
         self,

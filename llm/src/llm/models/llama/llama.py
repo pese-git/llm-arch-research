@@ -1,55 +1,13 @@
 import torch
-from torch import nn
-from torch import Tensor
+from torch import nn, Tensor
 import torch.nn.functional as F
-from math import sqrt
-from torch import nn
-import torch
-import math
 
 from llm.core.base_model import BaseModel
 from llm.core.token_embeddings import TokenEmbeddings
-from llm.core.rope import RoPE
 from llm.core.swi_glu import SwiGLU
 from llm.core.rms_norm import RMSNorm
-from llm.core.gelu import GELU
-from llm.core.multi_head_attention import MultiHeadAttention
-
-    
-class CachedDecoder(nn.Module):
-    def __init__(self, 
-        num_heads: int,
-        emb_size: int,
-        head_size: int,
-        max_seq_len: int,
-        rope: RoPE,
-        dropout: float = 0.1
-    ):
-        super().__init__()
-        self._heads = MultiHeadAttention(
-            num_heads=num_heads, 
-            emb_size=emb_size, 
-            head_size=head_size, 
-            max_seq_len=max_seq_len,
-            rope=rope,
-            dropout=dropout
-        )
-        self._ff = SwiGLU(emb_size=emb_size, dropout=dropout)
-        self._norm1 = RMSNorm(emb_size)
-        self._norm2 = RMSNorm(emb_size)
-
-    def forward(self, x: torch.Tensor, mask: torch.Tensor = None, use_cache: bool = True, cache: list = None) -> torch.Tensor:
-        norm1_out = self._norm1(x)
-        attention, kv_caches = self._heads(norm1_out, mask, use_cache=use_cache, cache=cache)
-        out = attention + x
-        
-        norm2_out = self._norm2(out)
-        ffn_out = self._ff(norm2_out)
-
-        if use_cache is True:
-            return (ffn_out + out, kv_caches)
-        else:
-            return (ffn_out + out, None)
+from llm.core.rope import RoPE
+from llm.core.cached_decoder import CachedDecoder
 
 
 
@@ -70,9 +28,14 @@ class Llama(BaseModel):
 
         self._dropout = nn.Dropout(config["dropout"])
         self._decoders = nn.ModuleList([CachedDecoder(
+            norm_layer=RMSNorm,
             num_heads=config["num_heads"],
             emb_size=config["embed_dim"],
             head_size=config["embed_dim"] // config["num_heads"],
+            feed_forward_layer=SwiGLU(
+                emb_size=config["embed_dim"], 
+                dropout=config["dropout"], 
+            ),
             max_seq_len=config["max_position_embeddings"],
             rope=self._position_embeddings,
             dropout=config["dropout"], 
