@@ -1,17 +1,25 @@
 """
-Original GPT (Generative Pre-trained Transformer) модель.
+Классическая GPT (Generative Pre-trained Transformer), OpenAI 2018.
 
-Реализация классической GPT архитектуры из статьи:
-"Improving Language Understanding by Generative Pre-Training"
-https://cdn.openai.com/research-covers/language-unsupervised/language_understanding_paper.pdf
+Научная суть:
+    - Первая массовая архитектура языка на основе исключительно self-attention механизмов (трансформер-декодер).
+    - Обучается сначала на задаче языкового моделирования (unsupervised), далее дообучается на downstream-задачах (transfer learning).
+    - Обеспечивает длинную память и “глобальный” контекст благодаря attention.
 
-Архитектурные особенности:
-- Трансформер-декодер с masked self-attention
-- Layer Normalization применяется после внимания и FFN
-- GELU активационная функция
-- Learned positional embeddings
-- Обучение на задачах языкового моделирования
-"""
+    Ключевые элементы:
+    - masked self-attention (causal)
+    - LayerNorm ПОСЛЕ attention и FFN (что отличает от GPT2)
+    - GELU активация
+    - Absolute learned positional embeddings
+
+    Подробнее: Radford et al., "Improving Language Understanding by Generative Pre-Training", arXiv:1801.10198
+    https://cdn.openai.com/research-covers/language-unsupervised/language_understanding_paper.pdf
+
+    Пример использования:
+        >>> model = GPT({"vocab_size": 50257, ...})
+        >>> logits = model(input_ids)
+        >>> out = model.generate(input_ids, max_length=30)
+    """
 
 import torch
 import torch.nn as nn

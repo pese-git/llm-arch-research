@@ -12,6 +12,23 @@ from llm.core.cached_decoder import CachedDecoder
 
 
 class Llama(BaseModel):
+    """
+    LLaMA (Large Language Model Meta AI) — высокоэффективная масштабируемая языковая модель, разработанная Meta AI Research.
+
+    Ключевые идеи:
+        - Rotary Positional Encoding (RoPE) вместо стандартных позиционных эмбеддингов
+        - RMSNorm (Root Mean Square LayerNorm) вместо LayerNorm
+        - SwiGLU как нелинейность вместо ReLU/GELU (больше экспрессивности)
+        - Глубокая оптимизация inference (большая экономия памяти и FLOPs)
+    Подробнее: https://arxiv.org/abs/2302.13971
+
+    Args:
+        config (dict): параметры архитектуры (vocab_size, embed_dim, num_heads, num_layers, max_position_embeddings, dropout)
+    Пример:
+        >>> model = Llama({...})
+        >>> logits, cache = model(input_ids, use_cache=True)
+        >>> out = model.generate(input_ids, max_new_tokens=20)
+    """
     def __init__(self,config):
         super().__init__(config)
 
@@ -44,6 +61,19 @@ class Llama(BaseModel):
         self._linear = nn.Linear(config["embed_dim"], config["vocab_size"])
 
     def forward(self, x: torch.Tensor, use_cache: bool = True, cache: list = None) -> tuple:
+        """
+        Прямой проход через LLaMA (inference/train): авторегрессионное предсказание токенов.
+
+        Args:
+            x (Tensor[int]): входные токены [batch, seq_len]
+            use_cache (bool): использовать ли кэш (ускоряет генерацию)
+            cache (list|None): ключи и значения attention для autoregressive режима
+        Returns:
+            logits (Tensor): [batch, seq_len, vocab_size]
+            new_cache (list|None): новый кэш attention (если use_cache)
+        Пример:
+            >>> logits, cache = model.forward(x, use_cache=True)
+        """
         # Проверка длины последовательности (только при отсутствии кэша)
         if cache is None and x.size(1) > self._max_seq_len:
             raise ValueError(f"Длина последовательности {x.size(1)} превышает максимальную {self.max_seq_len}")
@@ -102,6 +132,27 @@ class Llama(BaseModel):
         top_p: float = None,
         use_cache: bool = True
     ) -> torch.Tensor:
+        """
+        Генерация текста c помощью LLaMA (autoregressive Transformer).
+       Поддерживается:
+        - greedy и вероятностное сэмплирование (top-k, top-p, temperature)
+        - кэш attention для ускорения генерации длинных последовательностей
+
+        Args:
+            x (Tensor[int]): начальная последовательность [batch, seq_len]
+            max_new_tokens (int): сколько новых токенов сгенерировать
+            do_sample (bool): использовать стохастику (True) или жадный выбор (False)
+            temperature (float): масштаб для softmax (важно для sampling)
+            top_k (int|None): ограничение на количество кандидатов (top-k sampling)
+            top_p (float|None): nucleus sampling
+            use_cache (bool): ускоряет autoregressive при длинной генерации
+        Returns:
+            output (Tensor[int]): [batch, seq_len + max_new_tokens]
+        Пример:
+            >>> prompt = tokenizer.encode('Meta AI', return_tensors="pt")
+            >>> generated = model.generate(prompt, max_new_tokens=30, do_sample=True)
+            >>> print(tokenizer.decode(generated[0]))
+        """
         cache = None
 
         for _ in range(max_new_tokens):

@@ -1,3 +1,23 @@
+"""
+GPT-2 — масштабируемый автогерессивный языковой трансформер второго поколения от OpenAI (2019).
+
+Научная суть:
+    - В сравнении с классическим GPT, layer normalization теперь применяется ПЕРЕД attention и FFN.
+    - Позволило сильно увеличить глубину и размер модели (GPT2-модели имеют от 117M до 1.5B параметров).
+    - Используется GELU активация; эффективное кэширование KV attention для генерации.
+
+Формула attention-блока:
+    LN(x) → Attention → рез. связь → LN → FFN → рез. связь
+
+Подробнее:
+    Radford et al. "Language Models are Unsupervised Multitask Learners"
+    https://cdn.openai.com/better-language-models/language-models.pdf
+
+Пример использования:
+    >>> model = GPT2({"vocab_size": 50257, ...})
+    >>> logits = model(input_ids)
+    >>> out = model.generate(input_ids, max_length=30)
+"""
 import torch
 from torch import nn, Tensor
 import torch.nn.functional as F
@@ -8,6 +28,22 @@ from llm.core.cached_decoder import CachedDecoder
 from llm.core.feed_forward import FeedForward
 
 class GPT2(BaseModel):
+    """
+    GPT2 — автогерессивная языковая модель, архитектура Transformer, предложенная OpenAI.
+
+    Научная суть:
+        - Масштабируемый автогерессивный трансформер для предсказания токенов слева направо.
+        - Главное отличие от классической GPT: порядок layer normalization ПЕРЕД attention и FFN.
+        - Используется GELU, efficient KV-cache, несет наследие классической GPT, но делает архитектуру глубже/шире.
+    
+    Args:
+        config (dict): параметры архитектуры (vocab_size, embed_dim, num_heads, num_layers, max_position_embeddings, dropout)
+
+    Пример использования:
+        >>> model = GPT2({"vocab_size": 50257, ...})
+        >>> logits = model(input_ids)
+        >>> out = model.generate(input_ids, max_length=20)
+    """
     def __init__(self, config):
         super().__init__(config)
 
@@ -39,6 +75,20 @@ class GPT2(BaseModel):
         self._linear = nn.Linear(config["embed_dim"], config["vocab_size"])
 
     def forward(self, x: torch.Tensor, use_cache: bool = True, cache: list = None) -> tuple:
+        """
+        Прямой проход GPT2:
+        - Все слои работают как autoregressive transformer (masked self-attention).
+        - При use_cache=True возвращает также новый кэш KV attention (ускоряет генерацию).
+        Args:
+            x (Tensor): Входные индексы токенов [batch, seq_len]
+            use_cache (bool): Кэшировать KV attention для ускорения autoregressive генерации
+            cache (list|None): Список KV-кэшей от предыдущих шагов (или None)
+        Returns:
+            logits (Tensor): [batch, seq_len, vocab_size]
+            cache (list): новый кэш если use_cache=True, иначе None
+        Пример:
+            >>> logits, cache = model.forward(x, use_cache=True)
+        """
         # Проверка длины последовательности (только при отсутствии кэша)
         if cache is None and x.size(1) > self._max_seq_len:
             raise ValueError(f"Длина последовательности {x.size(1)} превышает максимальную {self.max_seq_len}")
@@ -97,6 +147,24 @@ class GPT2(BaseModel):
         top_p: float = None,
         use_cache: bool = True
     ) -> torch.Tensor:
+        """
+        Генерация текста с использованием autoregressive трансформера (GPT2).
+        Поддерживаются greedy, sampling, top-k/top-p (nucleus sampling) режимы.
+        Args:
+            x (Tensor[int]): начальная последовательность [batch, seq_len]
+            max_new_tokens (int): сколько токенов сгенерировать
+            do_sample (bool): использовать стохастическое сэмплирование вместо жадного выбора
+            temperature (float): коэффициент сглаживания логитов (низкое — более консервативно)
+            top_k (int|None): ограничить выбор top-k наиболее вероятных токенов
+            top_p (float|None): ограничить суммарную вероятность (nucleus sampling)
+            use_cache (bool): ускорять autoregressive инференс
+        Returns:
+            output (Tensor[int]): сгенерированный тензор токенов [batch, seq_len + max_new_tokens]
+        Пример:
+            >>> prompt = tokenizer.encode('Привет', return_tensors="pt")
+            >>> output = model.generate(prompt, max_new_tokens=20, do_sample=True)
+            >>> print(tokenizer.decode(output[0]))
+        """
         cache = None
 
         for _ in range(max_new_tokens):

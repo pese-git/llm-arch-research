@@ -5,41 +5,24 @@ from .multi_head_attention import MultiHeadAttention
 
 class Decoder(nn.Module):
     """
-    Декодер трансформера - ключевой компонент архитектуры Transformer.
-    
-    Предназначен для:
-    - Обработки последовательностей с учетом контекста (самовнимание)
-    - Постепенного генерирования выходной последовательности
-    - Учета масок для предотвращения "заглядывания в будущее"
+    Базовый автогерессивный блок-декодер трансформера (без кэша KV).
 
-    Алгоритм работы:
-    1. Входной тензор (batch_size, seq_len, emb_size)
-    2. Многоголовое внимание с residual connection и LayerNorm
-    3. FeedForward сеть с residual connection и LayerNorm
-    4. Выходной тензор (batch_size, seq_len, emb_size)
-
-    Основные характеристики:
-    - Поддержка масок внимания
-    - Residual connections для стабилизации градиентов
-    - Layer Normalization после каждого sub-layer
-    - Конфигурируемые параметры внимания
-
-    Примеры использования:
-
-    1. Базовый случай:
-    >>> decoder = Decoder(num_heads=8, emb_size=512, head_size=64, max_seq_len=1024)
-    >>> x = torch.randn(1, 10, 512)  # [batch, seq_len, emb_size]
-    >>> output = decoder(x)
-    >>> print(output.shape)
-    torch.Size([1, 10, 512])
-
-    2. С маской внимания:
-    >>> mask = torch.tril(torch.ones(10, 10))  # Нижнетреугольная маска
-    >>> output = decoder(x, mask)
-
-    3. Инкрементальное декодирование:
-    >>> for i in range(10):
-    >>>     output = decoder(x[:, :i+1, :], mask[:i+1, :i+1])
+    Научная суть:
+        - Осуществляет посимвольное предсказание: каждый токен видит только предыдущие (masked attention)
+        - Состоит из self-attention + feedforward + residual + нормализация
+        - Residual connection и normalization дают стабильность и градиентный “flow” при обучении
+        - Механизм предложен в Vaswani et al., "Attention is All You Need", 2017
+    Args:
+        num_heads (int): количество attention-голов
+        emb_size (int): размер эмбеддинга
+        head_size (int): размер одной attention-головы
+        max_seq_len (int): максимальная длина последовательности
+        dropout (float): вероятность dropout
+    Пример:
+        >>> decoder = Decoder(num_heads=8, emb_size=512, head_size=64, max_seq_len=1024)
+        >>> x = torch.randn(1, 10, 512)
+        >>> out = decoder(x)
+        >>> print(out.shape)  # torch.Size([1, 10, 512])
     """
     def __init__(self, 
         num_heads: int,

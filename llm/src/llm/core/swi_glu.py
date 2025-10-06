@@ -24,6 +24,8 @@ from .silu import SiLU
 
 class SwiGLU(nn.Module):
     """
+    SwiGLU (Swish-Gated Linear Unit) — современная нелинейность для архитектур LLM (LLaMA, PaLM).
+
     Реализация SwiGLU активационной функции.
     
     Состоит из трех линейных слоев и активации SiLU:
@@ -32,16 +34,21 @@ class SwiGLU(nn.Module):
     3. Element-wise multiplication gate и up
     4. Down слой (линейная проекция)
     
+    Научная суть:
+        - Сохраняет преимущества GLU (раздельные гейтом и телом) + мощность Swish/SiLU активации.
+        - Дает надежную гладкую активацию, хорошо работает на больших масштабах.
+        - Статья: "GLU Variants Improve Transformer" (Shazeer, 2020).
+
+        Формула:
+            SwiGLU(x) = SiLU(W_g·x) * (W_u·x)
+        где SiLU(x) = x*sigma(x)
+
     Args:
-        emb_size: Размерность входных эмбеддингов
-        dropout: Вероятность dropout (по умолчанию 0.1)
-    
-    Attributes:
-        _gate: Линейный слой для gate ветви [emb_size -> 4*emb_size]
-        _up: Линейный слой для up ветви [emb_size -> 4*emb_size]
-        _down: Линейный слой проекции [4*emb_size -> emb_size]
-        _activation: Функция активации SiLU
-        _dropout: Dropout слой
+        emb_size (int): размер входов/выходов
+        dropout (float): после выходной проекции
+    Пример:
+        >>> ff = SwiGLU(emb_size=512, dropout=0.1)
+        >>> y = ff(torch.randn(2,10,512))
     """
     
     def __init__(self, emb_size: int, dropout: float = 0.1):

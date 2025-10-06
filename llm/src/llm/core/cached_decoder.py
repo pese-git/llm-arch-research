@@ -8,34 +8,51 @@ from .rope import RoPE
 
 class CachedDecoder(nn.Module):
     """
-    Универсальный декодерный блок с dependency injection для поддержки различных архитектур.
-    
-    Поддерживает кэширование ключей-значений для ускорения генерации текста.
-    
+    Универсальный декодерный блок для современных LLM (GPT, LLaMA, др.), поддерживает кэширование key-value для эффективной генерации.
+
+    Научная идея:
+    Автопагрессивная авторегрессия в трансформерах требует быстрого доступа к ранее вычисленным self-attention ключам/значениям — этот класс позволяет прозрачно кэшировать такие состояния для быстрой инференс-генерации.
+
+    Алгоритм:
+        - Input -> LayerNorm -> Многоголовое внимание с кэшем (может быть RoPE)
+        - Суммируем residual
+        - LayerNorm -> FeedForward (любой, например SwiGLU) -> Residual
+        - Возвращается кортеж (output, kvcache)
+
     Args:
-        feed_forward_layer: Экземпляр слоя прямого распространения (SwiGLU, FeedForward и т.д.)
-        num_heads: Количество голов механизма внимания
-        emb_size: Размерность векторных представлений
-        head_size: Размерность каждой головы внимания
-        max_seq_len: Максимальная длина последовательности
-        norm_layer: Класс слоя нормализации (LayerNorm, RMSNorm и т.д.)
-        dropout: Вероятность dropout
-        rope: Экземпляр RoPE для позиционного кодирования (опционально)
+        feed_forward_layer (nn.Module): FeedForward или SwiGLU слой
+        num_heads (int): Количество голов внимания
+        emb_size (int): Размерность эмбеддингов
+        head_size (int): Размерность головы внимания
+        max_seq_len (int): Максимальная длина
+        norm_layer (тип nn.Module): Normalization слой (LayerNorm или RMSNorm)
+        dropout (float): Dropout
+        rope (RoPE|None): Экземпляр RoPE (для LLaMA)
+    
+    Пример (GPT2 style):
+        >>> decoder = CachedDecoder(
+        ...   feed_forward_layer=FeedForward(...),
+        ...   norm_layer=nn.LayerNorm,
+        ...   num_heads=4, emb_size=256, head_size=64, max_seq_len=128)
+        >>> out, cache = decoder(x, use_cache=True)
     """
     def __init__(
         self,
-        feed_forward_layer: nn.Module,  # Обязательный параметр
+        feed_forward_layer: nn.Module,
         num_heads: int,
         emb_size: int,
         head_size: int,
         max_seq_len: int,
-        norm_layer: type = nn.LayerNorm,  # Класс
+        norm_layer: type = nn.LayerNorm,
         dropout: float = 0.1,
         rope: RoPE = None,
     ):
         """
         Инициализация декодера с кэшированием.
         
+        Поведение аналогично блоку TransformerDecoderLayer,
+        но с гибкой возможностью подмены любых подкомпонент (активация, norm, позиции).
+
         Args:
             feed_forward_layer: Слой feed-forward (должен быть экземпляром, а не классом)
             num_heads: Количество голов внимания
@@ -67,18 +84,19 @@ class CachedDecoder(nn.Module):
         cache: list = None,
     ):
         """
-        Прямой проход через декодерный блок.
+        Прямой проход с поддержкой кэша.
         
         Args:
-            x: Входной тензор формы [batch_size, seq_len, emb_size]
-            mask: Маска внимания формы [batch_size, seq_len] (опционально)
-            use_cache: Флаг использования кэширования
-            cache: Список кэшированных пар (key, value) тензоров
-        
+            x (Tensor[float]): [batch, seq_len, emb_size] — скрытые состояния
+            mask (Optional[Tensor]): маска внимания (или causal mask), shape [seq_len, seq_len]
+            use_cache (bool): использовать кэширование KV
+            cache (list): кэш self-attention для быстрого авторегрессива
         Returns:
-            Кортеж (output, new_cache) где:
-            - output: Выходной тензор формы [batch_size, seq_len, emb_size]
-            - new_cache: Обновленный кэш или None, если use_cache=False
+            output (Tensor[float]): выходные состояния [batch, seq_len, emb_size]
+            kv_caches (list): обновленный кэш, если use_cache
+        Пример:
+            >>> out, new_cache = decoder(x, use_cache=True, cache=old_cache)
+            >>> out.shape # [batch, seq_len, emb_size]
         """
         norm1_out = self._norm1(x)
         # Передаём все cache/use_cache дальше в attention
