@@ -1,6 +1,7 @@
 from torch import nn
 import torch
 from .head_attention import HeadAttention
+from .rope import RoPE
 
 class MultiHeadAttention(nn.Module):
     """
@@ -31,7 +32,7 @@ class MultiHeadAttention(nn.Module):
     >>> self.attention = MultiHeadAttention(...)
     >>> x = self.attention(x, mask)
     """
-    def __init__(self, num_heads: int, emb_size: int, head_size: int, max_seq_len: int, dropout: float = 0.1):
+    def __init__(self, num_heads: int, emb_size: int, head_size: int, max_seq_len: int, rope: RoPE = None, dropout: float = 0.1):
         """
         Инициализация многоголового внимания.
 
@@ -52,7 +53,8 @@ class MultiHeadAttention(nn.Module):
             HeadAttention(
                 emb_size=emb_size, 
                 head_size=head_size, 
-                max_seq_len=max_seq_len
+                max_seq_len=max_seq_len,
+                rope=rope,
             ) for _ in range(num_heads)
         ])
         self._layer = nn.Linear(head_size * num_heads, emb_size)

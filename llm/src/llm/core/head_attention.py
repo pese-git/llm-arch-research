@@ -2,6 +2,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from math import sqrt
+from .rope import RoPE
 
 class HeadAttention(nn.Module):
     """
@@ -30,11 +31,12 @@ class HeadAttention(nn.Module):
     - Автоматически адаптируется к разным версиям PyTorch
     - Поддерживает batch-обработку входных данных
     """
-    def __init__(self, emb_size: int, head_size: int, max_seq_len: int):
+    def __init__(self, emb_size: int, head_size: int, max_seq_len: int, rope: RoPE = None):
         super().__init__()
         self._emb_size = emb_size
         self._head_size = head_size
         self._max_seq_len = max_seq_len
+        self._rope = rope
 
         # Линейные преобразования для Q, K, V
         self._k = nn.Linear(emb_size, head_size)
@@ -72,6 +74,11 @@ class HeadAttention(nn.Module):
         k = self._k(x)  # [B, T, hs]
         q = self._q(x)  # [B, T, hs]
         v = self._v(x)  # [B, T, hs]
+
+        if self._rope is not None:
+            # ✅ Применяем RoPE к Q и K (НЕ к V!)
+            q = self._rope(q)  # [B, T, hs]
+            k = self._rope(k)  # [B, T, hs]
 
         if cache is not None:
             k_cache, v_cache = cache
