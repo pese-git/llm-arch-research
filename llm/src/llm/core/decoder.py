@@ -3,6 +3,7 @@ import torch
 from .feed_forward import FeedForward
 from .multi_head_attention import MultiHeadAttention
 
+
 class Decoder(nn.Module):
     """
     Базовый автогерессивный блок-декодер трансформера (без кэша KV).
