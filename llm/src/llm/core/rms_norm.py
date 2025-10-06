@@ -33,23 +33,23 @@ class RMSNorm(nn.Module):
         - Упрощенный вариант LayerNorm без вычисления среднего, только деление на rms.
         - Лучшая численная стабильность на больших моделях, меньше вычислений.
         - Применяется в LLaMA, PaLM и др.
-        
+
         Формула:
             RMSNorm(x) = (x / sqrt(mean(x²) + eps)) * w   (w — обучаемый вектор)
 
     Args:
         dim (int): размер последнего измерения (обычно emb_size)
         eps (float): для численной устойчивости
-    
+
     Пример:
         >>> norm = RMSNorm(emb_size)
         >>> out = norm(x)
     """
-    
+
     def __init__(self, dim: int, eps: float = 1e-6):
         """
         Инициализация RMSNorm слоя.
-        
+
         Args:
             dim: Размерность нормализуемого измерения
             eps: Малое значение для численной стабильности (по умолчанию 1e-6)
@@ -57,27 +57,27 @@ class RMSNorm(nn.Module):
         super().__init__()
         self._eps = eps
         self._w = nn.Parameter(torch.ones(dim))
-    
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Прямой проход через RMSNorm слой.
-        
+
         Args:
             x: Входной тензор формы [..., dim]
-            
+
         Returns:
             Нормализованный тензор той же формы, что и входной
-            
+
         Формула:
         output = w * (x / sqrt(mean(x²) + eps))
         """
         # Вычисление RMS (Root Mean Square) по последнему измерению
         rms = (x.pow(2).mean(-1, keepdim=True) + self._eps) ** 0.5
-        
+
         # Нормализация и масштабирование
         norm_x = x / rms
         return self._w * norm_x
-        
+
     def extra_repr(self) -> str:
         """Строковое представление для отладки."""
-        return f'dim={self._w.shape[0]}, eps={self._eps}'
+        return f"dim={self._w.shape[0]}, eps={self._eps}"

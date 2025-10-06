@@ -10,7 +10,6 @@ from llm.core.rope import RoPE
 from llm.core.cached_decoder import CachedDecoder
 
 
-
 class Llama(BaseModel):
     """
     LLaMA (Large Language Model Meta AI) — высокоэффективная масштабируемая языковая модель, разработанная Meta AI Research.
@@ -29,38 +28,45 @@ class Llama(BaseModel):
         >>> logits, cache = model(input_ids, use_cache=True)
         >>> out = model.generate(input_ids, max_new_tokens=20)
     """
-    def __init__(self,config):
+
+    def __init__(self, config):
         super().__init__(config)
 
         # Инициализация слоев
         self._max_seq_len = config["max_position_embeddings"]
         self._token_embeddings = TokenEmbeddings(
-         vocab_size=config["vocab_size"], 
-            emb_size=config["embed_dim"]
+            vocab_size=config["vocab_size"], emb_size=config["embed_dim"]
         )
         self._position_embeddings = RoPE(
             head_size=config["embed_dim"] // config["num_heads"],
-            max_seq_len=config["max_position_embeddings"]
+            max_seq_len=config["max_position_embeddings"],
         )
 
         self._dropout = nn.Dropout(config["dropout"])
-        self._decoders = nn.ModuleList([CachedDecoder(
-            norm_layer=RMSNorm,
-            num_heads=config["num_heads"],
-            emb_size=config["embed_dim"],
-            head_size=config["embed_dim"] // config["num_heads"],
-            feed_forward_layer=SwiGLU(
-                emb_size=config["embed_dim"], 
-                dropout=config["dropout"], 
-            ),
-            max_seq_len=config["max_position_embeddings"],
-            rope=self._position_embeddings,
-            dropout=config["dropout"], 
-        ) for _ in range(config["num_layers"])])
+        self._decoders = nn.ModuleList(
+            [
+                CachedDecoder(
+                    norm_layer=RMSNorm,
+                    num_heads=config["num_heads"],
+                    emb_size=config["embed_dim"],
+                    head_size=config["embed_dim"] // config["num_heads"],
+                    feed_forward_layer=SwiGLU(
+                        emb_size=config["embed_dim"],
+                        dropout=config["dropout"],
+                    ),
+                    max_seq_len=config["max_position_embeddings"],
+                    rope=self._position_embeddings,
+                    dropout=config["dropout"],
+                )
+                for _ in range(config["num_layers"])
+            ]
+        )
         self._norm = RMSNorm(config["embed_dim"])
         self._linear = nn.Linear(config["embed_dim"], config["vocab_size"])
 
-    def forward(self, x: torch.Tensor, use_cache: bool = True, cache: list = None) -> tuple:
+    def forward(
+        self, x: torch.Tensor, use_cache: bool = True, cache: list = None
+    ) -> tuple:
         """
         Прямой проход через LLaMA (inference/train): авторегрессионное предсказание токенов.
 
@@ -76,11 +82,12 @@ class Llama(BaseModel):
         """
         # Проверка длины последовательности (только при отсутствии кэша)
         if cache is None and x.size(1) > self._max_seq_len:
-            raise ValueError(f"Длина последовательности {x.size(1)} превышает максимальную {self.max_seq_len}")
-        
-        
+            raise ValueError(
+                f"Длина последовательности {x.size(1)} превышает максимальную {self.max_seq_len}"
+            )
+
         # Вычисление start_pos из кэша (если кэш передан)
-        #if cache is not None:
+        # if cache is not None:
         #    # При кэше обрабатываем только один токен (последний)
         #    seq_len = 1
         #    # Вычисляем start_pos из самого нижнего уровня кэша
@@ -89,18 +96,18 @@ class Llama(BaseModel):
         #        start_pos = key_cache.size(1)  # cache_len
         #    else:
         #        start_pos = 0
-        #else:
+        # else:
         #    # Без кэша работаем как раньше
         #    start_pos = 0
         #    seq_len = x.size(1)
 
         # Эмбеддинги токенов и позиций
         tok_out = self._token_embeddings(x)  # [batch, seq_len, emb_size]
-       #pos_out = self._position_embeddings(x)  # [batch, seq_len, emb_size]
-        
+        # pos_out = self._position_embeddings(x)  # [batch, seq_len, emb_size]
+
         # Комбинирование
         out = self._dropout(tok_out)  # [batch, seq_len, emb_size]
-        
+
         # Стек декодеров с передачей кэша
         new_cache = []
         for i, decoder in enumerate(self._decoders):
@@ -116,42 +123,43 @@ class Llama(BaseModel):
 
         out = self._norm(out)
         logits = self._linear(out)
-            
+
         # Возвращаем результат с учетом use_cache
         if use_cache:
             return (logits, new_cache)
         else:
             return (logits, None)
 
-    def generate(self,
-        x: torch.Tensor, 
-        max_new_tokens: int, 
+    def generate(
+        self,
+        x: torch.Tensor,
+        max_new_tokens: int,
         do_sample: bool,
         temperature: float = 1.0,
         top_k: int = None,
         top_p: float = None,
-        use_cache: bool = True
+        use_cache: bool = True,
     ) -> torch.Tensor:
         """
-        Генерация текста c помощью LLaMA (autoregressive Transformer).
-       Поддерживается:
-        - greedy и вероятностное сэмплирование (top-k, top-p, temperature)
-        - кэш attention для ускорения генерации длинных последовательностей
+         Генерация текста c помощью LLaMA (autoregressive Transformer).
+        Поддерживается:
+         - greedy и вероятностное сэмплирование (top-k, top-p, temperature)
+         - кэш attention для ускорения генерации длинных последовательностей
 
-        Args:
-            x (Tensor[int]): начальная последовательность [batch, seq_len]
-            max_new_tokens (int): сколько новых токенов сгенерировать
-            do_sample (bool): использовать стохастику (True) или жадный выбор (False)
-            temperature (float): масштаб для softmax (важно для sampling)
-            top_k (int|None): ограничение на количество кандидатов (top-k sampling)
-            top_p (float|None): nucleus sampling
-            use_cache (bool): ускоряет autoregressive при длинной генерации
-        Returns:
-            output (Tensor[int]): [batch, seq_len + max_new_tokens]
-        Пример:
-            >>> prompt = tokenizer.encode('Meta AI', return_tensors="pt")
-            >>> generated = model.generate(prompt, max_new_tokens=30, do_sample=True)
-            >>> print(tokenizer.decode(generated[0]))
+         Args:
+             x (Tensor[int]): начальная последовательность [batch, seq_len]
+             max_new_tokens (int): сколько новых токенов сгенерировать
+             do_sample (bool): использовать стохастику (True) или жадный выбор (False)
+             temperature (float): масштаб для softmax (важно для sampling)
+             top_k (int|None): ограничение на количество кандидатов (top-k sampling)
+             top_p (float|None): nucleus sampling
+             use_cache (bool): ускоряет autoregressive при длинной генерации
+         Returns:
+             output (Tensor[int]): [batch, seq_len + max_new_tokens]
+         Пример:
+             >>> prompt = tokenizer.encode('Meta AI', return_tensors="pt")
+             >>> generated = model.generate(prompt, max_new_tokens=30, do_sample=True)
+             >>> print(tokenizer.decode(generated[0]))
         """
         cache = None
 
@@ -162,10 +170,10 @@ class Llama(BaseModel):
             else:
                 # Первая итерация или кэш отключен - передаем всю последовательность
                 x_input = x
-            
+
             # Прямой проход с кэшем
             logits, new_cache = self.forward(x_input, use_cache=use_cache, cache=cache)
-            
+
             # Обновляем кэш для следующей итерации
             if use_cache:
                 cache = new_cache
@@ -188,7 +196,7 @@ class Llama(BaseModel):
                 # создаём маску: 1, если токен НЕ в topk_indices
                 mask = torch.ones_like(logits_scaled, dtype=torch.uint8)
                 mask.scatter_(1, topk_indices, 0)  # 0 там, где top-k индексы
-                masked_logits[mask.byte()] = float('-inf')
+                masked_logits[mask.byte()] = float("-inf")
 
                 logits_scaled = masked_logits
 
@@ -196,7 +204,9 @@ class Llama(BaseModel):
                 # 1. Применим softmax, чтобы получить вероятности:
                 probs = F.softmax(logits_scaled, dim=-1)  # [B, vocab_size]
                 # 2. Отсортируем токены по убыванию вероятностей:
-                sorted_probs, sorted_indices = torch.sort(probs, descending=True, dim=-1)
+                sorted_probs, sorted_indices = torch.sort(
+                    probs, descending=True, dim=-1
+                )
                 # 3. Посчитаем кумулятивную сумму вероятностей:
                 cum_probs = torch.cumsum(sorted_probs, dim=-1)  # [B, vocab_size]
                 # 4. Определим маску: оставить токены, пока сумма < top_p
@@ -209,24 +219,23 @@ class Llama(BaseModel):
                 # Устанавливаем 1 в местах нужных токенов
                 mask.scatter_(dim=1, index=sorted_indices, src=sorted_mask)
                 # 6. Зануляем логиты токенов вне топ-p:
-                logits_scaled[~mask] = float('-inf')
+                logits_scaled[~mask] = float("-inf")
 
             # 4. Применяем Softmax
             probs = F.softmax(logits_scaled, dim=-1)  # [batch_size, vocab_size]
-
 
             if do_sample == True:
                 # 5. Если do_sample равен True, то отбираем токен случайно с помощью torch.multinomial
                 next_token = torch.multinomial(probs, num_samples=1)  # [batch_size, 1]
             else:
                 # 5. Если do_sample равен False, то выбираем токен с максимальной вероятностью
-                next_token = torch.argmax(probs, dim=-1, keepdim=True)  # [batch_size, 1]
-            
+                next_token = torch.argmax(
+                    probs, dim=-1, keepdim=True
+                )  # [batch_size, 1]
+
             # 6. Добавляем его к последовательности
             x = torch.cat([x, next_token], dim=1)  # [batch_size, seq_len+1]
         return x
-
-
 
     @property
     def max_seq_len(self) -> int:

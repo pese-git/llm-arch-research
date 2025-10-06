@@ -1,5 +1,6 @@
 import torch.optim as optim
 
+
 def get_optimizer(model, lr=3e-4, weight_decay=0.01, optimizer_type="adamw"):
     """
     Возвращает оптимизатор для обучения модели.

@@ -3,6 +3,7 @@ import torch
 from .feed_forward import FeedForward
 from .multi_head_attention import MultiHeadAttention
 
+
 class Decoder(nn.Module):
     """
     Базовый автогерессивный блок-декодер трансформера (без кэша KV).
@@ -24,12 +25,14 @@ class Decoder(nn.Module):
         >>> out = decoder(x)
         >>> print(out.shape)  # torch.Size([1, 10, 512])
     """
-    def __init__(self, 
+
+    def __init__(
+        self,
         num_heads: int,
         emb_size: int,
         head_size: int,
         max_seq_len: int,
-        dropout: float = 0.1
+        dropout: float = 0.1,
     ):
         """
         Инициализация декодера.
@@ -43,11 +46,11 @@ class Decoder(nn.Module):
         """
         super().__init__()
         self._heads = MultiHeadAttention(
-            num_heads=num_heads, 
-            emb_size=emb_size, 
-            head_size=head_size, 
-            max_seq_len=max_seq_len, 
-            dropout=dropout
+            num_heads=num_heads,
+            emb_size=emb_size,
+            head_size=head_size,
+            max_seq_len=max_seq_len,
+            dropout=dropout,
         )
         self._ff = FeedForward(emb_size=emb_size, dropout=dropout)
         self._norm1 = nn.LayerNorm(emb_size)
@@ -73,7 +76,7 @@ class Decoder(nn.Module):
         # Self-Attention блок
         attention, _ = self._heads(x, mask, use_cache=False, cache=None)
         out = self._norm1(attention + x)
-        
+
         # FeedForward блок
         ffn_out = self._ff(out)
         return self._norm2(ffn_out + out)

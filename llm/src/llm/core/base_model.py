@@ -19,23 +19,25 @@ from abc import ABC, abstractmethod
 from typing import Optional, Tuple
 import torch
 
+
 class BaseModel(nn.Module, ABC):
     """
     Абстрактный класс — стандарт для всех архитектур LLM.
-    
+
     Научная идея:
     Реализация унифицированного входа/выхода для поддержки построения и обучения любых современных языковых моделей.
-    
+
     Args:
         config (dict): Параметры архитектуры (размерность эмбеддингов, число слоев, heads и т.д.)
-    
+
     Attributes:
         config (dict): Конфиг модели
     """
+
     def __init__(self, config: dict):
         """
         Инициализация модели.
-        
+
         Args:
             config (dict): Настройки архитектуры модели (размеры слоев, типы блоков и т.д.)
         """
@@ -43,10 +45,12 @@ class BaseModel(nn.Module, ABC):
         self.config = config
 
     @abstractmethod
-    def forward(self, input_ids: torch.Tensor, attention_mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def forward(
+        self, input_ids: torch.Tensor, attention_mask: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
         """
         Прямой проход — получение логитов для входных токенов.
-        
+
         Args:
             input_ids (Tensor[int]): Индексы токенов [batch, seq_len]
             attention_mask (Optional[Tensor[bool]]): Маска разрешенных позиций (если требуется) [batch, seq_len]
@@ -59,7 +63,7 @@ class BaseModel(nn.Module, ABC):
     def generate(self, input_ids: torch.Tensor, max_length: int = 50) -> torch.Tensor:
         """
         Генерация текста (авторегрессивно, greedy или sampling).
-        
+
         Args:
             input_ids (Tensor[int]): Начальные токены [batch, start_len]
             max_length (int): Максимальная длина последовательности

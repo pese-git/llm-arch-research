@@ -30,7 +30,7 @@ BASE_GPT_CONFIG = {
     "num_heads": 4,
     "num_layers": 4,
     "max_position_embeddings": 128,
-    "dropout": 0.1
+    "dropout": 0.1,
 }
 
 # Конфигурация для маленькой модели (быстрое тестирование)
@@ -40,7 +40,7 @@ SMALL_GPT_CONFIG = {
     "num_heads": 2,
     "num_layers": 2,
     "max_position_embeddings": 64,
-    "dropout": 0.1
+    "dropout": 0.1,
 }
 
 # Конфигурация для большой модели (качественное обучение)
@@ -50,13 +50,13 @@ LARGE_GPT_CONFIG = {
     "num_heads": 8,
     "num_layers": 6,
     "max_position_embeddings": 256,
-    "dropout": 0.1
+    "dropout": 0.1,
 }
 
 # === Конфигурации токенизатора ===
 BPE_CONFIG = {
     "vocab_size": 1000,
-    "special_tokens": ["<pad>", "<unk>", "<bos>", "<eos>"]
+    "special_tokens": ["<pad>", "<unk>", "<bos>", "<eos>"],
 }
 
 # === Конфигурации обучения ===
@@ -65,7 +65,7 @@ TRAINING_CONFIG = {
     "batch_size": 2,
     "num_epochs": 3,
     "warmup_steps": 50,
-    "gradient_clip": 1.0
+    "gradient_clip": 1.0,
 }
 
 # === Конфигурации генерации ===
@@ -74,7 +74,7 @@ GENERATION_CONFIG = {
     "temperature": 0.7,
     "do_sample": True,
     "top_k": None,
-    "top_p": None
+    "top_p": None,
 }
 
 # === Пути для сохранения ===
@@ -84,7 +84,7 @@ PATHS = {
     "gpt_bpe_config": "checkpoints/gpt-bpe/config.json",
     "hf_tokenizer": "checkpoints/hf-bpe-tokenizer",
     "hf_model": "checkpoints/hf-trained",
-    "hf_proxy_model": "checkpoints/hf-trained-proxy"
+    "hf_proxy_model": "checkpoints/hf-trained-proxy",
 }
 
 # === Тестовые промпты ===

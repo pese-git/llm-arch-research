@@ -6,6 +6,7 @@ from .feed_forward import FeedForward
 from .multi_head_attention import MultiHeadAttention
 from .rope import RoPE
 
+
 class CachedDecoder(nn.Module):
     """
     Универсальный декодерный блок для современных LLM (GPT, LLaMA, др.), поддерживает кэширование key-value для эффективной генерации.
@@ -28,7 +29,7 @@ class CachedDecoder(nn.Module):
         norm_layer (тип nn.Module): Normalization слой (LayerNorm или RMSNorm)
         dropout (float): Dropout
         rope (RoPE|None): Экземпляр RoPE (для LLaMA)
-    
+
     Пример (GPT2 style):
         >>> decoder = CachedDecoder(
         ...   feed_forward_layer=FeedForward(...),
@@ -36,6 +37,7 @@ class CachedDecoder(nn.Module):
         ...   num_heads=4, emb_size=256, head_size=64, max_seq_len=128)
         >>> out, cache = decoder(x, use_cache=True)
     """
+
     def __init__(
         self,
         feed_forward_layer: nn.Module,
@@ -49,7 +51,7 @@ class CachedDecoder(nn.Module):
     ):
         """
         Инициализация декодера с кэшированием.
-        
+
         Поведение аналогично блоку TransformerDecoderLayer,
         но с гибкой возможностью подмены любых подкомпонент (активация, norm, позиции).
 
@@ -85,7 +87,7 @@ class CachedDecoder(nn.Module):
     ):
         """
         Прямой проход с поддержкой кэша.
-        
+
         Args:
             x (Tensor[float]): [batch, seq_len, emb_size] — скрытые состояния
             mask (Optional[Tensor]): маска внимания (или causal mask), shape [seq_len, seq_len]

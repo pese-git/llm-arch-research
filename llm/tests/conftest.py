@@ -58,7 +58,7 @@ def gpt_config(vocab_size, embed_dim, num_heads, num_layers):
         "num_heads": num_heads,
         "num_layers": num_layers,
         "max_position_embeddings": 1024,
-        "dropout": 0.1
+        "dropout": 0.1,
     }
 
 
@@ -68,11 +68,13 @@ def random_inputs(batch_size, seq_len, vocab_size):
     input_ids = torch.randint(0, vocab_size, (batch_size, seq_len))
     return input_ids
 
+
 @pytest.fixture
 def random_float_inputs(batch_size, seq_len, embed_dim):
     """Generate random floating point input tensors for testing feed forward."""
     inputs = torch.randn(batch_size, seq_len, embed_dim)
     return inputs
+
 
 @pytest.fixture
 def random_embeddings(batch_size, seq_len, embed_dim):
