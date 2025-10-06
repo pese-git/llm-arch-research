@@ -1759,7 +1759,6 @@ dependencies = [
 dev = [
     { name = "black" },
     { name = "jupyter" },
-    { name = "matplotlib" },
     { name = "mypy" },
     { name = "pytest" },
     { name = "ruff" },
@@ -1777,8 +1776,7 @@ requires-dist = [
     { name = "ipykernel" },
     { name = "jupyter", marker = "extra == 'dev'", specifier = ">=1.0.0" },
     { name = "llm", editable = "llm" },
-    { name = "matplotlib" },
-    { name = "matplotlib", marker = "extra == 'dev'", specifier = ">=1.0.0" },
+    { name = "matplotlib", specifier = "==3.10.6" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.8.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8.0.0" },
