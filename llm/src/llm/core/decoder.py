@@ -3,10 +3,26 @@ import torch
 from .feed_forward import FeedForward
 from .multi_head_attention import MultiHeadAttention
 
-
 class Decoder(nn.Module):
     """
     Базовый автогерессивный блок-декодер трансформера (без кэша KV).
+
+    Предназначен для:
+    - Обработки последовательностей с учетом контекста (самовнимание)
+    - Постепенного генерирования выходной последовательности
+    - Учета масок для предотвращения "заглядывания в будущее"
+
+    Алгоритм работы:
+    1. Входной тензор (batch_size, seq_len, emb_size)
+    2. Многоголовое внимание с residual connection и LayerNorm
+    3. FeedForward сеть с residual connection и LayerNorm
+    4. Выходной тензор (batch_size, seq_len, emb_size)
+
+    Основные характеристики:
+    - Поддержка масок внимания
+    - Residual connections для стабилизации градиентов
+    - Layer Normalization после каждого sub-layer
+    - Конфигурируемые параметры внимания
 
     Научная суть:
         - Осуществляет посимвольное предсказание: каждый токен видит только предыдущие (masked attention)
