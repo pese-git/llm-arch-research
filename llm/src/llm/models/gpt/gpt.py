@@ -1,24 +1,50 @@
-# llm/models/gpt/gpt2.py
+"""
+Original GPT (Generative Pre-trained Transformer) модель.
+
+Реализация классической GPT архитектуры из статьи:
+"Improving Language Understanding by Generative Pre-Training"
+https://cdn.openai.com/research-covers/language-unsupervised/language_understanding_paper.pdf
+
+Архитектурные особенности:
+- Трансформер-декодер с masked self-attention
+- Layer Normalization применяется после внимания и FFN
+- GELU активационная функция
+- Learned positional embeddings
+- Обучение на задачах языкового моделирования
+"""
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from typing import Optional, Dict
 from llm.core.base_model import BaseModel
 from llm.core.decoder import Decoder
 from llm.core.token_embeddings import TokenEmbeddings
 from llm.core.positional_embeddings import PositionalEmbeddings
 
+
 class GPT(BaseModel):
-    """GPT-like трансформер для генерации текста
+    """
+    Original GPT (Generative Pre-trained Transformer) модель.
+    
+    Первая версия трансформерной архитектуры от OpenAI, предназначенная
+    для генеративного предобучения на текстовых данных.
     
     Args:
-        vocab_size: Размер словаря
-        max_seq_len: Макс. длина последовательности
-        emb_size: Размерность эмбеддингов
-        num_heads: Количество голов внимания
-        head_size: Размерность голов внимания
-        num_layers: Количество слоёв декодера
-        dropout: Вероятность dropout (default=0.1)
-        device: Устройство (default='cpu')
+        config: Словарь конфигурации с параметрами:
+            - vocab_size: Размер словаря токенов
+            - embed_dim: Размерность векторных представлений
+            - num_heads: Количество голов внимания
+            - num_layers: Количество декодерных слоев
+            - max_position_embeddings: Максимальная длина последовательности
+            - dropout: Вероятность dropout
+    
+    Attributes:
+        _token_embeddings: Слой векторных представлений токенов
+        _position_embeddings: Слой позиционных эмбеддингов
+        _decoders: Список декодерных слоев
+        _norm: Финальный слой нормализации
+        _linear: Выходной линейный слой
     """
     def __init__(self, config):
         super().__init__(config)

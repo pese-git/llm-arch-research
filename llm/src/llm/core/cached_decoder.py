@@ -8,8 +8,19 @@ from .rope import RoPE
 
 class CachedDecoder(nn.Module):
     """
-    Универсальный декодер с поддержкой кэша для autoregressive использования (GPT, LLAMA и пр).
-    - Поддерживает использование past_key_values для быстрого генеративного инференса.
+    Универсальный декодерный блок с dependency injection для поддержки различных архитектур.
+    
+    Поддерживает кэширование ключей-значений для ускорения генерации текста.
+    
+    Args:
+        feed_forward_layer: Экземпляр слоя прямого распространения (SwiGLU, FeedForward и т.д.)
+        num_heads: Количество голов механизма внимания
+        emb_size: Размерность векторных представлений
+        head_size: Размерность каждой головы внимания
+        max_seq_len: Максимальная длина последовательности
+        norm_layer: Класс слоя нормализации (LayerNorm, RMSNorm и т.д.)
+        dropout: Вероятность dropout
+        rope: Экземпляр RoPE для позиционного кодирования (опционально)
     """
     def __init__(
         self,
@@ -18,11 +29,23 @@ class CachedDecoder(nn.Module):
         emb_size: int,
         head_size: int,
         max_seq_len: int,
-        dropout: float = 0.1,
         norm_layer: type = nn.LayerNorm,  # Класс
+        dropout: float = 0.1,
         rope: RoPE = None,
-        activation: str = "gelu",
     ):
+        """
+        Инициализация декодера с кэшированием.
+        
+        Args:
+            feed_forward_layer: Слой feed-forward (должен быть экземпляром, а не классом)
+            num_heads: Количество голов внимания
+            emb_size: Размерность эмбеддингов
+            head_size: Размерность каждой головы
+            max_seq_len: Максимальная длина последовательности
+            norm_layer: Класс нормализации (по умолчанию LayerNorm)
+            dropout: Вероятность dropout
+            rope: Rotary Positional Embeddings (опционально)
+        """
         super().__init__()
         self._heads = MultiHeadAttention(
             num_heads=num_heads,
@@ -44,11 +67,18 @@ class CachedDecoder(nn.Module):
         cache: list = None,
     ):
         """
-        x: [batch, seq_len, emb_size]
-        mask: (optional)
-        use_cache: использовать ли кэширование KV-слоев (инкрементальный генератив, GPT-style)
-        cache: список кэшей для голов (или None)
-        Возвращает: (output, new_cache) если use_cache=True, иначе (output, None)
+        Прямой проход через декодерный блок.
+        
+        Args:
+            x: Входной тензор формы [batch_size, seq_len, emb_size]
+            mask: Маска внимания формы [batch_size, seq_len] (опционально)
+            use_cache: Флаг использования кэширования
+            cache: Список кэшированных пар (key, value) тензоров
+        
+        Returns:
+            Кортеж (output, new_cache) где:
+            - output: Выходной тензор формы [batch_size, seq_len, emb_size]
+            - new_cache: Обновленный кэш или None, если use_cache=False
         """
         norm1_out = self._norm1(x)
         # Передаём все cache/use_cache дальше в attention
