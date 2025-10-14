@@ -91,15 +91,75 @@ uv sync
 uv sync --extra dev
 ```
 
-### Запуск обучения GPT
+## ⚡ Работа с экспериментами (experiments/llm_only)
 
-```bash
-# Обучение базовой GPT модели
-uv run python experiments/llm_only/train_gpt_bpe.py
+В папке `experiments/llm_only` вы найдете универсальный скрипт для обучения и генерации LLM без HuggingFace.
+Архитектура позволяет управлять выбором модели, типом действия и параметрами через аргументы командной строки и отдельные JSON-конфиги.
 
-# Обучение с интеграцией HuggingFace
-uv run python experiments/hf_integration/simple_hf_training.py
-```
+### Основные файлы и директории
+
+- `run_llm_experiment.py` — универсальный скрипт-стартер для обучения и генерации.
+- `configs/` — примеры конфигурационных файлов (`*.json`) для разных моделей и сценариев.
+
+### Использование универсального скрипта
+
+1. **Настройте конфиг**  
+   Для каждой модели и режима работы есть отдельный JSON-файл с параметрами:
+   - `configs/gpt_train.json`, `configs/gpt_generate.json`
+   - `configs/gpt2_train.json`, `configs/gpt2_generate.json`
+   - `configs/llama_train.json`, `configs/llama_generate.json`
+
+2. **Запустите обучение или генерацию**  
+   Стандартная команда:
+
+   ```bash
+   python experiments/llm_only/run_llm_experiment.py --model <название_модели> --action <train/generate> --config experiments/llm_only/configs/<имя_конфига>.json
+   ```
+
+   Примеры:
+
+   - Обучить GPT:
+     ```bash
+     python experiments/llm_only/run_llm_experiment.py --model gpt --action train --config experiments/llm_only/configs/gpt_train.json
+     ```
+
+   - Генерировать текст GPT2:
+     ```bash
+     python experiments/llm_only/run_llm_experiment.py --model gpt2 --action generate --config experiments/llm_only/configs/gpt2_generate.json
+     ```
+
+   - Обучить Llama:
+     ```bash
+     python experiments/llm_only/run_llm_experiment.py --model llama --action train --config experiments/llm_only/configs/llama_train.json
+     ```
+
+   - Генерировать текст Llama:
+     ```bash
+     python experiments/llm_only/run_llm_experiment.py --model llama --action generate --config experiments/llm_only/configs/llama_generate.json
+     ```
+
+3. **Конфигурирование параметров**
+   - Все гиперпараметры (архитектура, обучение, генерация, пути) задаются в json-файле.
+   - Для новых моделей создайте копию существующего конфига, укажите другие веса и параметры, и используйте нужное название модели в команде.
+
+4. **Структура конфига**
+   Минимальный пример конфига для обучения:
+   ```json
+   {
+     "bpe_tokenizer": "checkpoints/bpe_tokenizer.json",
+     "model_config": {
+       "vocab_size": null,
+       "embed_dim": 256,
+       "num_heads": 4,
+       "num_layers": 4,
+       "max_position_embeddings": 128,
+       "dropout": 0.1
+     },
+     "model_weights": "checkpoints/gpt-bpe/model.pt"
+   }
+   ```
+
+---
 
 ### Тестирование hf-proxy
 

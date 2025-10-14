@@ -1,0 +1,19 @@
+{
+    "bpe_tokenizer": "checkpoints/bpe_tokenizer.json",
+    "test_prompts": [
+      "Open weights",
+      "The Llama model is",
+      "Efficient transformers"
+    ],
+    "model_config_path": "checkpoints/llama-bpe/config.json",
+    "model_weights": "checkpoints/llama-bpe/model.pt",
+    "generation": {
+      "max_new_tokens": 40,
+      "temperature": 0.8,
+      "do_sample": true,
+      "top_k": null,
+      "top_p": null
+    },
+    "log_path": "checkpoints/llm_only_generation_logs.json"
+  }
+  
