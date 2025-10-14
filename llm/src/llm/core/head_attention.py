@@ -89,10 +89,16 @@ class HeadAttention(nn.Module):
         q = self._q(x)  # [B, T, hs]
         v = self._v(x)  # [B, T, hs]
 
+        start_pos = 0
+        if cache is not None:
+            k_cache, v_cache = cache
+            cache_len = k_cache.shape[1]
+            start_pos = cache_len
+
         if self._rope is not None:
             # ✅ Применяем RoPE к Q и K (НЕ к V!)
-            q = self._rope(q)  # [B, T, hs]
-            k = self._rope(k)  # [B, T, hs]
+            q = self._rope(q, start_pos=start_pos)  # [B, T, hs]
+            k = self._rope(k, start_pos=start_pos)  # [B, T, hs]
 
         if cache is not None:
             k_cache, v_cache = cache

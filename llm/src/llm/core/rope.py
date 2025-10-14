@@ -68,7 +68,7 @@ class RoPE(nn.Module):
         self.register_buffer("cos_matrix", torch.cos(freq_matrix))
         self.register_buffer("sin_matrix", torch.sin(freq_matrix))
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, start_pos: int = 0) -> torch.Tensor:
         """
         Применение ротационного позиционного кодирования к входному тензору.
 
@@ -83,12 +83,12 @@ class RoPE(nn.Module):
         2. Применение вращения через синусы и косинусы
         3. Объединение компонент обратно
         """
-        seq_len = x.size(1)
+        batch_size, seq_len, emb_size = x.shape
 
         # Берем нужную часть матриц и приводим к типу x
-        cos = self.cos_matrix[:seq_len].to(x.dtype)  # [seq_len, head_size//2]
-        sin = self.sin_matrix[:seq_len].to(x.dtype)  # [seq_len, head_size//2]
-
+        cos = self.cos_matrix[start_pos:start_pos+seq_len].to(x.dtype)  # [seq_len, head_size//2]
+        sin = self.sin_matrix[start_pos:start_pos+seq_len].to(x.dtype)  # [seq_len, head_size//2]
+        
         # Разделяем на четные и нечетные компоненты
         x_even = x[:, :, 0::2]  # [batch_size, seq_len, head_size//2]
         x_odd = x[:, :, 1::2]  # [batch_size, seq_len, head_size//2]
