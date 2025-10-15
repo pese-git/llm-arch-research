@@ -104,12 +104,20 @@ class GPT2(BaseModel):
 
         # Вычисление start_pos из кэша (если кэш передан)
         if cache is not None:
-            # При кэше обрабатываем только один токен (последний)
             seq_len = 1
-            # Вычисляем start_pos из самого нижнего уровня кэша
-            if cache and cache[0] and cache[0][0]:
-                key_cache, _ = cache[0][0]  # Первый декодер, первая голова
-                start_pos = key_cache.size(1)  # cache_len
+            # Безопасно извлекаем key_cache для вычисления start_pos
+            if (
+                isinstance(cache, (list, tuple))
+                and len(cache) > 0
+                and cache[0] is not None
+                and isinstance(cache[0], (list, tuple))
+                and len(cache[0]) > 0
+                and cache[0][0] is not None
+                and isinstance(cache[0][0], (tuple, list))
+                and len(cache[0][0]) > 0
+            ):
+                key_cache, _ = cache[0][0]
+                start_pos = key_cache.size(1)
             else:
                 start_pos = 0
         else:

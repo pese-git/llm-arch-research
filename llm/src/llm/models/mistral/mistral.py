@@ -4,71 +4,12 @@ from torch import Tensor
 import torch.nn.functional as F
 from math import sqrt
 from llm.core.base_model import BaseModel
-
-
-class SiLU(nn.Module):
-    def forward(self, x: torch.Tensor): # [batch_size × seq_len × emb_size]
-        return torch.sigmoid(x) * x
-    
-class RMSNorm(nn.Module):
-    def __init__(self, dim: int, eps: float = 1e-6):
-        super().__init__()
-        self._eps = eps
-        self._w = nn.Parameter(torch.ones(dim))
-    
-    def forward(self, x: torch.Tensor): # [batch_size × seq_len × emb_size]
-        rms = (x.pow(2).mean(-1, keepdim=True) + self._eps) ** 0.5
-        norm_x = x / rms
-        return self._w * norm_x
-
-class SwiGLU(nn.Module):
-    def __init__(self, emb_size: int, dropout: float = 0.1):
-        super().__init__()
-
-        self._gate = nn.Linear(emb_size, 4 * emb_size)
-        self._up = nn.Linear(emb_size, 4 * emb_size)
-        self._down = nn.Linear(4 * emb_size, emb_size)
-        self._activation = SiLU()
-        self._dropout = nn.Dropout(dropout)
-
-    def forward(self, x: torch.Tensor): # [batch_size × seq_len × emb_size].
-        gate_out = self._gate(x)                          # [batch, seq, 4*emb]
-        activation_out = self._activation(gate_out)       # [batch, seq, 4*emb]
-        up_out = self._up(x)                              # [batch, seq, 4*emb]
-        out = up_out * activation_out                     # поэлементное!
-        out = self._down(out)                             # [batch, seq, emb]
-        return self._dropout(out)
-
-
-class TokenEmbeddings(nn.Module):
-    def __init__(self, vocab_size: int, emb_size: int):
-        super().__init__()
-        self._embedding = nn.Embedding(
-            num_embeddings=vocab_size,
-            embedding_dim=emb_size
-        )
-
-    def forward(self, x: Tensor) -> Tensor:
-        return self._embedding(x)
-
-    @property
-    def num_embeddings(self) -> int:
-        return self._embedding.num_embeddings
-
-    @property
-    def embedding_dim(self) -> int:
-        return self._embedding.embedding_dim
-
-
-class GELU(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.sqrt_2_over_pi = torch.sqrt(torch.tensor(2.0) / math.pi)
-    
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return 0.5 * x * (1 + torch.tanh(
-            self.sqrt_2_over_pi * (x + 0.044715 * torch.pow(x, 3))
-        ))
+from llm.core.token_embeddings import TokenEmbeddings
+from llm.core.silu import SiLU
+from llm.core.rms_norm import RMSNorm
+from llm.core.swi_glu import SwiGLU
+from llm.core.gelu import GELU
+from llm.core.rope import RoPE
 
     
     
@@ -77,49 +18,49 @@ from torch import nn
 from typing import Optional
 
 
-class RoPE(nn.Module):
-
-    def __init__(self, head_size: int, max_seq_len: int, base: int = 10_000):
-        super().__init__()
-        assert head_size % 2 == 0, "head_size должен быть четным"
-
-        # Вычисление частот: θ_i = base^(-2i/d) для i ∈ [0, d/2-1]
-        freqs = 1.0 / (base ** (2 * torch.arange(head_size // 2).float() / head_size))
-
-        # Позиции от 0 до max_seq_len-1
-        positions = torch.arange(max_seq_len).float()
-
-        # Внешнее произведение: m * θ_i для всех позиций и частот
-        freq_matrix = positions.unsqueeze(1) * freqs.unsqueeze(0)
-
-        # Предвычисление матриц косинусов и синусов
-        self.register_buffer("cos_matrix", torch.cos(freq_matrix))
-        self.register_buffer("sin_matrix", torch.sin(freq_matrix))
-
-    def forward(self, x: torch.Tensor, start_pos: int = 0) -> torch.Tensor: # [batch_size × seq_len × head_size] [batch_size × num_heads × seq_len × head_size]
-        batch_size, num_heads, seq_len, head_size = x.shape
-
-        # Берем нужную часть матриц и приводим к типу x
-        cos = self.cos_matrix[start_pos:start_pos+seq_len].to(x.dtype)  # [seq_len, head_size//2]
-        sin = self.sin_matrix[start_pos:start_pos+seq_len].to(x.dtype)  # [seq_len, head_size//2]
-
-        # Явное изменение формы для broadcasting
-        cos = cos.reshape(1, 1, seq_len, head_size // 2)
-        sin = sin.reshape(1, 1, seq_len, head_size // 2)
-
-        # Разделяем на четные и нечетные компоненты по ПОСЛЕДНЕМУ измерению
-        x_even = x[..., 0::2]  # [batch_size, num_heads, seq_len, head_size//2]
-        x_odd = x[..., 1::2]   # [batch_size, num_heads, seq_len, head_size//2]
-
-        # Применяем поворот: q' = q * cos(mθ) + rotate(q) * sin(mθ)
-        x_rotated_even = x_even * cos - x_odd * sin
-        x_rotated_odd = x_even * sin + x_odd * cos
-
-        # Объединяем обратно в исходную размерность
-        x_rotated = torch.stack([x_rotated_even, x_rotated_odd], dim=-1)
-        x_rotated = x_rotated.flatten(-2)  # [batch_size, seq_len, head_size]
-
-        return x_rotated
+#class RoPE(nn.Module):
+#
+#    def __init__(self, head_size: int, max_seq_len: int, base: int = 10_000):
+#        super().__init__()
+#        assert head_size % 2 == 0, "head_size должен быть четным"
+#
+#        # Вычисление частот: θ_i = base^(-2i/d) для i ∈ [0, d/2-1]
+#        freqs = 1.0 / (base ** (2 * torch.arange(head_size // 2).float() / head_size))
+#
+#        # Позиции от 0 до max_seq_len-1
+#        positions = torch.arange(max_seq_len).float()
+#
+#        # Внешнее произведение: m * θ_i для всех позиций и частот
+#        freq_matrix = positions.unsqueeze(1) * freqs.unsqueeze(0)
+#
+#        # Предвычисление матриц косинусов и синусов
+#        self.register_buffer("cos_matrix", torch.cos(freq_matrix))
+#        self.register_buffer("sin_matrix", torch.sin(freq_matrix))
+#
+#    def forward(self, x: torch.Tensor, start_pos: int = 0) -> torch.Tensor: # [batch_size × seq_len × head_size] [batch_size × num_heads × seq_len × head_size]
+#        batch_size, num_heads, seq_len, head_size = x.shape
+#
+#        # Берем нужную часть матриц и приводим к типу x
+#        cos = self.cos_matrix[start_pos:start_pos+seq_len].to(x.dtype)  # [seq_len, head_size//2]
+#        sin = self.sin_matrix[start_pos:start_pos+seq_len].to(x.dtype)  # [seq_len, head_size//2]
+#
+#        # Явное изменение формы для broadcasting
+#        cos = cos.reshape(1, 1, seq_len, head_size // 2)
+#        sin = sin.reshape(1, 1, seq_len, head_size // 2)
+#
+#        # Разделяем на четные и нечетные компоненты по ПОСЛЕДНЕМУ измерению
+#        x_even = x[..., 0::2]  # [batch_size, num_heads, seq_len, head_size//2]
+#        x_odd = x[..., 1::2]   # [batch_size, num_heads, seq_len, head_size//2]
+#
+#        # Применяем поворот: q' = q * cos(mθ) + rotate(q) * sin(mθ)
+#        x_rotated_even = x_even * cos - x_odd * sin
+#        x_rotated_odd = x_even * sin + x_odd * cos
+#
+#        # Объединяем обратно в исходную размерность
+#        x_rotated = torch.stack([x_rotated_even, x_rotated_odd], dim=-1)
+#        x_rotated = x_rotated.flatten(-2)  # [batch_size, seq_len, head_size]
+#
+#        return x_rotated
 
 
 import torch

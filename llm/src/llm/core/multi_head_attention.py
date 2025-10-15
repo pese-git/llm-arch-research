@@ -1,37 +1,70 @@
 from torch import nn
 import torch
-from .head_attention import HeadAttention
+import torch.nn.functional as F
 from .rope import RoPE
 
 
 class MultiHeadAttention(nn.Module):
     """
-    Мультиголовый (многоголовый) механизм внимания — ключевой компонент любого Transformer.
+    Multi-Head Attention (Многоголовое внимание)
+    ============================================
 
-    Научная суть:
-        - Модель параллельно агрегирует информацию через несколько подпространств (головы),
-          чтобы видеть разные связи в последовательности (разный контекст, локально/глобально).
-        - Каждый attention блок работает независимо, выход конкатенируется.
-        - Механизм предложен в статье "Attention is All You Need" (Vaswani et al., 2017).
+    Что такое Multi-Head Attention?
+    -------------------------------
+    Это ключевой компонент трансформеров, который позволяет "смотреть" на разные части предложения
+    одновременно с нескольких независимых ракурсов ("голов"). Всё, что делает Single-Head Attention — только гораздо мощнее и глубже!
 
-        Формула внимания для одной головы:
-            Attention(Q, K, V) = softmax(QK^T/sqrt(d_k))·V
-        Мультиголовый:
-            MultiHead(Q, K, V) = Concat([head_i])*W^O
+    Зачем это нужно?
+    ----------------
+    - Модель может учиться одновременно учитывать и локальные, и глобальные взаимосвязи между токенами.
+    - Каждая attention head "ловит" свой собственный смысл/зависимости, и на выходе они объединяются.
+    - Это значительно улучшает понимание сложных зависимостей в тексте, особенно на длинных последовательностях.
 
-    Args:
-        num_heads (int): количество attention "голов"
-        emb_size (int): размерности входа и выхода
-        head_size (int): размер одной attention-головы (emb_size/num_heads)
-        max_seq_len (int): максимальная длина последовательности
-        rope (RoPE, optional): если задан, используется Rotary Positional Encoding
-        dropout (float): вероятность регуляризации
+    Как работает алгоритм? (основная схема)
+    ---------------------------------------
+    1. Генерируются Q, K, V (query, key, value) — по отдельной проекции для каждой головы.
+    2. Для каждой головы: attention(Q, K, V) = softmax(Q·K^T / sqrt(d)) · V
+    3. Все головы "склеиваются" (concatenate) и прогоняются через общий финальный линейный слой.
+
+    Почему это работает?
+    --------------------
+    - Даёт трансформеру многомерное восприятие текста.
+    - Позволяет эффективно обучаться на задачах, где порядок и "дальние" связи важнее, чем простое соседство.
+
+    Что принимается на вход:
+    ------------------------
+    - x: shape [batch, seq_len, embed_dim] — обычный batched-embed тензор.
+    - mask (опционально): shape [seq_len, seq_len] — маска для автогерерации или causal attention.
+
+    Какие параметры важны:
+    ----------------------
+    - num_heads: сколько attention heads внутри (обычно 4, 8, 16...).
+    - embed_dim: исходная размерность входного тензора.
+    - head_size: размер одной attention-head (обычно embed_dim // num_heads).
+    - max_seq_len: максимальная длина последовательности для маски.
+
+    Что возвращает:
+    ---------------
+    - output: shape [batch, seq_len, embed_dim] — результат применения всех attention heads.
+    - (опционально) cache: кэш для Q/K/V (нужно для генерации по одному токену).
+
+    Особенности реализации:
+    -----------------------
+    - Оптимизированно работает через матричные умножения (без python for циклов!).
+    - Включена поддержка causal attention (маска, предотвращающая «заглядывание в будущее»).
+    - Является ядром любого трансформера (и LLM!).
 
     Пример использования:
-        >>> mha = MultiHeadAttention(num_heads=8, emb_size=512, head_size=64, max_seq_len=1024)
-        >>> x = torch.randn(2, 50, 512)
-        >>> out, cache = mha(x)
-        >>> print(out.shape)
+    ---------------------
+        >>> attn = MultiHeadAttention(num_heads=8, embed_dim=256, head_size=32, max_seq_len=1024)
+        >>> x = torch.randn(2, 128, 256)  # [batch, seq_len, embed_dim]
+        >>> context, _ = attn(x)
+        >>> print(context.shape)  # torch.Size([2, 128, 256])
+
+    Где прочитать подробнее:
+    -------------------------
+    - Attention is All You Need (Vaswani et al, 2017): https://arxiv.org/abs/1706.03762
+    - Illustrated Transformer (blog): https://jalammar.github.io/illustrated-transformer/
     """
 
     def __init__(
@@ -44,32 +77,59 @@ class MultiHeadAttention(nn.Module):
         dropout: float = 0.1,
     ):
         """
-        Инициализация многоголового внимания.
+        Конструктор многоголового внимания (MultiHeadAttention).
 
-        Параметры:
-            num_heads (int): Количество голов внимания. Типичные значения: 4-16
-            emb_size (int): Размерность входных и выходных эмбеддингов
-            head_size (int): Размерность каждой головы внимания (обычно emb_size // num_heads)
-            max_seq_len (int): Максимальная длина последовательности
-            dropout (float): Вероятность dropout (по умолчанию 0.1)
+        Здесь создаются все параметры и внутренние слои для эффективного параллельного внимания (attention) сразу из нескольких "голов".
 
-        Контрольные значения:
-            - num_heads * head_size должно равняться emb_size
-            - head_size обычно выбирают 32-128
-            - max_seq_len зависит от задачи (512 для BERT, 2048 для GPT-3)
+        Аргументы:
+        ----------
+        num_heads : int
+            Сколько attention-heads будет внутри слоя.
+            Каждая “голова” учится видеть уникальные зависимости в тексте. Обычно это 4, 8, 16 и т.п.
+            Чем больше голов — тем богаче контекст, но и больше памяти.
+        emb_size : int
+            Сколько float-значений в каждом входном векторе (размерность embedding).
+            Обычно это 256, 512, 768, 1024 и т.д.
+        head_size : int
+            Сколько компонент будет у каждой головы внимания.
+            Важно: num_heads * head_size должно ровно совпадать с emb_size!
+            Обычно head_size = emb_size // num_heads.
+        max_seq_len : int
+            Максимально допустимая длина последовательности для attention/маски/генерации.
+            Определяет размер буферов для causal mask.
+        rope : RoPE, по умолчанию None
+            Объект Rotary Positional Encoding (если хотите привнести продвинутое позиционное кодирование в attention).
+            Не обязателен, но нужен для современных LLM (Llama, Mistral и пр.).
+        dropout : float, по умолчанию 0.1
+            Величина dropout (регуляризации) — помогает борьбе с переобучением. Чем больше, тем сильнее регуляризация.
+
+        Внутри конструктора происходит:
+        -------------------------------
+        - Создаются три линейных слоя для Q, K, V (“где смотреть” и “что вытаскивать” в attention).
+        - Генерируется нижнетреугольная causal-маска (запрещает видеть будущее для автогерерации).
+        - Создаётся финальный линейный слой для склейки всех голов в одно пространство emb_size.
+        - Вводится dropout (случайное зануление, чтобы не было сильной зависимости внимания к отдельным "плейсам").
+
+        Пример:
+        -------
+            >>> attn = MultiHeadAttention(num_heads=8, emb_size=256, head_size=32, max_seq_len=1024)
         """
         super().__init__()
-        self._heads = nn.ModuleList(
-            [
-                HeadAttention(
-                    emb_size=emb_size,
-                    head_size=head_size,
-                    max_seq_len=max_seq_len,
-                    rope=rope,
-                )
-                for _ in range(num_heads)
-            ]
+        self._num_heads = num_heads
+        self._head_size = head_size
+        self._max_seq_len = max_seq_len
+        self._rope = rope
+
+        self._q = nn.Linear(emb_size, num_heads * head_size)
+        self._k = nn.Linear(emb_size, num_heads * head_size)
+        self._v = nn.Linear(emb_size, num_heads * head_size)
+
+        # Создание causal маски
+        mask = torch.tril(torch.ones(max_seq_len, max_seq_len))
+        self.register_buffer(
+            "_tril_mask", mask.bool() if hasattr(torch, "bool") else mask.byte()
         )
+        
         self._layer = nn.Linear(head_size * num_heads, emb_size)
         self._dropout = nn.Dropout(dropout)
 
@@ -81,61 +141,116 @@ class MultiHeadAttention(nn.Module):
         cache: list = None,
     ):
         """
-        Прямой проход (forward):
-        Для каждого токена оценивает "важность" остальных токенов сразу через несколько attention-блоков.
+        Основной шаг \"многоголового внимания\": находит взаимосвязи между токенами 
+        в последовательности сразу из нескольких “ракурсов” (attention heads).
 
-        Подробное описание преобразований тензоров:
-        1. Входной тензор [batch_size, seq_len, emb_size] разделяется на N голов:
-           - Каждая голова получает тензор [batch_size, seq_len, head_size]
-        2. Каждая голова вычисляет attention:
-           - Вход: [batch_size, seq_len, head_size]
-           - Выход: [batch_size, seq_len, head_size]
-        3. Конкатенация результатов:
-           - Объединенный выход: [batch_size, seq_len, num_heads * head_size]
-        4. Линейная проекция:
-           - Выход: [batch_size, seq_len, emb_size]
-        5. Применение dropout
+        Что делает этот метод:
+        ----------------------
+        - Для каждого токена сравнивает его с остальными во входной последовательности.
+        - Делает это одновременно через несколько attention heads (каждая head видит текст по-своему).
+        - Итоговое “внимание” — это взвешенная сумма других токенов (контекста) для каждого токена.
+        - Можно использовать кэш для генерации длинных последовательностей по одному токену (ускоряет инференс).
 
-        Args:
-            x (Tensor[float]): [batch, seq_len, emb_size] — вход
-            mask (Optional[Tensor[bool]]): маска позиции [seq_len, seq_len]
-            use_cache (bool): использовать ли key-value кэш (для генерации)
-            cache (list): предыдущие значения KV для ускорения
+        Аргументы:
+        ----------
+        x : torch.Tensor
+            Входной тензор формы [batch, seq_len, emb_size].
+            Это ваши входные эмбеддинги (обычно после token + positional embedding).
+        mask : torch.Tensor, опционально
+            Матрица формы [seq_len, seq_len], задающая “разрешения” — кто может смотреть на кого (например, causal mask).
+            Если не указана — используется внутренняя маска (например, для autoregressive генерации).
+        use_cache : bool, по умолчанию True
+            Нужно ли использовать кэш для KV attention (важно для ускорения генерации по одному токену).
+        cache : list, опционально
+            Предыдущий кэш Key/Value — для генерации текста по частям.
 
-        Returns:
-            out (Tensor[float]): [batch, seq_len, emb_size] — результат MHA
-            kv_caches (list): списки новых KV-кэшей (если используется)
+        Возвращает:
+        -----------
+        - output: torch.Tensor формы [batch, seq_len, emb_size] — результат применения multi-head attention.
+        - kv_caches: список новых KV для кэширования при генерации (или None).
 
-        Типичный паттерн:
-            Вход: [batch, seq, emb] → N голов [batch, seq, head_size] →
-                → concat [batch, seq, N*head_size] → проекция → dropout
-
-        Пример преобразований для emb_size=512, num_heads=8:
-        Вход: [4, 100, 512]
-        -> Каждая голова: [4, 100, 64]
-        -> После внимания: 8 x [4, 100, 64]
-        -> Конкатенация: [4, 100, 512]
-        -> Проекция: [4, 100, 512]
-        -> Dropout: [4, 100, 512]
+        Важно:
+        -------
+        - Shape входа всегда [batch, seq_len, emb_size], выход тот же.
+        - При seq_len > max_seq_len выбросит ошибку (безопасно для контроля переполнения буферов).
+        - При использовании use_cache=True кешируется только последние токены (актуально для LLM).
 
         Пример:
-            >>> out, caches = mha(x)
-            >>> out.shape   # [batch, seq_len, emb_size]
+        -------
+            >>> attn = MultiHeadAttention(num_heads=8, emb_size=256, head_size=32, max_seq_len=1024)
+            >>> x = torch.randn(2, 100, 256)
+            >>> y, kv_cache = attn(x)
+            >>> print(y.shape)  # torch.Size([2, 100, 256])
         """
-        # 1. Вычисляем attention для каждой головы
-        attention_results = []
-        for i, head in enumerate(self._heads):
-            head_cache = cache[i] if cache is not None else None
-            result = head(x, use_cache=use_cache, cache=head_cache)
-            attention_results.append(result)
+        batch_size, seq_len, emb_size = x.shape
 
-        outputs, caches = zip(*attention_results)
-        attention_outputs = list(outputs)
-        kv_caches = list(caches)
+        if seq_len > self._max_seq_len:
+            raise ValueError(
+                f"Длина последовательности {seq_len} превышает максимум {self._max_seq_len}"
+            )
 
-        # 2. Объединяем результаты всех голов
-        concatenated_attention = torch.cat(attention_outputs, dim=-1)
+        # Пропустите тензор x через матрицы Wq, Wk , Wv, чтобы получить матрицы запроса, ключа и значения.
+        k = self._k(x)  # [B, T, hs]
+        q = self._q(x)  # [B, T, hs]
+        v = self._v(x)  # [B, T, hs]
 
+        # Шаг 2: Изменение формы для multi-head
+        # [batch_size, seq_len, num_heads * head_size] 
+        # -> [batch_size, seq_len, num_heads, head_size]
+        q = q.reshape(batch_size, seq_len, self._num_heads, self._head_size)
+        k = k.reshape(batch_size, seq_len, self._num_heads, self._head_size)
+        v = v.reshape(batch_size, seq_len, self._num_heads, self._head_size)
+        
+
+        # 3. Transpose: [B, T, H, hs] -> [B, H, T, hs]
+        q = q.transpose(1, 2)
+        k = k.transpose(1, 2)
+        v = v.transpose(1, 2)
+
+        start_pos = 0
+        if cache is not None:
+            k_cache, v_cache = cache
+            cache_len = k_cache.shape[2]
+            start_pos = cache_len
+        
+        # Пропустите матрицы запроса и ключа через экземпляр rope, чтобы выполнить поворот.
+        if self._rope is not None:
+            # ✅ Применяем RoPE к Q и K (НЕ к V!)
+            q = self._rope(q, start_pos=start_pos)  # [B, T, hs]
+            k = self._rope(k, start_pos=start_pos)  # [B, T, hs]
+
+        # Если cache пришел, то объединяем кэш и одну строку из ключа и значения. Это будут новые key и value  для последующих вычислений.
+        # 5. Кэширование (для autoregressive generation)
+        if cache is not None:
+            k_cache, v_cache = cache
+            k = torch.cat([k_cache, k], dim=2)  # Concat по seq_len (dim=2)
+            v = torch.cat([v_cache, v], dim=2)
+
+        # Перемножим матрицы запроса и ключа (транспонированную), чтобы вычислить матрицу внимания.
+        # И разделить все значения в матрице внимания на корень из head_size.
+        scores = q @ k.transpose(-2, -1) / (self._head_size ** 0.5)
+
+        # Если cache пришел, то маску не накладываем. Иначе наложите на матрицу внимания треугольную маску, созданную при инициализации. Все скрытые значения должны быть приведены к минус бесконечности: float('-inf').
+        if cache is None:
+            scores = scores.masked_fill(
+                ~self._tril_mask[:seq_len, :seq_len], float("-inf")
+            )
+
+        # Применить к матрице внимания (построчно) функцию Softmax.
+        weights = F.softmax(scores, dim=-1)
+
+        # Перемножим матрицу внимания и матрицу значения.
+        x_out = weights @ v  # [B, T, hs]
+
+        # Измените форму тензора на batch_size × seq_len × num_heads*head_size.
+        # Transpose обратно и concatenate heads
+        x_out = x_out.transpose(1, 2)  # [B, T_q, H, hs]
+        x_out = x_out.contiguous()  # Важно для reshape!
+        concatenated_attention = x_out.reshape(batch_size, seq_len, self._num_heads * self._head_size)
+
+        #concatenated_attention = x_out.reshape(batch_size, seq_len, self._num_heads * self._head_size)
+
+        # Пропустите получившийся тензор через последний линейный слой.
         # 3. Проецируем в пространство эмбеддингов
         projected_output = self._layer(concatenated_attention)
 
@@ -143,6 +258,6 @@ class MultiHeadAttention(nn.Module):
         final_output = self._dropout(projected_output)
 
         if use_cache is True:
-            return (final_output, kv_caches)
+            return (final_output, (k, v))
         else:
             return (final_output, None)

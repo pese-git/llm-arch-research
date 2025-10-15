@@ -19,7 +19,7 @@ class TestMultiHeadAttention:
         assert attention is not None
 
         # Check internal attributes
-        assert len(attention._heads) == num_heads
+        assert attention._num_heads == num_heads
         assert attention._layer.in_features == embed_dim
         assert attention._layer.out_features == embed_dim
 
@@ -102,8 +102,10 @@ class TestMultiHeadAttention:
 
         # Check that gradients are computed for learnable parameters
         assert attention._layer.weight.grad is not None
-        if len(attention._heads) > 0:
-            assert attention._heads[0]._q.weight.grad is not None
+        # Проверяем, что также у градиентов весов q/k/v есть значения
+        assert attention._q.weight.grad is not None
+        assert attention._k.weight.grad is not None
+        assert attention._v.weight.grad is not None
 
     def test_device_consistency(self, embed_dim, num_heads, random_embeddings, device):
         """Test that MultiHeadAttention works on correct device."""
