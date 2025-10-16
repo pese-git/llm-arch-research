@@ -24,35 +24,63 @@ from typing import Optional
 
 class RMSNorm(nn.Module):
     """
-    RMS Normalization (Root Mean Square Layer Normalization).
+    RMSNorm (Root Mean Square Layer Normalization) — простая и эффективная альтернатива LayerNorm.
 
-    Нормализует входные данные по последнему измерению используя среднеквадратичное
-    значение вместо среднего, как в стандартном LayerNorm.
+    Назначение:
+    -----------
+    - Нормализует входной тензор по последнему измерению только с помощью RMS (root mean square), без вычитания среднего.
+    - Используется в LLaMA, PaLM и других крупных языковых моделях для лучшей стабильности и ускорения обучения.
+    - В отличие от LayerNorm, не центрирует значения, что особенно полезно для автогерессивных трансформеров с residual-связями.
 
-    Научная суть:
-        - Упрощенный вариант LayerNorm без вычисления среднего, только деление на rms.
-        - Лучшая численная стабильность на больших моделях, меньше вычислений.
-        - Применяется в LLaMA, PaLM и др.
+    Мотивация и математика:
+    -----------------------
+    - Формула для одного слоя и вектора x:
+        rms = sqrt( mean( x ** 2 ) + eps )
+        out = w * ( x / rms )
+      где w — learnable scale, eps — небольшая константа для численной устойчивости.
+    - Нет смещения/вычитания среднего — сигнал сохраняет абсолютные значения, меньше “искажает” автоагрегатные значения на накопленных резидуалах.
 
-        Формула:
-            RMSNorm(x) = (x / sqrt(mean(x²) + eps)) * w   (w — обучаемый вектор)
+    Аргументы конструктора:
+    -----------------------
+    dim : int
+        Размер последнего нормализуемого измерения (обычно совпадает с размером embedding/final head).
+    eps : float, default=1e-6
+        Малое значение для устойчивости (additive epsilon).
 
-    Args:
-        dim (int): размер последнего измерения (обычно emb_size)
-        eps (float): для численной устойчивости
+    Особенности:
+    ------------
+    - Нет батч-нормализации, нет зависимости от размера батча.
+    - Отлично подходит для больших моделей и автогерессии — меньше шуму от residual.
 
-    Пример:
-        >>> norm = RMSNorm(emb_size)
-        >>> out = norm(x)
+    Пример использования:
+    ---------------------
+        >>> norm = RMSNorm(emb_size=256)
+        >>> x = torch.randn(4, 10, 256)
+        >>> out = norm(x)  # возвращает tensor той же формы
+
+    References:
+    -----------
+    - Zhang & Sennrich, "Root Mean Square Layer Normalization", 2019: https://arxiv.org/abs/1910.07467
+    - Применение в LLaMA: https://arxiv.org/abs/2302.13971
+    - HuggingFace implementation: https://github.com/huggingface/transformers/blob/main/src/transformers/models/llama/modeling_llama.py
+
     """
 
     def __init__(self, dim: int, eps: float = 1e-6):
         """
-        Инициализация RMSNorm слоя.
+        Инициализация RMSNorm.
 
         Args:
-            dim: Размерность нормализуемого измерения
-            eps: Малое значение для численной стабильности (по умолчанию 1e-6)
+        -----
+        dim : int
+            Последнее нормализуемое измерение (обычно размерность embedding или hidden).
+        eps : float
+            Малое значение для устойчивости (по умолчанию 1e-6).
+
+        Внутри:
+        -------
+        - Создаётся обучаемый scale weight w для каждой компоненты dim.
+        - Сохраняется параметр eps для добавления к RMS.
         """
         super().__init__()
         self._eps = eps
@@ -60,16 +88,28 @@ class RMSNorm(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Прямой проход через RMSNorm слой.
-
+        Прямой проход через RMSNorm.
+    
         Args:
-            x: Входной тензор формы [..., dim]
-
+        -----
+        x : torch.Tensor
+            Входной тензор любого shape с последней размерностью dim.
+    
         Returns:
-            Нормализованный тензор той же формы, что и входной
-
-        Формула:
-        output = w * (x / sqrt(mean(x²) + eps))
+        --------
+        torch.Tensor — тот же shape, что и вход x, но нормализованный по RMS на последнем измерении.
+    
+        Алгоритм:
+        ---------
+        - Вычислить rms = sqrt( mean( x**2, dim=-1, keepdim=True ) + eps )
+        - Поделить x на rms
+        - Помасштабировать обучаемым весом w
+    
+        Пример:
+        -------
+            >>> norm = RMSNorm(256)
+            >>> out = norm(torch.randn(2, 10, 256))
+    
         """
         # Вычисление RMS (Root Mean Square) по последнему измерению
         rms = (x.pow(2).mean(-1, keepdim=True) + self._eps) ** 0.5
