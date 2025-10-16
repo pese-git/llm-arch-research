@@ -33,29 +33,75 @@ from llm.core.positional_embeddings import PositionalEmbeddings
 
 class GPT(BaseModel):
     """
-    Original GPT (Generative Pre-trained Transformer) модель.
+    GPT (Generative Pretrained Transformer) — автогерессивная языковая модель по мотивам оригинального GPT/GPT-2 architecture.
 
-    Первая версия трансформерной архитектуры от OpenAI, предназначенная
-    для генеративного предобучения на текстовых данных.
+    Назначение:
+    -----------
+    - Позволяет предсказывать и генерировать последовательности текста, обучаясь на задаче language modeling (предсказывать следующий токен).
+    - Класс реализует архитектуру classic Transformer Decoder Stack с masked multi-head attention и token/positional embeddings.
+    - Используется как базовая модель для генерации, zero-/few-shot, задач обучения с подкреплением и пр.
 
-    Args:
-        config: Словарь конфигурации с параметрами:
-            - vocab_size: Размер словаря токенов
-            - embed_dim: Размерность векторных представлений
-            - num_heads: Количество голов внимания
-            - num_layers: Количество декодерных слоев
-            - max_position_embeddings: Максимальная длина последовательности
-            - dropout: Вероятность dropout
+    Архитектурные особенности:
+    --------------------------
+    - Embedding-слои для токенов (token_embeddings) и позиций (position_embeddings).
+    - Stack из N декодер-блоков (MultiHeadAttention + FeedForward + residual + LayerNorm).
+    - Masked self-attention — каждый токен видит только свои и предыдущие, обеспечивая автогерессию.
+    - LayerNorm до проекции на словарь (pre-LN).
+    - Поддержка efficient KV кэша — ускоряет autoregressive inference/generation.
 
-    Attributes:
-        _token_embeddings: Слой векторных представлений токенов
-        _position_embeddings: Слой позиционных эмбеддингов
-        _decoders: Список декодерных слоев
-        _norm: Финальный слой нормализации
-        _linear: Выходной линейный слой
+    Основные параметры:
+    -------------------
+    config: dict в формате {
+        vocab_size,        # размер словаря токенов
+        embed_dim,         # размерность эмбеддинга
+        num_heads,         # количество attention heads
+        num_layers,        # глубина модели (число блоков)
+        max_position_embeddings,
+        dropout
+    }
+
+    Формула и поток данных:
+    -----------------------
+        x -> token_embeddings -> + position_embeddings -> dropout ->
+           -> stack([DecoderBlock]) ->
+           -> LayerNorm ->
+           -> Linear(out_dim=vocab_size) -> output_logits
+
+    Пример использования:
+    ---------------------
+        >>> gpt = GPT({...})
+        >>> tokens = torch.tensor([[12, 123, 44]])
+        >>> logits = gpt(tokens)
+        >>> generated = gpt.generate(tokens, max_new_tokens=10)
+
+    References:
+    -----------
+    - Radford et al., "Improving Language Understanding by Generative Pre-Training" (GPT-1, 2018)
+      https://cdn.openai.com/research-covers/languageunsupervised/language_understanding_paper.pdf
+    - Original BPE Tokenizer code: https://github.com/openai/gpt-2/blob/master/src/encoder.py
+    - Формула masked self-attention: Vaswani et al., "Attention is All You Need", 2017
+      https://arxiv.org/abs/1706.03762
     """
 
     def __init__(self, config):
+        """
+        Инициализация модели GPT.
+
+        Args:
+        -----
+        config: dict
+            Параметры архитектуры:
+              vocab_size: int — размер словаря токенов
+              embed_dim: int — размерность эмбеддинга
+              num_heads: int — количество attention-heads
+              num_layers: int — число Transformer блоков
+              max_position_embeddings: int — макс. длина последовательности
+              dropout: float — dropout
+
+        Внутри:
+        -------
+        - Создаёт слой эмбеддингов, позиционку, стек декодеров, нормализацию, линейную проекцию.
+        """
         super().__init__(config)
 
         # Инициализация слоев
@@ -88,13 +134,22 @@ class GPT(BaseModel):
         return self._max_seq_len
 
     def forward(self, x: torch.Tensor, attention_mask=None) -> torch.Tensor:
-        """Прямой проход через GPT
+        """
+        Прямой проход для получения логитов по последовательности токенов.
 
         Args:
-            x: Входной тензор [batch_size, seq_len]
+        -----
+        x : torch.Tensor [batch, seq_len]
+            Индексы входных токенов.
+        use_cache : bool, optional
+            Использовать ли кэш attention (ускоряет инференс, важно для генерации)
+        cache : list, optional
+            Список старых KV (key/value)-кэшей
 
         Returns:
-            Тензор логитов [batch_size, seq_len, vocab_size]
+        --------
+        logits: [batch, seq_len, vocab_size]   (логиты для softmax по словарю)
+        new_cache: кэш KV после прохода
         """
         # Проверка длины последовательности
         if x.size(1) > self._max_seq_len:
@@ -141,97 +196,53 @@ class GPT(BaseModel):
         attention_mask: torch.Tensor = None,  # Добавляем для совместимости с HF
         **kwargs,  # Игнорируем остальные параметры
     ) -> torch.Tensor:
-        """Авторегрессивная генерация текста.
-
-        Параметры:
-            x: Входной тензор с индексами токенов формы [batch_size, seq_len],
-               где batch_size - размер батча, seq_len - длина последовательности.
-            max_new_tokens: Максимальное количество новых токенов для генерации.
-            do_sample: Флаг выбора режима генерации:
-                - True: вероятностное сэмплирование
-                - False: жадный поиск (argmax)
-            temperature: Параметр температуры для сэмплирования:
-                - >1.0 - более случайные результаты
-                - 1.0 - нейтральное значение
-                - <1.0 - более предсказуемые результаты
-                Должна быть > 0 (по умолчанию: 1.0)
-            top_k: Если задан (и do_sample=True), используется top-k сэмплирование:
-                - Выбираются только top_k самых вероятных токенов
-                - Остальным токенам устанавливается вероятность 0
-                - None: отключено (по умолчанию)
-            top_p: Если задан (и do_sample=True), используется nucleus (top-p) сэмплирование:
-                - Выбираются токены с кумулятивной вероятностью ≤ top_p
-                - Гарантируется, что хотя бы один токен остаётся (даже если его вероятность > top_p)
-                - None: отключено (по умолчанию)
-                - Должен быть в диапазоне (0, 1]
-
-        Возвращает:
-            torch.Tensor: Тензор с расширенной последовательностью токенов формы
-                          [batch_size, seq_len + max_new_tokens]
-
-        Исключения:
-            ValueError: Если входная последовательность длиннее max_seq_len
-            ValueError: Если temperature <= 0
-            ValueError: Если одновременно заданы top_k и top_p
-            ValueError: Если top_k задан и ≤ 0
-            ValueError: Если top_p задан и не в диапазоне (0, 1]
-
-        Примеры:
-            >>> # Жадная генерация
-            >>> output = model.generate(input_ids, max_new_tokens=10, do_sample=False)
-            >>>
-            >>> # Вероятностная генерация с top-k
-            >>> output = model.generate(input_ids, max_new_tokens=10, do_sample=True, top_k=50)
-            >>>
-            >>> # Nucleus sampling (top-p)
-            >>> output = model.generate(input_ids, max_new_tokens=10, do_sample=True, top_p=0.9)
-            >>>
-            >>> # Комбинация температуры и top-k
-            >>> output = model.generate(input_ids, max_new_tokens=10, do_sample=True,
-            ...                        temperature=0.7, top_k=50)
-
-        Примечания:
-            1. Для детерминированных результатов в режиме сэмплирования
-               зафиксируйте random seed (torch.manual_seed).
-            2. Температура влияет только на режим сэмплирования (do_sample=True).
-            3. Одновременное использование top_k и top_p запрещено.
-            4. При do_sample=False параметры top_k, top_p и temperature игнорируются.
-
-        Args:
-            x (torch.Tensor): Входной тензор с индексами токенов формы [batch_size, seq_len],
-                              где batch_size - размер батча, seq_len - длина последовательности.
+        """
+        Авторегрессивная генерация текста с поддержкой жадного поиска (greedy), вероятностного сэмплирования с температурой,
+        top-k и nucleus (top-p) sampling.
+    
+        Аргументы:
+            x (torch.Tensor): Входной тензор с индексами токенов, форма [batch_size, seq_len].
             max_new_tokens (int): Максимальное количество новых токенов для генерации.
-            do_sample (bool): Флаг выбора режима генерации:
-                              - True: вероятностное сэмплирование
-                              - False: жадный поиск (argmax)
-            temperature (float): Параметр температуры для сэмплирования:
-                              - >1.0 - более случайные результаты
-                              - 1.0 - нейтральное значение
-                              - <1.0 - более предсказуемые результаты
-                              Должна быть > 0 (по умолчанию: 1.0)
-
-        Returns:
-            torch.Tensor: Тензор с расширенной последовательностью токенов формы
-                          [batch_size, seq_len + max_new_tokens]
-
-        Raises:
-            ValueError: Если входная последовательность длиннее max_seq_len
-            ValueError: Если temperature <= 0
-
-        Examples:
-            >>> # Жадная генерация
-            >>> output = model.generate(input_ids, max_new_tokens=10, do_sample=False)
-            >>>
+            do_sample (bool): Если True — вероятностное сэмплирование; если False — жадная генерация (argmax).
+            temperature (float): Температура для управления случайностью (>0, влияет только если do_sample=True).
+                                 >1.0 — более случайно, <1.0 — более детерминированно.
+            top_k (int, опц.): При do_sample=True ограничивает выбор top_k самых вероятных токенов (top-k sampling).
+            top_p (float, опц.): При do_sample=True включает top-p (nucleus) sampling: кумулятивная вероятность ≤ top_p.
+                                 Должно быть в (0, 1].
+            attention_mask (torch.Tensor, опц.): Внешняя маска внимания (для совместимости с HuggingFace).
+            **kwargs: Игнорируются.
+    
+        Возвращает:
+            torch.Tensor: Последовательность токенов [batch_size, seq_len + max_new_tokens].
+    
+        Исключения:
+            ValueError: Если x длиннее max_seq_len модели.
+            ValueError: Если temperature ≤ 0.
+            ValueError: Если одновременно заданы top_k и top_p.
+            ValueError: Если top_k ≤ 0.
+            ValueError: Если top_p вне диапазона (0, 1].
+    
+        Примеры:
+            >>> # Жадная (детерминированная) генерация
+            >>> output = model.generate(input_ids, max_new_tokens=12, do_sample=False)
             >>> # Вероятностная генерация с температурой
-            >>> output = model.generate(input_ids, max_new_tokens=10, do_sample=True, temperature=0.7)
-            >>>
-            >>> # Более случайная генерация
-            >>> output = model.generate(input_ids, max_new_tokens=10, do_sample=True, temperature=1.5)
-
-        Note:
-            Для детерминированных результатов в режиме сэмплирования
-            зафиксируйте random seed (torch.manual_seed).
-            Температура влияет только на режим сэмплирования (do_sample=True).
+            >>> output = model.generate(input_ids, max_new_tokens=12, do_sample=True, temperature=0.8)
+            >>> # Top-k сэмплирование
+            >>> output = model.generate(input_ids, max_new_tokens=12, do_sample=True, top_k=50)
+            >>> # Top-p (nucleus) sampling
+            >>> output = model.generate(input_ids, max_new_tokens=12, do_sample=True, top_p=0.92)
+            >>> # Комбинация температуры и top-k
+            >>> output = model.generate(input_ids, max_new_tokens=12, do_sample=True, temperature=1.0, top_k=100)
+    
+        Примечания:
+            - Для детерминированных выборок зафиксируйте random seed через torch.manual_seed.
+            - Параметры temperature, top_k, top_p применимы только если do_sample=True.
+            - Одновременное использование top_k и top_p не допускается.
+            - Модель всегда возвращает тензор индексов токенов; для получения логитов используйте прямой вызов forward.
+    
+        Ссылки:
+            - Holtzman et al., "The Curious Case of Neural Text Degeneration" (nucleus sampling): https://arxiv.org/abs/1904.09751
+            - Оригинальный GPT-2: https://cdn.openai.com/better-language-models/language-models.pdf
         """
         for _ in range(max_new_tokens):
             # 1. Обрезаем вход, если последовательность слишком длинная
