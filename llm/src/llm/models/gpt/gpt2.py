@@ -30,23 +30,69 @@ from llm.core.feed_forward import FeedForward
 
 class GPT2(BaseModel):
     """
-    GPT2 — автогерессивная языковая модель, архитектура Transformer, предложенная OpenAI.
+    GPT-2 — масштабируемый автогерессивный языковой трансформер второго поколения от OpenAI (2019).
 
-    Научная суть:
-        - Масштабируемый автогерессивный трансформер для предсказания токенов слева направо.
-        - Главное отличие от классической GPT: порядок layer normalization ПЕРЕД attention и FFN.
-        - Используется GELU, efficient KV-cache, несет наследие классической GPT, но делает архитектуру глубже/шире.
+    Назначение:
+    -----------
+    - Позволяет предсказывать и порождать последовательности текста по одному токену, будучи обученным на задаче language modeling.
+    - Модель реализует архитектуру decoder-only Transformer с Pre-LN (LayerNorm перед attention и FFN).
+    - Используется для генерации, обучения с подкреплением для RLHF, zero/few-shot inference, чат-ботов и др.
 
-    Args:
-        config (dict): параметры архитектуры (vocab_size, embed_dim, num_heads, num_layers, max_position_embeddings, dropout)
+    Архитектурные особенности:
+    --------------------------
+    - Token и positional embeddings (learnable, как в GPT-2 оригинале).
+    - Stack из N блоков Decoder (MultiHeadAttention с causal mask, Residual, Pre-LayerNorm, GELU FFN).
+    - KV attention-кэш (ускоряет autoregressive generation, критически важно для LLM).
+    - Использует GELU как функцию активации.
+    - Поддержка dropout на каждом этапе.
+
+    Основные параметры:
+    -------------------
+    config: dict — параметры модели:
+        vocab_size,         # размер словаря токенов
+        embed_dim,          # размерность эмбеддинга
+        num_heads,          # количество attention голов
+        num_layers,         # глубина модели (число блоков)
+        max_position_embeddings,
+        dropout
+
+    Процессинг:
+    -----------
+        x (индексы токенов) → token_embeddings + position_embeddings → dropout
+        → stack Decoder blocks (masked attention, pre-LN)
+        → LayerNorm
+        → Linear(out_dim=vocab_size) → выходные логиты
 
     Пример использования:
-        >>> model = GPT2({"vocab_size": 50257, ...})
-        >>> logits = model(input_ids)
-        >>> out = model.generate(input_ids, max_length=20)
+    ---------------------
+        >>> gpt2 = GPT2({...})
+        >>> logits = gpt2(input_ids)
+        >>> output = gpt2.generate(input_ids, max_new_tokens=20, do_sample=True)
+
+    References:
+    -----------
+    - Radford et al., "Language Models are Unsupervised Multitask Learners" (GPT-2, 2019): https://cdn.openai.com/better-language-models/language-models.pdf
+    - HuggingFace GPT-2: https://github.com/huggingface/transformers/blob/main/src/transformers/models/gpt2/modeling_gpt2.py
+    - Репликация в NanoGPT: https://github.com/karpathy/nanoGPT
     """
 
     def __init__(self, config):
+        """
+        Инициализация GPT-2.
+
+        Args:
+            config (dict): Параметры архитектуры:
+                vocab_size: int — размер словаря
+                embed_dim: int — размерность эмбеддинга
+                num_heads: int — количество attention-голов
+                num_layers: int — количество декодер-блоков
+                max_position_embeddings: максимальная длина последовательности
+                dropout: float — dropout
+
+        Внутри:
+        -------
+        - Создаёт токеновые и позиционные эмбеддинги, стек декодеров, финальный LayerNorm и линейную проекцию в словарь.
+        """
         super().__init__(config)
 
         # Инициализация слоев
@@ -83,18 +129,19 @@ class GPT2(BaseModel):
         self, x: torch.Tensor, use_cache: bool = True, cache: list = None
     ) -> tuple:
         """
-        Прямой проход GPT2:
-        - Все слои работают как autoregressive transformer (masked self-attention).
-        - При use_cache=True возвращает также новый кэш KV attention (ускоряет генерацию).
+        Прямой проход для batch of sequences (получение логитов по токенам).
+
         Args:
-            x (Tensor): Входные индексы токенов [batch, seq_len]
-            use_cache (bool): Кэшировать KV attention для ускорения autoregressive генерации
-            cache (list|None): Список KV-кэшей от предыдущих шагов (или None)
+            x (torch.Tensor): Входной тензор с токенами [batch, seq_len]
+            use_cache (bool): Использовать/возвращать кэш KV attention (ускоряет генерацию)
+            cache (list / None): Внешний кэш KV attention (передаётся при генерации)
+
         Returns:
-            logits (Tensor): [batch, seq_len, vocab_size]
-            cache (list): новый кэш если use_cache=True, иначе None
+            logits: torch.Tensor [batch, seq_len, vocab_size]
+            new_cache: новый кэш KV attention (или None)
+
         Пример:
-            >>> logits, cache = model.forward(x, use_cache=True)
+            >>> logits, cache = gpt2(x, use_cache=True)
         """
         # Проверка длины последовательности (только при отсутствии кэша)
         if cache is None and x.size(1) > self._max_seq_len:
@@ -169,22 +216,56 @@ class GPT2(BaseModel):
         use_cache: bool = True,
     ) -> torch.Tensor:
         """
-        Генерация текста с использованием autoregressive трансформера (GPT2).
-        Поддерживаются greedy, sampling, top-k/top-p (nucleus sampling) режимы.
-        Args:
-            x (Tensor[int]): начальная последовательность [batch, seq_len]
-            max_new_tokens (int): сколько токенов сгенерировать
-            do_sample (bool): использовать стохастическое сэмплирование вместо жадного выбора
-            temperature (float): коэффициент сглаживания логитов (низкое — более консервативно)
-            top_k (int|None): ограничить выбор top-k наиболее вероятных токенов
-            top_p (float|None): ограничить суммарную вероятность (nucleus sampling)
-            use_cache (bool): ускорять autoregressive инференс
-        Returns:
-            output (Tensor[int]): сгенерированный тензор токенов [batch, seq_len + max_new_tokens]
-        Пример:
-            >>> prompt = tokenizer.encode('Привет', return_tensors="pt")
-            >>> output = model.generate(prompt, max_new_tokens=20, do_sample=True)
-            >>> print(tokenizer.decode(output[0]))
+        Авторегрессивная генерация токенов с поддержкой greedy, temperature, top-k, top-p sampling и KV-кэша.
+    
+        Аргументы:
+            x (torch.Tensor): Входной тензор с индексами токенов [batch_size, seq_len].
+            max_new_tokens (int): Максимальное количество новых токенов для генерации.
+            do_sample (bool): Режим генерации:
+                - True: вероятностное сэмплирование (random sampling)
+                - False: жадный (greedy) поиск (выбор argmax на каждом шаге)
+            temperature (float): Температура распределения (>0, по умолчанию 1.0).
+                - >1.0 — генерация более "творческая"/приподнятая вероятность "редких" токенов;
+                - <1.0 — более предсказуемый и суженный выбор.
+            top_k (int, опционально): Если задан, sampling только из top_k самых вероятных токенов (top-k sampling).
+            top_p (float, опционально): Если задан, sampling только из токенов, кумулятивная вероятность которых ≤ top_p (nucleus/top-p sampling, см. Holtzman et al., 2019).
+            use_cache (bool, по умолчанию True): Использовать кэш attention KV для ускорения авторегрессии.
+    
+        Возвращает:
+            torch.Tensor: Тензор индексов токенов [batch_size, seq_len + max_new_tokens].
+    
+        Исключения:
+            ValueError: Если x длиннее максимальной длины (max_seq_len).
+            ValueError: Если temperature ≤ 0.
+            ValueError: Если одновременно заданы top_k и top_p.
+            ValueError: Если top_k ≤ 0.
+            ValueError: Если top_p не в диапазоне (0, 1].
+    
+        Примеры использования:
+            >>> # Жадная генерация
+            >>> output = model.generate(input_ids, max_new_tokens=20, do_sample=False)
+    
+            >>> # Сэмплирование с температурой
+            >>> output = model.generate(input_ids, max_new_tokens=20, do_sample=True, temperature=0.8)
+    
+            >>> # Top-k sampling
+            >>> output = model.generate(input_ids, max_new_tokens=20, do_sample=True, top_k=50)
+    
+            >>> # Top-p (nucleus) sampling
+            >>> output = model.generate(input_ids, max_new_tokens=20, do_sample=True, top_p=0.92)
+    
+            >>> # Комбинация температуры и top-k
+            >>> output = model.generate(input_ids, max_new_tokens=20, do_sample=True, temperature=0.7, top_k=40)
+    
+        Примечания:
+            - Для детерминированных результатов используйте torch.manual_seed.
+            - temperature, top_k, top_p работают только при do_sample=True.
+            - Только один из top_k/top_p может быть задан одновременно.
+            - Метод всегда возвращает индексы токенов (ids); для получения логитов используйте forward.
+    
+        Ссылки:
+            - Holtzman et al., "The Curious Case of Neural Text Degeneration" (nucleus sampling): https://arxiv.org/abs/1904.09751
+            - Оригинальная статья GPT-2: https://cdn.openai.com/better-language-models/language-models.pdf
         """
         cache = None
 
