@@ -6,37 +6,45 @@ from .multi_head_attention import MultiHeadAttention
 
 class Decoder(nn.Module):
     """
-    Базовый автогерессивный блок-декодер трансформера (без кэша KV).
+    Decoder — базовый transformer decoder block (pre-LN), классический строительный блок современных языковых моделей.
 
-    Предназначен для:
-    - Обработки последовательностей с учетом контекста (самовнимание)
-    - Постепенного генерирования выходной последовательности
-    - Учета масок для предотвращения "заглядывания в будущее"
+    Назначение:
+    -----------
+    - Инкапсулирует архитектуру: norm → multi-head self-attention → residual → norm → feed-forward → residual
+    - Подходит как для LLM/GPT, так и для любых autoregressive sequence моделей.
+    - Использует masked self-attention: каждый токен видит только предыдущие (никакого \"заглядывания в будущее\").
+    - Стабильность обеспечивается через residual connections и LayerNorm после каждого sub-layer.
 
-    Алгоритм работы:
-    1. Входной тензор (batch_size, seq_len, emb_size)
-    2. Многоголовое внимание с residual connection и LayerNorm
-    3. FeedForward сеть с residual connection и LayerNorm
-    4. Выходной тензор (batch_size, seq_len, emb_size)
+    Почему это важно?
+    -----------------
+    - Все современные языковые модели состоят из подобных блоков, соединённых в стек.
+    - Алгоритм residual+norm позволяет проще обучать очень глубокие сети.
+    - Разделение на attention+FFN дает и локальные, и глобальные взаимодействия между токенами.
 
-    Основные характеристики:
-    - Поддержка масок внимания
-    - Residual connections для стабилизации градиентов
-    - Layer Normalization после каждого sub-layer
-    - Конфигурируемые параметры внимания
+    Формула работы (псевдокод):
+    ---------------------------
+        y1 = norm1(x)
+        attn_out = Attention(y1)
+        x2 = x + attn_out        # residual
+        y2 = norm2(x2)
+        ffn_out = FFN(y2)
+        out = x2 + ffn_out       # residual
 
-    Научная суть:
-        - Осуществляет посимвольное предсказание: каждый токен видит только предыдущие (masked attention)
-        - Состоит из self-attention + feedforward + residual + нормализация
-        - Residual connection и normalization дают стабильность и градиентный “flow” при обучении
-        - Механизм предложен в Vaswani et al., "Attention is All You Need", 2017
-    Args:
-        num_heads (int): количество attention-голов
-        emb_size (int): размер эмбеддинга
-        head_size (int): размер одной attention-головы
-        max_seq_len (int): максимальная длина последовательности
-        dropout (float): вероятность dropout
+    Архитектурные особенности:
+    --------------------------
+    - Поддержка внимания с маской (causal mask или произвольная attention mask)
+    - Residual connections для каждого блока (attention, FFN)
+    - Pre-LN (norm перед каждым подблоком)
+    - Зависит от переданных блоков self_attention и feed_forward, а не их реализации
+
+    References:
+    -----------
+    - Vaswani et al., \"Attention is All You Need\" (2017): https://arxiv.org/abs/1706.03762
+    - Illustrated Transformer: https://jalammar.github.io/illustrated-transformer/
+    - Transformer Circuits (дружественное описание): https://transformer-circuits.pub/2021/framework/index.html
+
     Пример:
+    -------
         >>> decoder = Decoder(num_heads=8, emb_size=512, head_size=64, max_seq_len=1024)
         >>> x = torch.randn(1, 10, 512)
         >>> out = decoder(x)
@@ -52,14 +60,27 @@ class Decoder(nn.Module):
         dropout: float = 0.1,
     ):
         """
-        Инициализация декодера.
+        Инициализация стандартного decoder-блока для Transformer.
 
-        Параметры:
-            num_heads: int - количество голов внимания
-            emb_size: int - размерность эмбеддингов
-            head_size: int - размерность каждой головы внимания
-            max_seq_len: int - максимальная длина последовательности
-            dropout: float (default=0.1) - вероятность dropout
+        Аргументы:
+        ----------
+        num_heads: int
+            Количество attention голов (как делить emb_size на heads)
+        emb_size: int
+            Размерность эмбеддингов (и входа и выхода)
+        head_size: int
+            Размерность одной attention-головы (emb_size = num_heads * head_size)
+        max_seq_len: int
+            Максимальная длина последовательности (важно для mask)
+        dropout: float, default=0.1
+            Dropout после внимания и FFN
+
+        Внутри:
+        -------
+        - Создаёт слой MultiHeadAttention (masked/casual)
+        - Создаёт двухслойный FeedForward (SwiGLU или GELU)
+        - Применяет 2 слоя LayerNorm для стабилизации градиентов
+        - Все блоки реализованы как PyTorch-модули
         """
         super().__init__()
         self._heads = MultiHeadAttention(
@@ -75,20 +96,26 @@ class Decoder(nn.Module):
 
     def forward(self, x: torch.Tensor, mask: torch.Tensor = None) -> torch.Tensor:
         """
-        Прямой проход через декодер.
+        Один прямой проход через Transformer decoder block.
 
-        Вход:
-            x: torch.Tensor - входной тензор [batch_size, seq_len, emb_size]
-            mask: torch.Tensor (optional) - маска внимания [seq_len, seq_len]
+        Аргументы:
+        ----------
+        x : torch.Tensor
+            Входной тензор [batch_size, seq_len, emb_size]
+        mask : torch.Tensor, optional
+            Attention/causal mask (по умолчанию None, тогда будет casual mask по длине seq_len)
 
         Возвращает:
-            torch.Tensor - выходной тензор [batch_size, seq_len, emb_size]
+        -----------
+        out : torch.Tensor
+            Выходной тензор той же формы, что и x
 
-        Алгоритм forward:
-        1. Применяем MultiHeadAttention к входу
-        2. Добавляем residual connection и LayerNorm
-        3. Применяем FeedForward сеть
-        4. Добавляем residual connection и LayerNorm
+        Алгоритм:
+        ---------
+        - Применяем attention к нормализованному входу (layernorm)
+        - Добавляем residual-связь (attention + исходный вход)
+        - Применяем FFN к нормализованному результату (layernorm)
+        - Добавляем residual-связь (ffn + предыдущий выход)
         """
         # Self-Attention блок
         attention, _ = self._heads(x, mask, use_cache=False, cache=None)
