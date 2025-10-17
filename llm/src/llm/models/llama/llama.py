@@ -12,24 +12,62 @@ from llm.core.cached_decoder import CachedDecoder
 
 class Llama(BaseModel):
     """
-    LLaMA (Large Language Model Meta AI) — высокоэффективная масштабируемая языковая модель, разработанная Meta AI Research.
+    LLaMA — автогерессивная большая языковая модель (Large Language Model from Meta, 2023).
 
-    Ключевые идеи:
-        - Rotary Positional Encoding (RoPE) вместо стандартных позиционных эмбеддингов
-        - RMSNorm (Root Mean Square LayerNorm) вместо LayerNorm
-        - SwiGLU как нелинейность вместо ReLU/GELU (больше экспрессивности)
-        - Глубокая оптимизация inference (большая экономия памяти и FLOPs)
-    Подробнее: https://arxiv.org/abs/2302.13971
+    Назначение:
+    -----------
+    - Модель реализует архитектуру decoder-only Transformer с современными "индустриальными" трюками (RMSNorm, SwiGLU, RoPE, GQA).
+    - Предназначена для генерации текста, чат-ботов, zero-/few-shot вывода, fine-tune в стиле RLHF, transfer learning и исследований в LLM.
 
-    Args:
-        config (dict): параметры архитектуры (vocab_size, embed_dim, num_heads, num_layers, max_position_embeddings, dropout)
-    Пример:
-        >>> model = Llama({...})
-        >>> logits, cache = model(input_ids, use_cache=True)
-        >>> out = model.generate(input_ids, max_new_tokens=20)
+    Архитектурные особенности:
+    --------------------------
+    - Токеновые эмбеддинги и позиционное кодирование с помощью Rotary Position Embedding (RoPE, https://arxiv.org/abs/2104.09864).
+    - Stack из num_layers современных декодеров с Grouped Query Attention (GQA: num_q_heads > num_kv_heads) для эффективной генерации.
+    - FeedForward блоки с SwiGLU (см. https://arxiv.org/abs/2002.05202).
+    - Нормализация RMSNorm перед каждым sub-layer (вот почему "Pre-RMSNorm").
+    - Кэширование attention (KV cache) для быстрой autoregressive генерации.
+    - Нет bias в Linear слоях, нет Dropout внутри attention.
+
+    Аргументы конструктора:
+    -----------------------
+    config: dict с требуемыми ключами:
+        vocab_size: int — размер словаря токенов
+        embed_dim: int — размерность эмбеддингов
+        num_q_heads: int — количество query-голов в attention (обычно больше num_kv_heads)
+        num_kv_heads: int — количество key/value-голов
+        num_layers: int — число слоёв-декодеров
+        max_position_embeddings: int — максимальная длина последовательности
+        window_size: int (optional) — размер sliding window для attention
+        dropout: float (обычно 0.0 или очень мал)
+        ...
+ 
+    Пример использования:
+    ---------------------
+        >>> llama = LLaMA({...})
+        >>> tokens = torch.tensor([[100, 56, 8]])
+        >>> logits = llama(tokens)
+        >>> out = llama.generate(tokens, max_new_tokens=10, do_sample=True, top_k=50)
+
+    References:
+    -----------
+    - "LLaMA: Open and Efficient Foundation Language Models" (Touvron et al., 2023): https://arxiv.org/abs/2302.13971
+    - "Grouped-Query Attention": https://arxiv.org/abs/2307.09288
+    - "RoFormer: Enhanced Transformer with Rotary Position Embedding": https://arxiv.org/abs/2104.09864
+    - Discussion of efficient LLMs: https://huggingface.co/blog/mistral
+
     """
 
     def __init__(self, config):
+        """
+        Инициализация LLaMA.
+
+        Args:
+            config (dict): Параметры архитектуры, см. docstring класса.
+        Внутри:
+        -------
+        - Создаёт Embedding-слой, Rotary Position Embeddings (RoPE), стек слоёв с GQA, RMSNorm, SwiGLU.
+        - Финальный слой нормализации и проекции на vocabulary.
+        """
         super().__init__(config)
 
         # Инициализация слоев
@@ -68,17 +106,16 @@ class Llama(BaseModel):
         self, x: torch.Tensor, use_cache: bool = True, cache: list = None
     ) -> tuple:
         """
-        Прямой проход через LLaMA (inference/train): авторегрессионное предсказание токенов.
+        Прямой проход: возвращает logits (и возможно обновлённый cache) по входным токенам.
 
         Args:
-            x (Tensor[int]): входные токены [batch, seq_len]
-            use_cache (bool): использовать ли кэш (ускоряет генерацию)
-            cache (list|None): ключи и значения attention для autoregressive режима
+            x (torch.Tensor): [batch, seq_len] — индексы токенов, shape [batch, seq_len]
+            use_cache (bool): использовать механизм KV cache (ускоряет autoregressive generation)
+            cache (list or None): предыдущий кэш, если нужен
+
         Returns:
-            logits (Tensor): [batch, seq_len, vocab_size]
-            new_cache (list|None): новый кэш attention (если use_cache)
-        Пример:
-            >>> logits, cache = model.forward(x, use_cache=True)
+            logits: torch.Tensor [batch, seq_len, vocab_size]
+            new_cache: новый кэш attention (или None)
         """
         # Проверка длины последовательности (только при отсутствии кэша)
         if cache is None and x.size(1) > self._max_seq_len:
@@ -141,25 +178,50 @@ class Llama(BaseModel):
         use_cache: bool = True,
     ) -> torch.Tensor:
         """
-         Генерация текста c помощью LLaMA (autoregressive Transformer).
-        Поддерживается:
-         - greedy и вероятностное сэмплирование (top-k, top-p, temperature)
-         - кэш attention для ускорения генерации длинных последовательностей
-
-         Args:
-             x (Tensor[int]): начальная последовательность [batch, seq_len]
-             max_new_tokens (int): сколько новых токенов сгенерировать
-             do_sample (bool): использовать стохастику (True) или жадный выбор (False)
-             temperature (float): масштаб для softmax (важно для sampling)
-             top_k (int|None): ограничение на количество кандидатов (top-k sampling)
-             top_p (float|None): nucleus sampling
-             use_cache (bool): ускоряет autoregressive при длинной генерации
-         Returns:
-             output (Tensor[int]): [batch, seq_len + max_new_tokens]
-         Пример:
-             >>> prompt = tokenizer.encode('Meta AI', return_tensors="pt")
-             >>> generated = model.generate(prompt, max_new_tokens=30, do_sample=True)
-             >>> print(tokenizer.decode(generated[0]))
+        Авторегрессивная генерация последовательностей на основе LLaMA (greedy, temperature, top-k, top-p/nucleus, поддержка KV-кэша).
+    
+        Аргументы:
+            x (torch.Tensor): Входной тензор с токенами shape [batch_size, seq_len].
+            max_new_tokens (int): Максимальное количество новых токенов для генерации.
+            do_sample (bool): Использовать вероятностное сэмплирование (True) или жадный режим (False, argmax).
+            temperature (float): Температура (сглаживание распределения вероятностей, >0; по умолчанию 1.0).
+                >1.0 — менее предсказуемые, более разнообразные выборки.
+                <1.0 — более строгие, консервативные выборки.
+            top_k (int, опционально): Top-k сэмплирование (ограничение выбора k самыми вероятными токенами).
+            top_p (float, опционально): Nucleus (top-p) sampling (срез по кумулятивной вероятности ≤ top_p, см. Holtzman et al., 2019).
+            use_cache (bool, по умолчанию True): Использовать KV-кэш для ускорения генерации.
+    
+        Возвращает:
+            torch.Tensor: Последовательность токенов shape [batch_size, seq_len + max_new_tokens].
+    
+        Исключения:
+            ValueError: Если x длиннее максимально допустимой длины (max_seq_len модели).
+            ValueError: Если temperature ≤ 0.
+            ValueError: Если одновременно заданы top_k и top_p.
+            ValueError: Если top_k ≤ 0.
+            ValueError: Если top_p не в диапазоне (0, 1].
+    
+        Примеры:
+            >>> # Строго жадная генерация
+            >>> out = model.generate(input_ids, max_new_tokens=16, do_sample=False)
+            >>> # Вероятностная генерация с температурой
+            >>> out = model.generate(input_ids, max_new_tokens=16, do_sample=True, temperature=0.7)
+            >>> # Top-k sampling
+            >>> out = model.generate(input_ids, max_new_tokens=16, do_sample=True, top_k=50)
+            >>> # Top-p (nucleus)
+            >>> out = model.generate(input_ids, max_new_tokens=16, do_sample=True, top_p=0.92)
+            >>> # Комбинация температуры и top-k
+            >>> out = model.generate(input_ids, max_new_tokens=16, do_sample=True, temperature=1.0, top_k=100)
+    
+        Примечания:
+            - temperature, top_k, top_p применяются только если do_sample=True.
+            - Одновременное использование top_k и top_p запрещено.
+            - Для воспроизводимых результатов зафиксируйте seed через torch.manual_seed.
+            - Возвращается только индексы токенов; для получения вероятностей используйте forward.
+    
+        Ссылки:
+            - Holtzman et al., "The Curious Case of Neural Text Degeneration" (nucleus/top-p): https://arxiv.org/abs/1904.09751
+            - LLaMA: https://arxiv.org/abs/2302.13971
         """
         cache = None
 
@@ -194,10 +256,9 @@ class Llama(BaseModel):
                 vocab_size = logits_scaled.size(-1)
 
                 # создаём маску: 1, если токен НЕ в topk_indices
-                mask = torch.ones_like(logits_scaled, dtype=torch.uint8)
-                mask.scatter_(1, topk_indices, 0)  # 0 там, где top-k индексы
-                masked_logits[mask.byte()] = float("-inf")
-
+                mask = torch.ones_like(logits_scaled, dtype=torch.bool if hasattr(torch, "bool") else torch.uint8)
+                mask.scatter_(1, topk_indices, False if hasattr(torch, "bool") else 0)  # 0 там, где top-k индексы
+                masked_logits[mask.bool() if hasattr(torch, "bool") else mask.byte()] = float('-inf')
                 logits_scaled = masked_logits
 
             if do_sample == True and top_p != None:
@@ -210,16 +271,16 @@ class Llama(BaseModel):
                 # 3. Посчитаем кумулятивную сумму вероятностей:
                 cum_probs = torch.cumsum(sorted_probs, dim=-1)  # [B, vocab_size]
                 # 4. Определим маску: оставить токены, пока сумма < top_p
-                sorted_mask = (cum_probs <= top_p).byte()  # [B, vocab_size]
+                sorted_mask = (cum_probs <= top_p).bool() if hasattr(torch, "bool") else  (cum_probs <= top_p).byte()  # [B, vocab_size]
                 # Гарантируем, что хотя бы первый токен останется
-                sorted_mask[:, 0] = 1
+                sorted_mask[:, 0] = True if hasattr(torch, "bool") else 1
                 # 5. Преобразуем маску обратно в оригинальный порядок:
                 # Создаём полную маску из 0
-                mask = torch.zeros_like(probs, dtype=torch.uint8)
+                mask = torch.zeros_like(probs, dtype=torch.bool if hasattr(torch, "bool") else torch.uint8)
                 # Устанавливаем 1 в местах нужных токенов
                 mask.scatter_(dim=1, index=sorted_indices, src=sorted_mask)
                 # 6. Зануляем логиты токенов вне топ-p:
-                logits_scaled[~mask] = float("-inf")
+                logits_scaled[~mask] = float('-inf')
 
             # 4. Применяем Softmax
             probs = F.softmax(logits_scaled, dim=-1)  # [batch_size, vocab_size]

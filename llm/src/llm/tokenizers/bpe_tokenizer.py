@@ -10,16 +10,54 @@ from .base_tokenizer import BaseTokenizer
 
 class BPETokenizer(BaseTokenizer):
     """
-    BPE токенизатор для обработки текста.
+    BpeTokenizer — реализация токенизатора на алгоритме byte pair encoding (BPE).
 
-    Реализует алгоритм Byte Pair Encoding для создания субсловных токенов.
-    Использует вашу реализацию BPE.
+    Назначение:
+    -----------
+    - Преобразует открытый текст (строки, bytes) в последовательность числовых токенов для подачи в LLM и обратно.
+    - Разбивает текст на сабслова (байтовые пары), эффективно кодируя редкие слова длинными последовательностями, а частые — единичными токенами.
+    - Является стандартом де-факто в современных языковых моделях (GPT, LLaMA, BLOOM, Mistral, HuggingFace).
 
-    Примеры использования:
-        >>> tokenizer = BPETokenizer()
-        >>> tokenizer.train(["пример текста для обучения"], vocab_size=1000)
-        >>> tokens = tokenizer.encode("новый текст")
+    Как работает BPE:
+    -----------------
+    1. Строится словарь из наиболее популярных пар символов/субстрок.
+    2. Текст замещается наиболее длинными subword-подстроками из vocabulary (жадно).
+    3. Итог: многомиллионное лексическое пространство сокращается до компактного набора subword pieces.
+
+    Особенности алгоритма:
+    ----------------------
+    - Отлично работает на всех языках, включая rare/compound/inflectable.
+    - Гибко масштабируется под размер итогового словаря/token space.
+    - Обычно хранит mapping (str/bytes → int и int → str/bytes) в JSON или словарном файле.
+    - Может использовать кастомные сепараторы, handle unknown.
+
+    Аргументы конструктора:
+    -----------------------
+    vocab_path: str
+        Путь к файлу BPE vocabulary (JSON, txt, в зависимости от реализации).
+    merges_path: str, optional
+        Путь к списку merge-правил (если используется блочное файловое раздельное хранение).
+    unk_token: str, optional
+        Токен для неизвестных последовательностей (по дефолту '[UNK]' или '<unk>').
+    pad_token, bos_token, eos_token: str, optional
+        Special tokens, если нужны для вашей архитектуры.
+    lowercase: bool, optional
+        Приводить ли текст к нижнему регистру перед токенизацией.
+
+    Пример:
+    -------
+        >>> tokenizer = BpeTokenizer(vocab_path=\"bpe_vocab.json\")
+        >>> tokens = tokenizer.encode(\"Hello, world!\")
+        >>> print(tokens)  # [15496, 11, ...]
         >>> text = tokenizer.decode(tokens)
+        >>> print(text)  # 'Hello, world!'
+
+    References:
+    -----------
+    - Sennrich et al, \"Neural Machine Translation of Rare Words with Subword Units\", 2015: https://arxiv.org/abs/1508.07909
+    - GPT-2 tokenization: https://github.com/openai/gpt-2
+    - HuggingFace tokenizers overview: https://huggingface.co/docs/tokenizers/index
+    - Visually: https://guillaume-be.github.io/2021-05-21/byte-pair-encoding/
     """
 
     def __init__(self):
@@ -107,15 +145,21 @@ class BPETokenizer(BaseTokenizer):
 
     def encode(self, text: str, **kwargs) -> List[int]:
         """
-        Кодирует текст в последовательность токенов.
+        Токенизирует входной текст в список числовых токенов (индексов).
 
         Args:
-            text: Входной текст
-            **kwargs: Дополнительные параметры
-                - add_special_tokens: Добавлять специальные токены
+        -----
+        text: str
+            Входная строка/текст для токенизации.
 
         Returns:
-            List[int]: Список идентификаторов токенов
+        --------
+        List[int] — последовательность индексов из vocabulary.
+
+        Пример:
+        -------
+            >>> ids = tokenizer.encode(\"The quick brown fox\")
+            >>> print(ids)
         """
         add_special_tokens = kwargs.get("add_special_tokens", False)
 
@@ -175,15 +219,22 @@ class BPETokenizer(BaseTokenizer):
 
     def decode(self, tokens: List[int], **kwargs) -> str:
         """
-        Декодирует последовательность токенов в текст.
+        Декодирует последовательность токенов обратно в текстовую строку.
 
         Args:
-            tokens: Список идентификаторов токенов
-            **kwargs: Дополнительные параметры
-                - skip_special_tokens: Пропускать специальные токены
+        -----
+        ids: List[int]
+            Список токен-индексов для распаковки.
 
         Returns:
-            str: Декодированный текст
+        --------
+        text: str
+            Оригинальный (или приближённый) раскодированный текст.
+
+        Пример:
+        -------
+            >>> tokens = [15496, 11, 318, ...]
+            >>> text = tokenizer.decode(tokens)
         """
         skip_special_tokens = kwargs.get("skip_special_tokens", True)
 

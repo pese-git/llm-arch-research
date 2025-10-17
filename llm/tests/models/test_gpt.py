@@ -145,7 +145,11 @@ class TestGPT:
         assert model._token_embeddings._embedding.weight.grad is not None
         assert model._linear.weight.grad is not None
         if len(model._decoders) > 0:
-            assert model._decoders[0]._heads._heads[0]._q.weight.grad is not None
+            # Проверяем через новый интерфейс attention оптимизации:
+            attn = model._decoders[0]._heads
+            assert attn._q.weight.grad is not None
+            assert attn._k.weight.grad is not None
+            assert attn._v.weight.grad is not None
 
     def test_device_consistency(self, gpt_config, random_inputs, device):
         """Test that GPT works on correct device."""
