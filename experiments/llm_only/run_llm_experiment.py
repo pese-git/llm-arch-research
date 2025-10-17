@@ -16,7 +16,7 @@ import torch
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from llm.tokenizers import BPETokenizer
-from llm.training.dataset import TextDataset
+from llm.datasets.text_dataset import TextDataset
 from llm.training.trainer import Trainer
 
 from shared.data import (

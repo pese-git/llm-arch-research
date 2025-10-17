@@ -107,12 +107,12 @@ class Llama(BaseModel):
     ) -> tuple:
         """
         Прямой проход: возвращает logits (и возможно обновлённый cache) по входным токенам.
-    
+
         Args:
             x (torch.Tensor): [batch, seq_len] — индексы токенов, shape [batch, seq_len]
             use_cache (bool): использовать механизм KV cache (ускоряет autoregressive generation)
             cache (list or None): предыдущий кэш, если нужен
-    
+
         Returns:
             logits: torch.Tensor [batch, seq_len, vocab_size]
             new_cache: новый кэш attention (или None)
@@ -178,25 +178,50 @@ class Llama(BaseModel):
         use_cache: bool = True,
     ) -> torch.Tensor:
         """
-         Генерация текста c помощью LLaMA (autoregressive Transformer).
-        Поддерживается:
-         - greedy и вероятностное сэмплирование (top-k, top-p, temperature)
-         - кэш attention для ускорения генерации длинных последовательностей
-
-         Args:
-             x (Tensor[int]): начальная последовательность [batch, seq_len]
-             max_new_tokens (int): сколько новых токенов сгенерировать
-             do_sample (bool): использовать стохастику (True) или жадный выбор (False)
-             temperature (float): масштаб для softmax (важно для sampling)
-             top_k (int|None): ограничение на количество кандидатов (top-k sampling)
-             top_p (float|None): nucleus sampling
-             use_cache (bool): ускоряет autoregressive при длинной генерации
-         Returns:
-             output (Tensor[int]): [batch, seq_len + max_new_tokens]
-         Пример:
-             >>> prompt = tokenizer.encode('Meta AI', return_tensors="pt")
-             >>> generated = model.generate(prompt, max_new_tokens=30, do_sample=True)
-             >>> print(tokenizer.decode(generated[0]))
+        Авторегрессивная генерация последовательностей на основе LLaMA (greedy, temperature, top-k, top-p/nucleus, поддержка KV-кэша).
+    
+        Аргументы:
+            x (torch.Tensor): Входной тензор с токенами shape [batch_size, seq_len].
+            max_new_tokens (int): Максимальное количество новых токенов для генерации.
+            do_sample (bool): Использовать вероятностное сэмплирование (True) или жадный режим (False, argmax).
+            temperature (float): Температура (сглаживание распределения вероятностей, >0; по умолчанию 1.0).
+                >1.0 — менее предсказуемые, более разнообразные выборки.
+                <1.0 — более строгие, консервативные выборки.
+            top_k (int, опционально): Top-k сэмплирование (ограничение выбора k самыми вероятными токенами).
+            top_p (float, опционально): Nucleus (top-p) sampling (срез по кумулятивной вероятности ≤ top_p, см. Holtzman et al., 2019).
+            use_cache (bool, по умолчанию True): Использовать KV-кэш для ускорения генерации.
+    
+        Возвращает:
+            torch.Tensor: Последовательность токенов shape [batch_size, seq_len + max_new_tokens].
+    
+        Исключения:
+            ValueError: Если x длиннее максимально допустимой длины (max_seq_len модели).
+            ValueError: Если temperature ≤ 0.
+            ValueError: Если одновременно заданы top_k и top_p.
+            ValueError: Если top_k ≤ 0.
+            ValueError: Если top_p не в диапазоне (0, 1].
+    
+        Примеры:
+            >>> # Строго жадная генерация
+            >>> out = model.generate(input_ids, max_new_tokens=16, do_sample=False)
+            >>> # Вероятностная генерация с температурой
+            >>> out = model.generate(input_ids, max_new_tokens=16, do_sample=True, temperature=0.7)
+            >>> # Top-k sampling
+            >>> out = model.generate(input_ids, max_new_tokens=16, do_sample=True, top_k=50)
+            >>> # Top-p (nucleus)
+            >>> out = model.generate(input_ids, max_new_tokens=16, do_sample=True, top_p=0.92)
+            >>> # Комбинация температуры и top-k
+            >>> out = model.generate(input_ids, max_new_tokens=16, do_sample=True, temperature=1.0, top_k=100)
+    
+        Примечания:
+            - temperature, top_k, top_p применяются только если do_sample=True.
+            - Одновременное использование top_k и top_p запрещено.
+            - Для воспроизводимых результатов зафиксируйте seed через torch.manual_seed.
+            - Возвращается только индексы токенов; для получения вероятностей используйте forward.
+    
+        Ссылки:
+            - Holtzman et al., "The Curious Case of Neural Text Degeneration" (nucleus/top-p): https://arxiv.org/abs/1904.09751
+            - LLaMA: https://arxiv.org/abs/2302.13971
         """
         cache = None
 
