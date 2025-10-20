@@ -45,6 +45,9 @@ def load_model_class(model_name):
     elif model_name.lower() == 'mistral':
         from llm.models.mistral import Mistral
         return Mistral
+    elif model_name.lower() == 'mixtral':
+        from llm.models.mixtral import Mixtral
+        return Mixtral
     else:
         raise ValueError(f"Модель '{model_name}' не поддерживается.")
 
