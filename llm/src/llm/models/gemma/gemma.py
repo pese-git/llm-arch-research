@@ -5,276 +5,112 @@ from torch import Tensor
 import torch.nn.functional as F
 from math import sqrt
 from llm.core.base_model import BaseModel
-
+from llm.core.token_embeddings import TokenEmbeddings
+from llm.core.rope import RoPE
+from llm.core.rms_norm import RMSNorm
+from llm.core.gemma_decoder import GemmaDecoder
     
-class RMSNorm(nn.Module):
-    def __init__(self, dim: int, eps: float = 1e-6):
-        super().__init__()
-        self._eps = eps
-        self._w = nn.Parameter(torch.ones(dim))
-    
-    def forward(self, x: torch.Tensor): # [batch_size × seq_len × emb_size]
-        rms = (x.pow(2).mean(-1, keepdim=True) + self._eps) ** 0.5
-        norm_x = x / rms
-        return self._w * norm_x
-
-class TokenEmbeddings(nn.Module):
-    def __init__(self, vocab_size: int, emb_size: int):
-        super().__init__()
-        self._embedding = nn.Embedding(
-            num_embeddings=vocab_size,
-            embedding_dim=emb_size
-        )
-
-    def forward(self, x: Tensor) -> Tensor:
-        return self._embedding(x)
-
-    @property
-    def num_embeddings(self) -> int:
-        return self._embedding.num_embeddings
-
-    @property
-    def embedding_dim(self) -> int:
-        return self._embedding.embedding_dim
-
-
-class GELU(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.sqrt_2_over_pi = torch.sqrt(torch.tensor(2.0) / math.pi)
-    
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return 0.5 * x * (1 + torch.tanh(
-            self.sqrt_2_over_pi * (x + 0.044715 * torch.pow(x, 3))
-        ))
-
-class GeGLU(nn.Module):
-    def __init__(self, emb_size: int, dropout: float = 0.1):
-        super().__init__()
-
-        self._gate = nn.Linear(emb_size, 4 * emb_size)
-        self._up = nn.Linear(emb_size, 4 * emb_size)
-        self._down = nn.Linear(4 * emb_size, emb_size)
-        self._activation = GELU()
-        self._dropout = nn.Dropout(dropout)
-
-    def forward(self, x: torch.Tensor): # [batch_size × seq_len × emb_size].
-        gate_out = self._gate(x)                          # [batch, seq, 4*emb]
-        activation_out = self._activation(gate_out)       # [batch, seq, 4*emb]
-        up_out = self._up(x)                              # [batch, seq, 4*emb]
-        out = up_out * activation_out                     # поэлементное!
-        out = self._down(out)                             # [batch, seq, emb]
-        return self._dropout(out)
-
-
-import torch
-from torch import nn
-from typing import Optional
-
-
-class RoPE(nn.Module):
-
-    def __init__(self, head_size: int, max_seq_len: int, base: int = 10_000):
-        super().__init__()
-        assert head_size % 2 == 0, "head_size должен быть четным"
-
-        # Вычисление частот: θ_i = base^(-2i/d) для i ∈ [0, d/2-1]
-        freqs = 1.0 / (base ** (2 * torch.arange(head_size // 2).float() / head_size))
-
-        # Позиции от 0 до max_seq_len-1
-        positions = torch.arange(max_seq_len).float()
-
-        # Внешнее произведение: m * θ_i для всех позиций и частот
-        freq_matrix = positions.unsqueeze(1) * freqs.unsqueeze(0)
-
-        # Предвычисление матриц косинусов и синусов
-        self.register_buffer("cos_matrix", torch.cos(freq_matrix))
-        self.register_buffer("sin_matrix", torch.sin(freq_matrix))
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor: # [batch_size × seq_len × head_size] [batch_size × num_heads × seq_len × head_size]
-        batch_size, num_heads, seq_len, head_size = x.shape
-
-        # Берем нужную часть матриц и приводим к типу x
-        cos = self.cos_matrix[:seq_len].to(x.dtype)  # [seq_len, head_size//2]
-        sin = self.sin_matrix[:seq_len].to(x.dtype)  # [seq_len, head_size//2]
-
-        # Явное изменение формы для broadcasting
-        cos = cos.reshape(1, 1, seq_len, head_size // 2)
-        sin = sin.reshape(1, 1, seq_len, head_size // 2)
-
-        # Разделяем на четные и нечетные компоненты по ПОСЛЕДНЕМУ измерению
-        x_even = x[..., 0::2]  # [batch_size, num_heads, seq_len, head_size//2]
-        x_odd = x[..., 1::2]   # [batch_size, num_heads, seq_len, head_size//2]
-
-        # Применяем поворот: q' = q * cos(mθ) + rotate(q) * sin(mθ)
-        x_rotated_even = x_even * cos - x_odd * sin
-        x_rotated_odd = x_even * sin + x_odd * cos
-
-        # Объединяем обратно в исходную размерность
-        x_rotated = torch.stack([x_rotated_even, x_rotated_odd], dim=-1)
-        x_rotated = x_rotated.flatten(-2)  # [batch_size, seq_len, head_size]
-
-        return x_rotated
-
-import torch
-from torch import nn
-import torch.nn.functional as F
-
-class MultiQueryAttention(nn.Module):
-    def __init__(
-        self,
-        num_q_heads: int,
-        emb_size: int,
-        head_size: int,
-        max_seq_len: int,
-        rope: RoPE = None,
-        dropout: float = 0.1,
-    ):
-        super().__init__()
-        self._num_q_heads = num_q_heads
-        self._head_size = head_size
-        self._max_seq_len = max_seq_len
-        self._rope = rope
-        
-        self._q = nn.Linear(emb_size, num_q_heads * head_size)
-        self._k = nn.Linear(emb_size,  head_size)
-        self._v = nn.Linear(emb_size,  head_size)
-
-        # Создание causal маски
-        mask = torch.tril(torch.ones(max_seq_len, max_seq_len))
-        self.register_buffer(
-            "_tril_mask", mask.bool() if hasattr(torch, "bool") else mask.byte()
-        )
-        
-        self._layer = nn.Linear(num_q_heads * head_size, emb_size)
-        self._dropout = nn.Dropout(dropout)
-
-    def forward(
-        self,
-        x: torch.Tensor,
-        mask: torch.Tensor = None,
-        use_cache: bool = True,
-        cache: list = None,
-    ):
-        batch_size, seq_len, emb_size = x.shape
-        if seq_len > self._max_seq_len:
-            raise ValueError(
-                f"Длина последовательности {seq_len} превышает максимум {self._max_seq_len}"
-            )
-
-        # Пропустите тензор x через матрицы Wq, Wk , Wv, чтобы получить матрицы запроса, ключа и значения.
-        k = self._k(x)  # [B, T, hs]
-        q = self._q(x)  # [B, T, hs]
-        v = self._v(x)  # [B, T, hs]
-
-        # Шаг 2: Изменение формы для multi-head
-        # [batch_size, seq_len, num_heads * head_size] 
-        # -> [batch_size, seq_len, num_heads, head_size]
-        q = q.reshape(batch_size, seq_len, self._num_q_heads, self._head_size)
-        k = k.reshape(batch_size, seq_len, 1, self._head_size)
-        v = v.reshape(batch_size, seq_len, 1, self._head_size)
-
-        # 3. Transpose: [B, T, H, hs] -> [B, H, T, hs]
-        q = q.transpose(1, 2)
-        k = k.transpose(1, 2)
-        v = v.transpose(1, 2)
-
-        # Пропустите матрицы запроса и ключа через экземпляр rope, чтобы выполнить поворот.
-        if self._rope is not None:
-            # Применяем RoPE к Q и K (НЕ к V!)
-            q = self._rope(q)  # [B, T, hs]
-            k = self._rope(k)  # [B, T, hs]
-
-
-        # Если cache пришел, то объединяем кэш и одну строку из ключа и значения. Это будут новые key и value  для последующих вычислений.
-        # 5. Кэширование (для autoregressive generation)
-        if cache is not None:
-            k_cache, v_cache = cache
-            k = torch.cat([k_cache, k], dim=2)  # Concat по seq_len (dim=2)
-            v = torch.cat([v_cache, v], dim=2)
-
-
-        # Перемножим матрицы запроса и ключа (транспонированную), чтобы вычислить матрицу внимания.
-        # И разделить все значения в матрице внимания на корень из head_size.
-        scores = q @ k.transpose(-2, -1) / (self._head_size ** 0.5)
-
-        # Если cache пришел, то маску не накладываем. Иначе наложите на матрицу внимания треугольную маску, созданную при инициализации. Все скрытые значения должны быть приведены к минус бесконечности: float('-inf').
-        if cache is None:
-            scores = scores.masked_fill(
-                ~self._tril_mask[:seq_len, :seq_len], float("-inf")
-            )
-
-        # Применить к матрице внимания (построчно) функцию Softmax.
-        weights = F.softmax(scores, dim=-1)
-
-        # Перемножим матрицу внимания и матрицу значения.
-        x_out = weights @ v  # [B, T, hs]
-
-
-        # Измените форму тензора на batch_size × seq_len × num_heads*head_size.
-        # Transpose обратно и concatenate heads
-        x_out = x_out.transpose(1, 2)  # [B, T_q, H, hs]
-        x_out = x_out.contiguous()  # Важно для reshape!
-        concatenated_attention = x_out.reshape(batch_size, seq_len, self._num_q_heads * self._head_size)
-
-
-        # Пропустите получившийся тензор через последний линейный слой.
-        # 3. Проецируем в пространство эмбеддингов
-        projected_output = self._layer(concatenated_attention)
-
-
-        # 4. Применяем dropout для регуляризации
-        final_output = self._dropout(projected_output)
-
-        if use_cache is True:
-            return (final_output, (k, v))
-        else:
-            return (final_output, None)
-
-
-class Decoder(nn.Module):
-    def __init__(self, 
-        num_q_heads: int,
-        emb_size: int,
-        head_size: int,
-        max_seq_len: int,
-        rope: RoPE,
-        dropout: float = 0.1
-    ):
-        super().__init__()
-        self._heads = MultiQueryAttention(
-            num_q_heads=num_q_heads, 
-            emb_size=emb_size, 
-            head_size=head_size, 
-            max_seq_len=max_seq_len,
-            rope=rope,
-            dropout=dropout
-        )
-        self._ff = GeGLU(emb_size=emb_size, dropout=dropout)
-        self._norm1 = RMSNorm(emb_size)
-        self._norm2 = RMSNorm(emb_size)
-
-    def forward(self, x: torch.Tensor, mask: torch.Tensor = None, use_cache: bool = True, cache: list = None) -> torch.Tensor:
-        norm1_out = self._norm1(x)
-        attention, kv_caches = self._heads(norm1_out, mask, use_cache=use_cache, cache=cache)
-        out = attention + x
-        
-        norm2_out = self._norm2(out)
-        ffn_out = self._ff(norm2_out)
-
-        if use_cache is True:
-            return (ffn_out + out, kv_caches)
-        else:
-            return (ffn_out + out, None)
-
-
-
-from torch import nn
-import torch
-import torch.nn.functional as F
 
 class Gemma(BaseModel):
+    """
+    Gemma — языковая трансформер-модель от Google, с архитектурой, оптимизированной для open-source и research-комьюнити.
+
+    Назначение:
+    -----------
+    Модель Gemma реализует стек современных декодерных блоков (GemmaDecoder), поддерживает rotary-позиционирование, multi-query self-attention,
+    эффективный режим генерации (KV-cache), dropout, compact residual connections, базируется на best-practice LLM-инженерии последних лет.
+    Поддерживает batched-тренировку и inference, генерацию с различными стратегиями выборки (greedy, top-k, top-p), автосохранение.
+
+    Архитектурные особенности:
+    --------------------------
+    - Stack из N слоёв GemmaDecoder (attention с Multi-Query либо Grouped heads, FFN с GeGLU/SwiGLU)
+    - RMSNorm или LayerNorm для стабилизации
+    - Dropout для регуляризации
+    - Rotary Position Embedding (RoPE) для позиционных кодов
+    - Выходная проекция (linear → logits) к словарю токенов
+    - Полная поддержка cache для ускорения autoregressive генерации
+
+    Конфиг/Параметры конструктора:
+    ------------------------------
+    config : dict
+        Словарь c параметрами модели:
+            - vocab_size : int — размер словаря
+            - embed_dim : int — размер скрытого (hidden) пространства
+            - max_position_embeddings : int — максимальная длина последовательности
+            - num_layers : int — количество декодерных блоков
+            - num_q_heads : int — количество attention голов (Queries)
+            - num_kv_heads : int — количество ключевых/значенческих attention голов
+            - dropout : float — Dropout率
+            - ... (доп. гиперпараметры, требуемые GemmaDecoder'ами)
+
+    Основные методы:
+    ----------------
+    - forward(x, use_cache=True, cache=None): выдает батч логитов по токенам, возвращает при необходимости обновленный cache.
+    - generate(...): автотекстогенерация с greedy, temperature, top-k/p sampling, поддержкой кэша (ускорение inference).
+    - save(path)/load(path, device): сохранение и загрузка предобученных весов, параметров и состояния.
+
+    Пример:
+    -------
+        >>> config = {...}  # словарь с параметрами
+        >>> model = Gemma(config)
+        >>> x = torch.randint(0, config["vocab_size"], (4, 64))
+        >>> logits, cache = model(x, use_cache=True)
+        >>> print(logits.shape)  # [4, 64, vocab_size]
+        >>> out = model.generate(x, max_new_tokens=20, do_sample=True, top_k=10, temperature=0.8)
+
+    Литература и ссылки:
+    --------------------
+    - Gemma: https://ai.google.dev/gemma (официальная страница)
+    - Разработка и архитектура: https://arxiv.org/abs/2403.07794
+    - Rotary Embedding: https://arxiv.org/abs/2104.09864
+    - Multi-Query Attention: https://arxiv.org/abs/1911.02150
+    - Llama: https://arxiv.org/abs/2302.13971
+    """
     def __init__(self, config):
+        """
+        Конструктор класса Gemma.
+
+        Позволяет создать объект языковой модели с архитектурой Gemma и
+        произвольной конфигурацией (гибкая поддержка разных масштабов, ширин, глубин).
+
+        Аргументы:
+        ----------
+        config : dict
+            Словарь со всеми необходимыми гиперпараметрами и архитектурными детальями модели Gemma.
+            Ожидаемые ключи (группы параметров):
+                - vocab_size : int — размер словаря токенов (размерность входа/выхода)
+                - embed_dim : int — скрытый размер эмбеддинга (hidden dim)
+                - max_position_embeddings : int — максимальная длина последовательности
+                - num_layers : int — количество декодерных блоков (глубина стека)
+                - num_q_heads : int — число attention голов (Query heads)
+                - num_kv_heads : int — число голов для Key/Value (MultiQuery Attention)
+                - dropout : float — Dropout для регуляризации
+                - остальные специфичные для GemmaDecoder'ов параметры
+
+        Внутри:
+        -------
+        - Инициализируются модули эмбеддинга токенов, позиционного кодирования (RoPE) и Dropout,
+          стек декодеров (GemmaDecoder(...)), слой финальной нормализации и выходная проекция (linear).
+        - Все архитектурные параметры напрямую берутся из config.
+
+        Пример:
+        -------
+            >>> config = {
+            ...     "vocab_size": 32000,
+            ...     "embed_dim": 512,
+            ...     "max_position_embeddings": 2048,
+            ...     "num_layers": 24,
+            ...     "num_q_heads": 8,
+            ...     "num_kv_heads": 4,
+            ...     "dropout": 0.1,
+            ... }
+            >>> model = Gemma(config)
+
+        Примечание:
+        -----------
+        - Внимание: значения config должны быть согласованы друг с другом! Например, embed_dim должен быть кратным num_q_heads и т.д.
+        - Поддерживается дальнейшая кастомизация стека декодеров через ключи в config.
+        """
         super().__init__(config)
 
         self._max_seq_len = config["max_position_embeddings"]
@@ -293,7 +129,7 @@ class Gemma(BaseModel):
         #    emb_size=emb_size
         #)
         self._dropout = nn.Dropout(config["dropout"])
-        self._decoders = nn.ModuleList([Decoder(
+        self._decoders = nn.ModuleList([GemmaDecoder(
             num_q_heads=config["num_q_heads"],
             emb_size=config["embed_dim"],
             head_size=config["embed_dim"] // config["num_q_heads"],
@@ -305,6 +141,41 @@ class Gemma(BaseModel):
         self._linear = nn.Linear(config["embed_dim"], config["vocab_size"])
 
     def forward(self, x: torch.Tensor, use_cache: bool = True, cache: list = None) -> tuple:
+        """
+        Прямой проход (forward) через полную модель Gemma.
+
+        Трансформирует входную последовательность токенов через стек из декодерных блоков GemmaDecoder.
+        Возвращает логиты по всем токенам и (при необходимости) кэш attention для быстрой autoregressive-генерации.
+
+        Аргументы:
+        ----------
+        x : torch.Tensor
+            Входной тензор shape [batch_size, seq_len], содержащий токен-IDs.
+        use_cache : bool, по умолчанию True
+            Если True — сохраняет и возвращает KV-кэш attention (ускоряет автогенерацию).
+            Если False — кэш не используется.
+        cache : list, optional
+            (Необязательно) Список/None: с кэшами KV-матриц для каждого слоя (для режима генерации статей/диalogов).
+
+        Возвращает:
+        -----------
+        tuple:
+            - logits : torch.Tensor shape [batch_size, seq_len, vocab_size]
+                Логиты по словарю для каждого токена (input + сколь угодно новых).
+            - new_cache : list или None
+                Обновлённый cache (если use_cache=True).
+
+        Пример:
+        -------
+            >>> logits, new_cache = model(x, use_cache=True, cache=None)
+            >>> logits.shape  # [batch_size, seq_len, vocab_size]
+
+        Примечания:
+        -----------
+        - Используется при обучении и инференсе.
+        - Если нужно только инференс last-token — используйте logits[:, -1, :].
+        - При превышении x.shape[1] > max_seq_len выдаёт ValueError.
+        """
         # Проверка длины последовательности (только при отсутствии кэша)
         if cache is None and x.size(1) > self._max_seq_len:
             raise ValueError(f"Длина последовательности {x.size(1)} превышает максимальную {self.max_seq_len}")
@@ -347,6 +218,52 @@ class Gemma(BaseModel):
         top_p: float = None,
         use_cache: bool = True
     ) -> torch.Tensor:
+        """
+        Авторегрессивная генерация токенов с использованием greedy, temperature, top-k и top-p sampling.
+        Реализует generation-loop с обновлением attention-кэша для ускорения инференса.
+
+        Аргументы:
+        ----------
+        x : torch.Tensor
+            Входной тензор с последовательностью токенов (shape [batch_size, seq_len]), который необходимо продолжить.
+        max_new_tokens : int
+            Сколько новых токенов сгенерировать (максимум).
+        do_sample : bool
+            Если True — сэмплирует следующий токен согласно распределению вероятностей (stochastic), иначе выбирает токен с максимальной вероятностью (greedy).
+        temperature : float, default=1.0
+            Параметр для шкалирования распределения вероятностей логитов. Больше 1.0 — больше случайности, меньше 1.0 — более детерминированный (жёсткий) выбор.
+        top_k : int, optional
+            Если задано — для сэмплирования учитываются только top_k наиболее вероятных токенов.
+        top_p : float, optional
+            Если задано — работают nucleus sampling: учитываются токены, суммарная вероятность которых не превышает top_p.
+        use_cache : bool, default=True
+            Если True — для ускорения использует и обновляет attention-кэши (KV-cache).
+
+        Возвращает:
+        -----------
+        torch.Tensor
+            Тензор shape [batch_size, seq_len + max_new_tokens] с исходными и сгенерированными токенами (token IDs).
+
+        Пример:
+        -------
+            >>> out = model.generate(
+            ...     x, max_new_tokens=20, do_sample=True, temperature=0.8, top_k=50
+            ... )
+            >>> print(out.shape)  # [batch_size, seq_len+20]
+
+        Примечания:
+        -----------
+        - Нельзя указывать одновременно top_k и top_p (будет выброшено исключение).
+        - temperature <= 0 некорректно (будет выброшено исключение).
+        - Поддержка cache (use_cache=True) значительно ускоряет генерацию длинных последовательностей и позволяет использовать beam search/decoding.
+        - Для воспроизводимых результатов установите torch.manual_seed перед генерацией.
+        - Метод возвращает только token_ids, если нужны logits — используйте .forward напрямую.
+
+        Литература:
+        -----------
+        - Holtzman et al., "The Curious Case of Neural Text Degeneration" (nucleus/top-p sampling): https://arxiv.org/abs/1904.09751
+        - Gemma: https://arxiv.org/abs/2403.07794
+        """
 
         cache = None
 
@@ -420,32 +337,6 @@ class Gemma(BaseModel):
             # 6. Добавляем его к последовательности
             x = torch.cat([x, next_token], dim=1)  # [batch_size, seq_len+1]
         return x
-
-    def save(self, path):
-        torch.save({
-            'model_state_dict': self.state_dict(),
-            'vocab_size': self._vocab_size,
-            'max_seq_len': self._max_seq_len,
-            'emb_size': self._emb_size,
-            'num_heads': self._num_heads,
-            'head_size': self._head_size,
-            'num_layers': self._num_layers
-        }, path)
-
-    @classmethod
-    def load(cls, path, device):
-        checkpoint = torch.load(path, map_location=device)
-        model = cls(
-            vocab_size=checkpoint['vocab_size'],
-            max_seq_len=checkpoint['max_seq_len'],
-            emb_size=checkpoint['emb_size'],
-            num_heads=checkpoint['num_heads'],
-            head_size=checkpoint['head_size'],
-            num_layers=checkpoint['num_layers']
-        )
-        model.load_state_dict(checkpoint['model_state_dict'])
-        model.to(device)
-        return model
 
     @property
     def max_seq_len(self) -> int:
