@@ -26,7 +26,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Optional, Dict
 from llm.core.base_model import BaseModel
-from llm.core.decoder import Decoder
+from llm.core.gpt_decoder import GptDecoder
 from llm.core.token_embeddings import TokenEmbeddings
 from llm.core.positional_embeddings import PositionalEmbeddings
 
@@ -116,7 +116,7 @@ class GPT(BaseModel):
         # head_size = emb_size // num_heads
         self._decoders = nn.ModuleList(
             [
-                Decoder(
+                GptDecoder(
                     num_heads=config["num_heads"],
                     emb_size=config["embed_dim"],
                     head_size=config["embed_dim"] // config["num_heads"],
@@ -133,7 +133,9 @@ class GPT(BaseModel):
         """Возвращает максимальную длину последовательности."""
         return self._max_seq_len
 
-    def forward(self, x: torch.Tensor, attention_mask=None) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor, attention_mask=None, use_cache: bool = True, cache: list = None
+    ) -> tuple:
         """
         Прямой проход для получения логитов по последовательности токенов.
 
@@ -157,33 +159,60 @@ class GPT(BaseModel):
                 f"Длина последовательности {x.size(1)} превышает максимальную {self._max_seq_len}"
             )
 
+        # Вычисление start_pos из кэша (если кэш передан)
+        if cache is not None:
+            seq_len = 1
+            # Безопасно извлекаем key_cache для вычисления start_pos
+            if (
+                isinstance(cache, (list, tuple))
+                and len(cache) > 0
+                and cache[0] is not None
+                and isinstance(cache[0], (list, tuple))
+                and len(cache[0]) > 0
+                and cache[0][0] is not None
+                and isinstance(cache[0][0], (tuple, list))
+                and len(cache[0][0]) > 0
+            ):
+                key_cache, _ = cache[0][0]
+                start_pos = key_cache.size(1)
+            else:
+                start_pos = 0
+        else:
+            # Без кэша работаем как раньше
+            start_pos = 0
+            seq_len = x.size(1)
+
         # Эмбеддинги токенов и позиций
         tok_out = self._token_embeddings(x)  # [batch, seq_len, emb_size]
-        pos_out = self._position_embeddings(x.size(1))  # [seq_len, emb_size]
+        pos_out = self._position_embeddings(
+            seq_len, start_pos=start_pos
+        )  # [seq_len, emb_size]
 
         # Комбинирование
         out = self._dropout(
             tok_out + pos_out.unsqueeze(0)
         )  # [batch, seq_len, emb_size]
 
-        # Стек декодеров
-        for decoder in self._decoders:
-            out = decoder(out)
+        # Стек декодеров с передачей кэша
+        new_cache = []
+        for i, decoder in enumerate(self._decoders):
+            decoder_cache = cache[i] if cache is not None else None
+            decoder_result = decoder(out, use_cache=use_cache, cache=decoder_cache)
 
-        return self._linear(out)  # [batch, seq_len, vocab_size]
+            # Извлекаем результат из кортежа
+            if use_cache:
+                out, decoder_new_cache = decoder_result
+                new_cache.append(decoder_new_cache)
+            else:
+                out = decoder_result[0]
 
-    #    def forward(self, input_ids, attention_mask=None):
-    #        B, T = input_ids.size()
-    #        pos = torch.arange(0, T, device=input_ids.device).unsqueeze(0)
-    #
-    #        x = self.token_emb(input_ids) + self.pos_emb(pos)
-    #
-    #        for block in self.blocks:
-    #            x = block(x, attention_mask)
-    #
-    #        x = self.ln_f(x)
-    #        logits = self.head(x)
-    #        return logits
+        logits = self._linear(out)  # [batch, seq_len, vocab_size]
+
+        # Возвращаем результат с учетом use_cache
+        if use_cache:
+            return (logits, new_cache)
+        else:
+            return (logits, None)
 
     def generate(
         self,
@@ -245,12 +274,24 @@ class GPT(BaseModel):
             - Holtzman et al., "The Curious Case of Neural Text Degeneration" (nucleus sampling): https://arxiv.org/abs/1904.09751
             - Оригинальный GPT-2: https://cdn.openai.com/better-language-models/language-models.pdf
         """
+        cache = None
+        
         for _ in range(max_new_tokens):
             # 1. Обрезаем вход, если последовательность слишком длинная
-            x_cond = x[:, -self._max_seq_len :]
+            if use_cache and cache is not None:
+                # Используем кэш - передаем только последний токен
+                x_input = x[:, -1:]  # [batch_size, 1]
+            else:
+                # Первая итерация или кэш отключен - передаем всю последовательность
+                x_input = x
 
             # 2. Передаем последовательность в метод forward класса GPT и полуаем логиты.
-            logits = self.forward(x_cond)
+            # Прямой проход с кэшем
+            logits, new_cache = self.forward(x_input, use_cache=use_cache, cache=cache)
+
+            # Обновляем кэш для следующей итерации
+            if use_cache:
+                cache = new_cache
 
             # 3. Берем логиты для последнего токена
             last_logits = logits[:, -1, :]  # [batch_size, vocab_size]
