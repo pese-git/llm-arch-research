@@ -209,14 +209,17 @@ class Gemma(BaseModel):
         else:
             return (logits, None)
 
-    def generate(self,
-        x: torch.Tensor, 
-        max_new_tokens: int, 
+    def generate(
+        self,
+        x: torch.Tensor,
+        max_new_tokens: int,
         do_sample: bool,
         temperature: float = 1.0,
         top_k: int = None,
         top_p: float = None,
-        use_cache: bool = True
+        use_cache: bool = True,
+        attention_mask: torch.Tensor = None,
+        **kwargs
     ) -> torch.Tensor:
         """
         Авторегрессивная генерация токенов с использованием greedy, temperature, top-k и top-p sampling.

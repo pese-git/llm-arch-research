@@ -193,8 +193,9 @@ class GPT(BaseModel):
         temperature: float = 1.0,
         top_k: int = None,
         top_p: float = None,
-        attention_mask: torch.Tensor = None,  # Добавляем для совместимости с HF
-        **kwargs,  # Игнорируем остальные параметры
+        use_cache: bool = True,
+        attention_mask: torch.Tensor = None,
+        **kwargs
     ) -> torch.Tensor:
         """
         Авторегрессивная генерация текста с поддержкой жадного поиска (greedy), вероятностного сэмплирования с температурой,
