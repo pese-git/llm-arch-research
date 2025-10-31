@@ -28,7 +28,7 @@ def test_gpt_model_creation():
     input_ids = torch.randint(0, config["vocab_size"], (batch_size, seq_len))
 
     with torch.no_grad():
-        logits = model(input_ids)
+        logits, _ = model(input_ids)
 
     assert logits.shape == (batch_size, seq_len, config["vocab_size"])
     print("✅ GPT model creation and forward pass test passed")
@@ -222,7 +222,7 @@ def test_gpt_with_tokenizer():
     input_ids = torch.tensor([tokens])
 
     with torch.no_grad():
-        logits = model(input_ids)
+        logits, _ = model(input_ids)
 
     assert logits.shape == (1, len(tokens), vocab_size)
     print("✅ GPT with tokenizer integration test passed")

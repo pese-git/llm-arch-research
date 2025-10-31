@@ -176,6 +176,8 @@ class Llama(BaseModel):
         top_k: int = None,
         top_p: float = None,
         use_cache: bool = True,
+        attention_mask: torch.Tensor = None,
+        **kwargs
     ) -> torch.Tensor:
         """
         Авторегрессивная генерация последовательностей на основе LLaMA (greedy, temperature, top-k, top-p/nucleus, поддержка KV-кэша).

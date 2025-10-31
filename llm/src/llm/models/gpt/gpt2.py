@@ -214,6 +214,8 @@ class GPT2(BaseModel):
         top_k: int = None,
         top_p: float = None,
         use_cache: bool = True,
+        attention_mask: torch.Tensor = None,
+        **kwargs
     ) -> torch.Tensor:
         """
         Авторегрессивная генерация токенов с поддержкой greedy, temperature, top-k, top-p sampling и KV-кэша.

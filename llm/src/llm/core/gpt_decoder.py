@@ -4,7 +4,7 @@ from .feed_forward import FeedForward
 from .multi_head_attention import MultiHeadAttention
 
 
-class Decoder(nn.Module):
+class GptDecoder(nn.Module):
     """
     Decoder — базовый transformer decoder block (pre-LN), классический строительный блок современных языковых моделей.
 
@@ -94,7 +94,13 @@ class Decoder(nn.Module):
         self._norm1 = nn.LayerNorm(emb_size)
         self._norm2 = nn.LayerNorm(emb_size)
 
-    def forward(self, x: torch.Tensor, mask: torch.Tensor = None) -> torch.Tensor:
+    def forward(
+        self, 
+        x: torch.Tensor, 
+        use_cache: bool = False, 
+        cache: list = None, 
+        attention_mask=None
+    ) -> tuple:
         """
         Один прямой проход через Transformer decoder block.
 
@@ -117,10 +123,16 @@ class Decoder(nn.Module):
         - Применяем FFN к нормализованному результату (layernorm)
         - Добавляем residual-связь (ffn + предыдущий выход)
         """
+
         # Self-Attention блок
-        attention, _ = self._heads(x, mask, use_cache=False, cache=None)
+        attention, kv_caches = self._heads(x, attention_mask, use_cache=use_cache, cache=cache)
         out = self._norm1(attention + x)
 
         # FeedForward блок
         ffn_out = self._ff(out)
-        return self._norm2(ffn_out + out)
+        result =  self._norm2(ffn_out + out)
+        
+        if use_cache:
+            return (result, kv_caches)
+        else:
+            return (result, None)
