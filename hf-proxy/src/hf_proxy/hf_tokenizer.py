@@ -81,10 +81,12 @@ class HFTokenizerAdapter:
             input_ids = input_ids + [self.pad_token_id] * (max_length - len(input_ids))
 
         # Конвертируем в тензоры если нужно
+        # input_ids уже в формате батча ([[...]] или [[...], [...], ...]),
+        # повторное оборачивание в список добавляет лишнюю размерность.
         if return_tensors == "pt":
             import torch
 
-            input_ids = torch.tensor([input_ids])
+            input_ids = torch.tensor(input_ids)
 
         return {"input_ids": input_ids}
 
@@ -161,6 +163,10 @@ class HFTokenizerAdapter:
             str: Декодированный текст
         """
         # Обрабатываем разные форматы входных данных
+        if hasattr(token_ids, "tolist"):
+            # torch.Tensor / numpy.ndarray -> обычный список (плоский или вложенный)
+            token_ids = token_ids.tolist()
+
         if isinstance(token_ids, int):
             token_ids = [token_ids]
         elif (

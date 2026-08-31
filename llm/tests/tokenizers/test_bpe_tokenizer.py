@@ -66,6 +66,17 @@ class TestBPETokenizer:
         # Decoded text should be similar to original (may have special tokens)
         assert len(decoded_text) > 0
 
+    def test_decode_accepts_tensor(self, trained_tokenizer):
+        """decode() should accept a torch.Tensor of ids, not just a list of int."""
+        torch = pytest.importorskip("torch")
+        text = "Искусственный интеллект"
+
+        tokens = trained_tokenizer.encode(text)
+        decoded_from_list = trained_tokenizer.decode(tokens)
+
+        decoded_from_tensor = trained_tokenizer.decode(torch.tensor(tokens))
+        assert decoded_from_tensor == decoded_from_list
+
     def test_encode_with_special_tokens(self, trained_tokenizer):
         """Test encoding with special tokens."""
         text = "Нейронные сети"

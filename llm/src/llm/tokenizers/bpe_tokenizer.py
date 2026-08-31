@@ -238,6 +238,10 @@ class BPETokenizer(BaseTokenizer):
         """
         skip_special_tokens = kwargs.get("skip_special_tokens", True)
 
+        # Поддержка torch.Tensor / numpy.ndarray наравне со списком int
+        if hasattr(tokens, "tolist"):
+            tokens = tokens.tolist()
+
         # Фильтруем специальные токены если нужно
         if skip_special_tokens:
             tokens = [
