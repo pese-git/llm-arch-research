@@ -234,7 +234,33 @@ dependencies = [
 - ✅ GPT, GPT-2: Полностью воспроизводимые реализации, токенные и позиционные эмбеддинги, causal multi-head attention, LayerNorm
 - ✅ LLaMA: Rotary Positional Embeddings (RoPE), RMSNorm, SwiGLU, оптимизированная память
 - ✅ Mistral: Sliding Window Attention (оконное внимание), Grouped Query Attention (GQA), совместимость с HF
+- ✅ Gemma: Multi-Query Attention (MQA), GeGLU
+- ✅ Mixtral: Mixture-of-Experts (MoE), Grouped Query Attention (GQA)
 - ✅ Все архитектуры поддерживают обучение и генерацию текста
+
+Пример блока декодера на примере GPT-1 (подробный разбор — в [notebooks/gpt.ipynb](notebooks/gpt.ipynb)):
+
+```mermaid
+flowchart LR
+    Tokens(["Tokens"]) --> TokEmb["Token Emb"]:::blue
+    Tokens --> PosEmb["Position Emb"]:::purple
+    TokEmb --> Sum(("+"))
+    PosEmb --> Sum
+    Sum --> Attn["Masked Multi-Head<br/>Attention"]:::blue
+    Attn --> A1(("+"))
+    Sum -.->|residual| A1
+    A1 --> N1["Norm"]:::gray
+    N1 --> FFN["Feed Forward<br/>Network"]:::purple
+    FFN --> A2(("+"))
+    N1 -.->|residual| A2
+    A2 --> N2["Norm"]:::gray
+    N2 --> Dc2["Decoder"]:::green --> Dc3["Decoder"]:::green --> Dots(["⋯"]) --> Dc4["Decoder"]:::green --> Dc5["Decoder"]:::green --> Lin["Linear"]:::gray --> Soft["Softmax"]:::purple
+
+    classDef blue fill:#dae8fc,stroke:#6c8ebf,color:#1a1a1a;
+    classDef purple fill:#e1d5e7,stroke:#9673a6,color:#1a1a1a;
+    classDef green fill:#d5e8d4,stroke:#82b366,color:#1a1a1a;
+    classDef gray fill:#f5f5f5,stroke:#666666,color:#1a1a1a;
+```
 
 ### Генерация текста
 - ✅ Greedy, sampling (Top-k, Top-p), контроль температуры, efficient caching
