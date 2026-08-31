@@ -238,6 +238,8 @@ dependencies = [
 - ✅ Mixtral: Mixture-of-Experts (MoE), Grouped Query Attention (GQA)
 - ✅ Все архитектуры поддерживают обучение и генерацию текста
 
+Разбор каждой архитектуры (компоненты, конфиг, отличия от предыдущей) — в [docs/](docs/README.md).
+
 Пример блока декодера на примере GPT-1 (подробный разбор — в [notebooks/gpt.ipynb](notebooks/gpt.ipynb)):
 
 ```mermaid
