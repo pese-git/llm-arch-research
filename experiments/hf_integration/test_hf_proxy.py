@@ -24,9 +24,6 @@ from shared.configs import (
 )
 
 
-import pytest
-
-@pytest.mark.skip(reason="Temporary skip: known integration bug with decode/tensor list")
 def test_basic_hf_integration():
     """Тестирует базовую интеграцию hf-proxy."""
     print("🧪 Тестирование базовой интеграции hf-proxy...")

@@ -26,7 +26,9 @@ def test_gpt2_decoder_forward_shape():
     x = torch.randn(batch, seq_len, emb_size)
     output, cache = model(x, use_cache=True)
     assert output.shape == (batch, seq_len, emb_size)
-    assert cache is not None or cache is None  # cache type may be tensor in current impl
+    k, v = cache
+    assert k.shape[2] == seq_len
+    assert v.shape[2] == seq_len
 
 
 def test_gpt2_decoder_forward_no_cache():
@@ -69,4 +71,6 @@ def test_gpt2_decoder_kv_cache_chain():
     # Второй проход — передаём кэш, добавляем еще токен:
     next_x = torch.randn(batch, 1, emb_size)
     _, cache2 = model(next_x, use_cache=True, cache=cache)
-    assert cache2 is not None
+    k2, v2 = cache2
+    assert k2.shape[2] == seq_len + 1
+    assert v2.shape[2] == seq_len + 1

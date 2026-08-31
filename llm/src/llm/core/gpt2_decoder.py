@@ -4,7 +4,6 @@ import torch
 from torch import nn
 from .feed_forward import FeedForward
 from .multi_head_attention import MultiHeadAttention
-from llm.core.feed_forward import FeedForward
 from .rope import RoPE
 
 
@@ -36,9 +35,7 @@ class Gpt2Decoder(nn.Module):
 
     Пример использования:
     ---------------------
-        >>> from llm.core.feed_forward import FeedForward
-        >>> ff_block = FeedForward(emb_size=256, dropout=0.1, activation=\"gelu\")
-        >>> decoder = CachedDecoder(num_heads=4, emb_size=256, head_size=64, feed_forward_layer=ff_block, max_seq_len=2048, dropout=0.1)
+        >>> decoder = Gpt2Decoder(num_heads=4, emb_size=256, head_size=64, max_seq_len=2048, dropout=0.1)
         >>> x = torch.randn(2, 100, 256)
         >>> y, kv_cache = decoder(x, use_cache=True, cache=None)
         >>> print(y.shape)  # torch.Size([2, 100, 256])
@@ -61,7 +58,7 @@ class Gpt2Decoder(nn.Module):
         rope: RoPE = None,
     ):
         """
-        Конструктор CachedDecoder.
+        Конструктор Gpt2Decoder.
 
         Аргументы:
         ----------
