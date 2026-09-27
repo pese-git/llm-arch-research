@@ -60,6 +60,8 @@ flowchart LR
 3. Каждый эксперт — самостоятельный блок `SwiGLU`. Эксперт, которого не выбрал ни один токен в батче, полностью пропускается (`if not expert_mask.any(): continue`) — реальная разреженность вычислений, а не маскирование после полного прохода через всех экспертов.
 4. Результат — взвешенная сумма выходов выбранных экспертов на каждый токен.
 
+> ⚠️ **Нет load-balancing loss.** В оригинальном Mixtral роутер обучается со вспомогательным loss, который выравнивает загрузку экспертов. Здесь его нет: `MoE.forward` возвращает только выход, и при обучении роутер может свестись к нескольким «любимым» экспертам. Кроме того, Mixtral наследует от Mistral [ошибку KV-кэша в sliding window](mistral.md#sliding-window-attention).
+
 ## Компоненты
 
 | Компонент | Класс | Файл |
@@ -84,7 +86,7 @@ result    = ffn_out + out
 
 ## Конфигурация
 
-Пример из [`experiments/llm_only/configs/mixtral_train.json`](../experiments/llm_only/configs/mixtral_train.json) — все ключи реально используются `Mixtral.__init__` (в отличие от [Gemma](gemma.md#неиспользуемые-ключи-конфига)):
+Пример из [`experiments/llm_only/configs/mixtral_train.json`](../experiments/llm_only/configs/mixtral_train.json) — все ключи, кроме `head_size`, используются `Mixtral.__init__`:
 
 | Параметр | Значение в примере | Смысл |
 |---|---|---|
@@ -92,7 +94,7 @@ result    = ffn_out + out
 | `embed_dim` | 256 | размерность эмбеддингов |
 | `num_q_heads` | 4 | число Query-голов |
 | `num_kv_heads` | 2 | число Key/Value-голов |
-| `head_size` | 64 | размерность одной attention-головы |
+| `head_size` | 64 | ❌ не читается: размер головы всегда `embed_dim // num_q_heads` |
 | `num_layers` | 4 | число блоков `MixtralDecoder` |
 | `max_position_embeddings` | 512 | максимальная длина последовательности |
 | `num_experts` | 8 | общее число экспертов MoE на слой |

@@ -1,131 +1,124 @@
-# Эксперименты с LLM архитектурами
+# Эксперименты с LLM-архитектурами
 
-Унифицированная структура экспериментов для обучения и генерации текста моделями LLM.
+Скрипты обучения и генерации: напрямую через библиотеку `llm` (`llm_only/`) и через адаптер HuggingFace (`hf_integration/`).
 
-## 📁 Структура экспериментов
+Все команды запускаются **из корня репозитория**: пути в конфигах и скриптах (`checkpoints/...`) относительные.
+
+## 📁 Структура
 
 ```
 experiments/
-├── llm_only/                    # Эксперименты только с библиотекой llm
-│   ├── train_gpt_bpe.py         # Обучение GPT с BPE токенизатором
-│   └── generate_gpt_bpe.py      # Генерация с GPT + BPE
-├── hf_integration/              # Эксперименты с hf-proxy
-│   ├── train_with_hf_trainer.py # Обучение через HF Trainer
-│   └── generate_with_hf_tools.py # Генерация через HF инструменты
-├── shared/                      # Общие утилиты
-│   ├── data.py                  # Загрузка и подготовка данных
-│   └── configs.py               # Конфигурации моделей
-└── README.md                    # Этот файл
+├── llm_only/
+│   ├── run_llm_experiment.py       # единый скрипт train/generate для всех 6 моделей
+│   └── configs/
+│       ├── <model>_train.json      # gpt, gpt2, llama, mistral, mixtral, gemma
+│       └── <model>_generate.json
+├── hf_integration/                 # только модель GPT (ограничение hf-proxy)
+│   ├── test_hf_proxy.py            # smoke-тест адаптеров модели и токенизатора
+│   ├── simple_hf_training.py       # ручной цикл обучения через hf-proxy
+│   ├── train_with_hf_trainer.py    # обучение через transformers.Trainer
+│   └── generate_with_hf_tools.py   # генерация через HF-интерфейсы
+└── shared/
+    ├── configs.py                  # учебный корпус TRAIN_TEXTS, пути PATHS, конфиги GPT для hf_integration
+    └── data.py                     # разбиение корпуса, ExperimentLogger, вспомогательные функции
 ```
 
-## 🚀 Быстрый старт
-
-### 1. Только библиотека llm (автономный режим)
+## 🚀 llm_only: обучение и генерация без HuggingFace
 
 ```bash
-# Обучение GPT модели с собственным BPE токенизатором
-uv run python experiments/llm_only/train_gpt_bpe.py
+# Обучение
+uv run python experiments/llm_only/run_llm_experiment.py --model llama --action train --config experiments/llm_only/configs/llama_train.json
 
-# Генерация текста обученной моделью
-uv run python experiments/llm_only/generate_gpt_bpe.py
+# Генерация обученной моделью
+uv run python experiments/llm_only/run_llm_experiment.py --model llama --action generate --config experiments/llm_only/configs/llama_generate.json
 ```
 
-### 2. Интеграция с HuggingFace через hf-proxy
+Аргументы:
+
+| Аргумент | Значения |
+|---|---|
+| `--model`, `-m` | `gpt`, `gpt2`, `llama`, `mistral`, `mixtral`, `gemma` |
+| `--action`, `-a` | `train`, `generate` |
+| `--config`, `-c` | путь к JSON-конфигу |
+
+**Что делает `train`:**
+1. Берёт учебный корпус `TRAIN_TEXTS` из `shared/configs.py` (80% — train; валидационная часть сейчас не используется).
+2. Загружает BPE-токенизатор из `bpe_tokenizer` или обучает новый и сохраняет его туда.
+3. Подставляет `vocab_size` токенизатора в `model_config`, создаёт модель и обучает её `llm.training.Trainer`.
+4. Сохраняет веса в `model_weights`, итоговый конфиг модели — в `model_config_path`, логи — в `log_path`.
+
+**Что делает `generate`:** загружает токенизатор, конфиг и веса по путям из конфига и генерирует продолжение для каждого из `test_prompts`.
+
+### Формат конфига обучения
+
+```json
+{
+  "bpe_tokenizer": "checkpoints/bpe_tokenizer.json",
+  "bpe_vocab_size": 1000,
+  "bpe_special_tokens": ["<pad>", "<unk>", "<bos>", "<eos>"],
+  "test_prompts": ["Open source AI"],
+  "model_config": { "vocab_size": null, "embed_dim": 256, "...": "ключи зависят от модели" },
+  "model_weights": "checkpoints/llama-bpe/model.pt",
+  "model_config_path": "checkpoints/llama-bpe/config.json",
+  "training": { "learning_rate": 0.0003, "batch_size": 2, "num_epochs": 3, "warmup_steps": 50 },
+  "log_path": "checkpoints/llama_only_training_logs.json"
+}
+```
+
+Какие ключи `model_config` нужны каждой модели — см. [llm/README.md](../llm/README.md#ключи-конфига). Лишние ключи игнорируются: например, `head_size` в конфигах Mistral/Mixtral/Gemma и `num_kv_heads`/`num_experts`/`top_k_experts`/`window_size` в конфиге Gemma ни на что не влияют.
+
+Все конфиги используют общий токенизатор `checkpoints/bpe_tokenizer.json`: если он уже есть, `bpe_vocab_size` и `bpe_special_tokens` не применяются.
+
+### Формат конфига генерации
+
+```json
+{
+  "bpe_tokenizer": "checkpoints/bpe_tokenizer.json",
+  "test_prompts": ["The Llama model is"],
+  "model_config_path": "checkpoints/mistral-bpe/config.json",
+  "model_weights": "checkpoints/mistral-bpe/model.pt",
+  "generation": { "max_new_tokens": 40, "temperature": 0.8, "do_sample": true, "top_k": null, "top_p": null },
+  "log_path": "checkpoints/mistral_only_generation_logs.json"
+}
+```
+
+## 🤗 hf_integration: через hf-proxy
+
+Работает только с моделью `GPT` — см. [hf-proxy/README.md](../hf-proxy/README.md).
 
 ```bash
-# Обучение через HuggingFace Trainer
-uv run python experiments/hf_integration/train_with_hf_trainer.py
+# Smoke-тест адаптеров
+uv run python experiments/hf_integration/test_hf_proxy.py
 
-# Генерация через HF инструменты
+# Ручное обучение через hf-proxy → checkpoints/hf_simple_trained, checkpoints/hf_simple_tokenizer
+uv run python experiments/hf_integration/simple_hf_training.py
+
+# Генерация моделью из simple_hf_training.py (запускать после него)
 uv run python experiments/hf_integration/generate_with_hf_tools.py
+
+# Обучение через transformers.Trainer → checkpoints/hf-trained, checkpoints/hf-trained-proxy
+uv run python experiments/hf_integration/train_with_hf_trainer.py
 ```
+
+Конфиги этих скриптов (`BASE_GPT_CONFIG`, `BPE_CONFIG`, `TRAINING_CONFIG`, `GENERATION_CONFIG`, `PATHS`) задаются в `shared/configs.py`.
 
 ## 📊 Сравнение подходов
 
-| Аспект | Только llm | С hf-proxy |
-|--------|------------|------------|
-| **Зависимости** | Только PyTorch | + HuggingFace Transformers |
-| **Обучение** | Собственный Trainer | HF Trainer |
-| **Генерация** | Прямой вызов модели | HF pipeline & интерфейсы |
-| **Гибкость** | Полный контроль | Совместимость с HF экосистемой |
-| **Сложность** | Проще | Более сложная настройка |
+| Аспект | llm_only | hf_integration |
+|---|---|---|
+| Модели | все 6 | только GPT |
+| Зависимости | PyTorch | + Transformers, Datasets |
+| Обучение | `llm.training.Trainer` | ручной цикл или `transformers.Trainer` |
+| Конфигурация | JSON-файлы в `llm_only/configs/` | Python-словари в `shared/configs.py` |
 
-## 🔧 Конфигурация
+## 🛠️ Добавление эксперимента
 
-Все эксперименты используют общие конфигурации из `shared/configs.py`:
+- **Новая модель в llm_only:** добавьте ветку в `load_model_class()` в `run_llm_experiment.py` и пару конфигов `<model>_train.json` / `<model>_generate.json`.
+- **Новый скрипт:** положите его в `llm_only/` или `hf_integration/`, используйте утилиты из `shared/` и сохраняйте результаты в `checkpoints/`.
 
-- **Модели**: базовые, маленькие и большие конфигурации GPT
-- **Токенизаторы**: параметры BPE обучения
-- **Обучение**: гиперпараметры обучения
-- **Генерация**: параметры генерации текста
+## 📚 См. также
 
-## 📈 Результаты
-
-Эксперименты сохраняют:
-- Обученные модели в `checkpoints/`
-- Токенизаторы в формате JSON
-- Логи обучения и генерации
-- Конфигурации моделей
-
-## 🎯 Примеры использования
-
-### Автономное использование (только llm)
-
-```python
-from llm.models.gpt import GPT
-from llm.tokenizers import BPETokenizer
-
-# Загрузка обученной модели
-model = GPT(config)
-model.load_state_dict(torch.load("checkpoints/gpt-bpe/model.pt"))
-
-# Загрузка токенизатора
-tokenizer = BPETokenizer.load("checkpoints/bpe_tokenizer.json")
-
-# Генерация текста
-input_ids = tokenizer.encode("промпт")
-generated = model.generate(input_ids)
-```
-
-### Интеграция с HF (через hf-proxy)
-
-```python
-from hf_proxy import HFAdapter, HFTokenizerAdapter
-
-# Загрузка через адаптеры
-hf_model = HFAdapter.from_pretrained("checkpoints/hf-trained/pytorch_model.bin")
-hf_tokenizer = HFTokenizerAdapter.from_pretrained("checkpoints/hf-bpe-tokenizer")
-
-# Использование с HF инструментами
-from transformers import pipeline
-pipe = pipeline("text-generation", model=hf_model, tokenizer=hf_tokenizer)
-```
-
-## 🔍 Мониторинг
-
-- **Логи обучения**: автоматически сохраняются в JSON
-- **Метрики**: loss, длина генерации, эффективность токенизации
-- **Визуализация**: можно интегрировать с TensorBoard через HF Trainer
-
-## 🛠️ Разработка
-
-### Добавление нового эксперимента
-
-1. Создайте файл в соответствующей директории (`llm_only/` или `hf_integration/`)
-2. Используйте общие утилиты из `shared/`
-3. Сохраняйте результаты в стандартизированные пути
-4. Документируйте конфигурации и результаты
-
-### Модификация конфигураций
-
-Измените соответствующие секции в `shared/configs.py`:
-- `BASE_GPT_CONFIG` - параметры модели
-- `BPE_CONFIG` - параметры токенизатора  
-- `TRAINING_CONFIG` - параметры обучения
-- `GENERATION_CONFIG` - параметры генерации
-
-## 📚 Дополнительные ресурсы
-
-- [Документация llm библиотеки](../llm/README.md)
-- [Документация hf-proxy](../hf-proxy/README.md)
-- [Примеры использования](../notebooks/)
+- [Документация архитектур](../docs/README.md)
+- [Библиотека llm](../llm/README.md)
+- [hf-proxy](../hf-proxy/README.md)
+- [Ноутбуки](../notebooks/)

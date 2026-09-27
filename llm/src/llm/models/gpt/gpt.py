@@ -12,13 +12,13 @@
     - GELU активация
     - Absolute learned positional embeddings
 
-    Подробнее: Radford et al., "Improving Language Understanding by Generative Pre-Training", arXiv:1801.10198
+    Подробнее: Radford et al., "Improving Language Understanding by Generative Pre-Training" (OpenAI, 2018)
     https://cdn.openai.com/research-covers/language-unsupervised/language_understanding_paper.pdf
 
     Пример использования:
         >>> model = GPT({"vocab_size": 50257, ...})
-        >>> logits = model(input_ids)
-        >>> out = model.generate(input_ids, max_length=30)
+        >>> logits, cache = model(input_ids)
+        >>> out = model.generate(input_ids, max_new_tokens=30, do_sample=False)
     """
 
 import torch
@@ -33,7 +33,7 @@ from llm.core.positional_embeddings import PositionalEmbeddings
 
 class GPT(BaseModel):
     """
-    GPT (Generative Pretrained Transformer) — автогерессивная языковая модель по мотивам оригинального GPT/GPT-2 architecture.
+    GPT (Generative Pretrained Transformer) — автогерессивная языковая модель по мотивам оригинального GPT-1.
 
     Назначение:
     -----------
@@ -44,9 +44,9 @@ class GPT(BaseModel):
     Архитектурные особенности:
     --------------------------
     - Embedding-слои для токенов (token_embeddings) и позиций (position_embeddings).
-    - Stack из N декодер-блоков (MultiHeadAttention + FeedForward + residual + LayerNorm).
+    - Stack из N блоков GptDecoder (MultiHeadAttention + FeedForward + residual + LayerNorm, post-LN: нормализация после residual).
     - Masked self-attention — каждый токен видит только свои и предыдущие, обеспечивая автогерессию.
-    - LayerNorm до проекции на словарь (pre-LN).
+    - Финальной нормализации перед проекцией на словарь нет (в отличие от GPT-2).
     - Поддержка efficient KV кэша — ускоряет autoregressive inference/generation.
 
     Основные параметры:
@@ -63,16 +63,15 @@ class GPT(BaseModel):
     Формула и поток данных:
     -----------------------
         x -> token_embeddings -> + position_embeddings -> dropout ->
-           -> stack([DecoderBlock]) ->
-           -> LayerNorm ->
+           -> stack([GptDecoder]) ->
            -> Linear(out_dim=vocab_size) -> output_logits
 
     Пример использования:
     ---------------------
         >>> gpt = GPT({...})
         >>> tokens = torch.tensor([[12, 123, 44]])
-        >>> logits = gpt(tokens)
-        >>> generated = gpt.generate(tokens, max_new_tokens=10)
+        >>> logits, cache = gpt(tokens)
+        >>> generated = gpt.generate(tokens, max_new_tokens=10, do_sample=False)
 
     References:
     -----------

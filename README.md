@@ -1,244 +1,141 @@
 # LLM Architecture Research
 
-Исследовательский проект по разработке, обучению и сравнительному анализу современных архитектур больших языковых моделей (LLM): **GPT, GPT-2, LLaMA, Mistral**. Прямая поддержка интеграции с HuggingFace (через модуль `hf-proxy`).
+Исследовательский проект: реализация «с нуля» на PyTorch, обучение и сравнительный разбор архитектур больших языковых моделей — **GPT, GPT-2, LLaMA, Mistral, Mixtral, Gemma**. Код написан в учебных целях: каждый блок небольшой, самодостаточный и подробно задокументирован.
 
+Разбор каждой архитектуры (компоненты, конфиг, отличия от предыдущей модели) — в [docs/](docs/README.md).
 
 ## 🏗️ Архитектура проекта
 
-Проект организован как монорепозиторий с использованием **uv** workspace:
+Монорепозиторий на **uv** workspace:
 
-- **`llm`** — основная библиотека с реализацией архитектур LLM (**GPT, GPT-2, LLaMA, Mistral**)
-- **`hf-proxy`** — экспериментальный адаптер для интеграции с HuggingFace (загрузка, токенизация, экспериментальные скрипты). Функционал может изменяться и не гарантирует полной совместимости с будущими версиями HuggingFace Transformers.
-- **`experiments`** — скрипты обучения и генерации (включая HF и собственные модели)
-- **`notebooks`** — исследовательские ноутбуки, анализ архитектур
+- **`llm`** — основная библиотека: блоки трансформера, 6 моделей, BPE-токенизатор, датасеты, простой Trainer. Зависит только от PyTorch и NumPy.
+- **`hf-proxy`** — экспериментальный адаптер к HuggingFace Transformers. **Поддерживает только модель `GPT`** (см. [hf-proxy/README.md](hf-proxy/README.md)).
+- **`experiments`** — скрипты обучения и генерации: без HF (`llm_only`) и через hf-proxy (`hf_integration`).
+- **`notebooks`** — ноутбуки с пошаговым разбором каждой архитектуры и BPE.
+- **`docs`** — документация по архитектурам.
 
 ## 📁 Структура проекта
 
 ```
 llm-arch-research/
-│
-├── pyproject.toml        # корневой workspace конфиг
+├── pyproject.toml              # корневой workspace-конфиг
 ├── uv.lock
+├── docs/                       # разбор архитектур (по файлу на модель)
+├── assets/drawio/              # drawio-исходники диаграмм GPT-1
 │
-├── llm/                  # основная библиотека архитектур
-│   ├── pyproject.toml
-│   └── src/llm/
-│       ├── core/         # базовые компоненты
-│       │   ├── base_model.py
-│       │   ├── cached_decoder.py    # Декодер с кэшированием
-│       │   ├── decoder.py
-│       │   ├── multi_head_attention.py
-│       │   ├── head_attention.py
-│       │   ├── feed_forward.py
-│       │   ├── token_embeddings.py
-│       │   ├── positional_embeddings.py
-│       │   ├── rope.py              # Rotary Positional Embeddings
-│       │   ├── rms_norm.py          # RMS Normalization
-│       │   ├── swi_glu.py           # SwiGLU активация
-│       │   ├── silu.py              # SiLU активация
-│       │   └── gelu.py              # GELU активация
-│       ├── models/       # Реализации моделей
-│       │   ├── gpt/      # GPT и GPT-2 архитектуры
-│       │   │   ├── gpt.py
-│       │   │   ├── gpt2.py
-│       │   │   └── __init__.py
-│       │   ├── llama/    # LLaMA архитектура
-│       │   │   ├── llama.py
-│       │   │   └── __init__.py
-│       │   └── mistral/  # Mistral архитектура
-│       │       ├── mistral.py
-│       │       └── __init__.py
-│       ├── training/     # утилиты обучения
-│       │   ├── dataset.py
-│       │   ├── trainer.py
-│       │   ├── optimizer.py
-│       │   └── scheduler.py
-│       ├── evaluation/   # оценка моделей
-│       └── tokenizers/   # токенизаторы
-│           ├── base_tokenizer.py
-│           └── bpe_tokenizer.py
+├── llm/                        # основная библиотека
+│   ├── src/llm/
+│   │   ├── core/               # строительные блоки
+│   │   │   ├── base_model.py               # абстрактный базовый класс
+│   │   │   ├── token_embeddings.py         # эмбеддинги токенов
+│   │   │   ├── positional_embeddings.py    # обучаемые абсолютные позиции (GPT)
+│   │   │   ├── rope.py                     # Rotary Positional Embeddings
+│   │   │   ├── multi_head_attention.py     # MHA (+ RoPE, KV-кэш)
+│   │   │   ├── multi_query_attention.py    # MQA (Gemma)
+│   │   │   ├── group_query_attention.py    # GQA + sliding window (Mistral, Mixtral)
+│   │   │   ├── feed_forward.py             # FFN с GELU
+│   │   │   ├── swi_glu.py / geglu.py       # gated FFN
+│   │   │   ├── gelu.py / silu.py           # активации
+│   │   │   ├── rms_norm.py                 # RMSNorm
+│   │   │   ├── moe.py                      # Mixture-of-Experts
+│   │   │   ├── cached_decoder.py           # параметризуемый pre-LN декодер (LLaMA)
+│   │   │   └── {gpt,gpt2,mistral,mixtral,gemma}_decoder.py
+│   │   ├── models/             # gpt/ (GPT, GPT2), llama/, mistral/, mixtral/, gemma/
+│   │   ├── tokenizers/         # BaseTokenizer, BPETokenizer, SimpleBPETokenizer
+│   │   ├── datasets/           # TextDataset, StreamingTextDataset, TextWithSpecialTokensDataset
+│   │   ├── training/           # Trainer, get_optimizer, линейный warmup-шедулер
+│   │   └── evaluation/         # заготовка, пока пустая
+│   └── tests/                  # pytest: core/, models/, tokenizers/, datasets/, training/
 │
-├── hf-proxy/             # адаптер HuggingFace
-│   ├── pyproject.toml
-│   └── src/hf_proxy/
-│       ├── hf_config.py
-│       ├── hf_adapter.py
-│       ├── hf_tokenizer.py
-│       └── hf_utils.py
+├── hf-proxy/src/hf_proxy/      # HFAdapter, HFGPTAdapter, HFTokenizerAdapter, HFUtils
 │
-├── experiments/          # скрипты обучения и экспериментов
-│   ├── hf_integration/   # интеграция с HuggingFace
-│   │   ├── train_with_hf_trainer.py
-│   │   ├── generate_with_hf_tools.py
-│   │   ├── simple_hf_training.py
-│   │   └── test_hf_proxy.py
-│   ├── llm_only/         # обучение без HF
-│   │   ├── train_gpt_bpe.py
-│   │   └── generate_gpt_bpe.py
-│   └── shared/           # общие утилиты
-│       ├── configs.py
-│       └── data.py
+├── experiments/
+│   ├── llm_only/
+│   │   ├── run_llm_experiment.py   # единый скрипт train/generate для всех 6 моделей
+│   │   └── configs/                # <model>_train.json, <model>_generate.json
+│   ├── hf_integration/             # обучение и генерация через hf-proxy
+│   └── shared/                     # общие утилиты и встроенный учебный корпус
 │
-├── checkpoints/          # сохраненные модели и токенизаторы
-└── notebooks/            # исследовательские ноутбуки
+└── notebooks/                  # gpt, gpt2, llama, mistral, mixstral, gemma, bpe
 ```
+
+Каталог `checkpoints/` создаётся скриптами при запуске и в git не хранится.
 
 ## 🚀 Быстрый старт
 
-**Пример запуска обучения и генерации для любых архитектур:**
-
 ```bash
-python experiments/llm_only/run_llm_experiment.py --model mistral --action generate --config experiments/llm_only/configs/mistral_generate.json
-```
-
-**Использование собственных моделей с HuggingFace-интерфейсом:**
-```python
-from hf_proxy.hf_adapter import HFAdapter
-hf_model = HFAdapter("mistralai/Mistral-7B-v0.1")
-```
-
-### Установка зависимостей
-
-```bash
-# Установка всех зависимостей workspace
+# Установка зависимостей workspace
 uv sync
 
-# Установка с dev-зависимостями
+# С dev-зависимостями (pytest, ruff, black, mypy, jupyter)
 uv sync --extra dev
 ```
 
-## ⚡ Работа с экспериментами (experiments/llm_only, experiments/hf_integration)
-
-- В `experiments/llm_only`: универсальный скрипт для обучения и генерации LLM (включая LLaMA и Mistral) без HuggingFace — всё через собственную реализацию.
-- В `experiments/hf_integration`: скрипты и примеры для генерации, обучения и тестирования моделей с помощью HuggingFace API (через hf-proxy). Позволяет использовать свои модели и токенизаторы как стандартные HF-объекты.
-
-**Для моделей Mistral/Llama доступны оба сценария: прямая работа или через HuggingFace-прокси.**
-
-*Конфиги и примеры см. в соответствующих папках.*
-
-
----
-
-### Тестирование hf-proxy
+Обучение и генерация любой из 6 моделей (запускать из корня репозитория — пути в конфигах относительные):
 
 ```bash
-# Базовое тестирование интеграции
-uv run python experiments/hf_integration/test_hf_proxy.py
-
-# Генерация через HF инструменты
-uv run python experiments/hf_integration/generate_with_hf_tools.py
+uv run python experiments/llm_only/run_llm_experiment.py --model mistral --action train --config experiments/llm_only/configs/mistral_train.json
+uv run python experiments/llm_only/run_llm_experiment.py --model mistral --action generate --config experiments/llm_only/configs/mistral_generate.json
 ```
 
-### Использование в коде
+`--model`: `gpt`, `gpt2`, `llama`, `mistral`, `mixtral`, `gemma`. Подробнее — в [experiments/README.md](experiments/README.md).
+
+## 🧩 Использование в коде
 
 ```python
-from llm.models.gpt import GPT, GPT2
-from llm.tokenizers import BPETokenizer
-from hf_proxy import HFAdapter, HFTokenizerAdapter
+import torch
+from llm.models.gpt import GPT
+from llm.models.mistral import Mistral
 
-# Создание GPT модели
-config = {
-    "vocab_size": 50257,
+gpt = GPT({
+    "vocab_size": 1000,
     "embed_dim": 256,
     "num_heads": 4,
     "num_layers": 4,
     "max_position_embeddings": 128,
-    "dropout": 0.1
-}
-model = GPT(config)
+    "dropout": 0.1,
+})
 
-# Создание GPT-2 модели (пример)
-gpt2_config = {
-    "vocab_size": 50257,
-    "embed_dim": 768,
-    "num_heads": 12,
-    "num_layers": 12,
-    "max_position_embeddings": 1024,
-    "dropout": 0.1
-}
-gpt2_model = GPT2(gpt2_config)
+mistral = Mistral({
+    "vocab_size": 1000,
+    "embed_dim": 256,
+    "num_q_heads": 4,
+    "num_kv_heads": 2,
+    "num_layers": 4,
+    "max_position_embeddings": 512,
+    "window_size": 16,
+    "dropout": 0.1,
+})
 
-# Генерация текста
-generated = model.generate(
-    input_ids, 
-    max_new_tokens=50, 
-    do_sample=True, 
-    temperature=0.7
-)
+input_ids = torch.randint(0, 1000, (1, 8))
 
-# Использование с HuggingFace через hf-proxy
-hf_model = HFAdapter.from_llm_model(model)
-hf_tokenizer = HFTokenizerAdapter(tokenizer)
+# forward возвращает кортеж (logits, cache); cache = None при use_cache=False
+logits, _ = mistral(input_ids, use_cache=False)
 
-# Генерация через HF интерфейс
-generated = hf_model.generate(
-    input_ids=inputs['input_ids'],
-    max_new_tokens=50,
-    do_sample=True,
-    temperature=0.7
-)
+# Генерация: greedy (do_sample=False) или sampling с temperature / top_k / top_p
+generated = mistral.generate(input_ids, max_new_tokens=20, do_sample=True, temperature=0.8, top_k=50)
 ```
 
-## 🛠️ Технологический стек
+Ключи конфига различаются между моделями — см. раздел «Конфигурация» в документе нужной архитектуры в [docs/](docs/README.md).
 
-- **Python 3.10+** — язык программирования
-- **uv** — современный менеджер пакетов и workspace
-- **PyTorch 2.8+** — фреймворк глубокого обучения
-- **Transformers** — интеграция с HuggingFace
-- **Datasets** — работа с данными
-- **TOML** — конфигурационные файлы
+Интеграция с HuggingFace (только `GPT`):
 
-## 📦 Зависимости
+```python
+from hf_proxy import HFAdapter
 
-### Корневой workspace
-```toml
-[project]
-dependencies = ["tqdm>=4,<5"]
-
-[project.optional-dependencies]
-dev = [
-    "pytest>=8.0.0",
-    "black>=24.0.0", 
-    "ruff>=0.3.0",
-    "mypy>=1.8.0",
-    "jupyter>=1.0.0",
-]
-test = [
-    "pytest>=8.0.0",
-    "pytest-cov>=4.1.0",
-]
-```
-
-### Пакет llm
-```toml
-[project]
-dependencies = [
-    "torch>=2.3.0",
-    "numpy>=1.24.0",
-]
-```
-
-### Пакет hf-proxy
-```toml
-[project]
-dependencies = [
-    "torch>=2.3.0",
-    "transformers>=4.44.0",
-    "datasets>=2.20.0",
-]
+hf_model = HFAdapter.from_llm_model(gpt)   # HFGPTAdapter — наследник transformers.PreTrainedModel
 ```
 
 ## 🎯 Реализованные возможности
 
-### Архитектуры
-- ✅ GPT, GPT-2: Полностью воспроизводимые реализации, токенные и позиционные эмбеддинги, causal multi-head attention, LayerNorm
-- ✅ LLaMA: Rotary Positional Embeddings (RoPE), RMSNorm, SwiGLU, оптимизированная память
-- ✅ Mistral: Sliding Window Attention (оконное внимание), Grouped Query Attention (GQA), совместимость с HF
-- ✅ Gemma: Multi-Query Attention (MQA), GeGLU
-- ✅ Mixtral: Mixture-of-Experts (MoE), Grouped Query Attention (GQA)
-- ✅ Все архитектуры поддерживают обучение и генерацию текста
-
-Разбор каждой архитектуры (компоненты, конфиг, отличия от предыдущей) — в [docs/](docs/README.md).
+| Архитектура | Ключевые механизмы |
+|---|---|
+| GPT | обучаемые позиционные эмбеддинги, MHA, post-LN, GELU-FFN |
+| GPT-2 | то же + pre-LN и финальная нормализация |
+| LLaMA | RoPE, RMSNorm, SwiGLU, обычный MHA (без GQA) |
+| Mistral | + Grouped Query Attention, Sliding Window Attention |
+| Mixtral | Mistral + Mixture-of-Experts вместо плотного FFN |
+| Gemma | RoPE, RMSNorm, Multi-Query Attention, GeGLU |
 
 Пример блока декодера на примере GPT-1 (подробный разбор — в [notebooks/gpt.ipynb](notebooks/gpt.ipynb)):
 
@@ -264,113 +161,55 @@ flowchart LR
     classDef gray fill:#f5f5f5,stroke:#666666,color:#1a1a1a;
 ```
 
-### Генерация текста
-- ✅ Greedy, sampling (Top-k, Top-p), контроль температуры, efficient caching
+**Генерация:** greedy, sampling с температурой, top-k, top-p, KV-кэш (корректно работает в LLaMA и Gemma, см. ограничения ниже).
 
-### Обучение
-- ✅ Языковое моделирование с кастомными и HF-токенизаторами
-- ✅ AdamW, кастомные датасеты, сохранение чекпоинтов
+**Обучение:** собственный BPE-токенизатор, `Trainer` (AdamW, линейный warmup, gradient clipping). Сохранение весов и конфига выполняет скрипт `run_llm_experiment.py`, а не сам `Trainer`.
 
-### Интеграция с HuggingFace (hf-proxy)
-- ✅ Экспорт/импорт моделей и токенизаторов в HF совместимый формат
-- ✅ Генерация и обучение через HF Trainer, pipelines и т.д.
-- ✅ Двусторонняя поддержка: собственные модели становятся HF-совместимыми и наоборот
+**HuggingFace:** модель `GPT` оборачивается в `PreTrainedModel`, собственный токенизатор — в HF-совместимый интерфейс; сохранение/загрузка в HF-формате.
 
-## 🔬 Эксперименты с hf-proxy
+## ⚠️ Известные ограничения
 
-### Успешно протестированные функции:
+Проект учебный; перед использованием для чего-то серьёзного учтите:
 
-1. **Базовая интеграция** (`test_hf_proxy.py`)
-   - ✅ Создание HF адаптера для токенизаторов
-   - ✅ Создание HF адаптера для моделей
-   - ✅ Токенизация и декодирование
-   - ✅ Forward pass через адаптированную модель
-   - ✅ Сохранение и загрузка моделей
+- **KV-кэш в GPT/GPT-2 не сдвигает позиции:** при `use_cache=True` все новые токены получают позиционный эмбеддинг позиции 0, и генерация отличается от генерации без кэша.
+- **KV-кэш в Mistral/Mixtral расходится с генерацией без кэша**, как только длина кэша достигает `window_size`: кэш обрезается до окна, а позиция RoPE берётся из длины кэша и перестаёт расти.
+- **Генерация дальше `max_position_embeddings`** в моделях с RoPE падает с `RuntimeError` вместо понятной ошибки.
+- **`attention_mask` не используется** ни в моделях, ни в hf-proxy: в батчах с паддингом модель «видит» pad-токены.
+- **MoE обучается без load-balancing loss** — роутер может выродиться в несколько экспертов.
+- **Интерфейс `BaseModel`** (`forward(input_ids, attention_mask) -> Tensor`) не совпадает с фактическим интерфейсом моделей (`forward(x, use_cache, cache) -> (logits, cache)`).
+- **hf-proxy поддерживает только `GPT`.**
+- Модуль `llm.evaluation` пока пустой.
 
-2. **Упрощенное обучение** (`simple_hf_training.py`)
-   - ✅ Обучение GPT модели с использованием hf-proxy
-   - ✅ Ручной цикл обучения без сложных зависимостей
-   - ✅ Сохранение результатов обучения
+Подробности по каждой архитектуре — в [docs/README.md](docs/README.md#известные-ограничения).
 
-3. **Генерация через HF инструменты** (`generate_with_hf_tools.py`)
-   - ✅ Загрузка моделей в HF формате
-   - ✅ Генерация через стандартные HF интерфейсы
-   - ✅ Сравнение стратегий генерации
-   - ✅ Интерактивная генерация
+## 🛠️ Технологический стек
 
-### Решенные проблемы:
-
-- ✅ Исправление метода `pad` в токенизаторе для обработки разных типов данных
-- ✅ Корректная загрузка моделей с передачей конфигурации
-- ✅ Совместимость с HF экосистемой
-
-## 📊 Примеры работы
-
-### Обучение модели
-```bash
-🚀 УПРОЩЕННОЕ ОБУЧЕНИЕ GPT С HF-PROXY
-=========================================================
-🔧 Подготовка данных...
-📊 Данные: 10 train, 2 validation
-🔧 Подготовка токенизатора...
-✅ Токенизатор создан (vocab_size=473)
-🔧 Подготовка модели...
-✅ Модель создана
-🎯 Обучение модели...
-📊 Результаты обучения:
-   Final train loss: 4.6802
-   Final val loss: 5.1834
-✅ Модель сохранена
-```
-
-### Генерация через HF интерфейсы
-```bash
-🧪 Тестирование HuggingFace pipeline...
-🎯 Генерация текста через HF адаптер
-🔤 Промпт: 'Искусственный'
-🎯 Результат: 'Искусственный интеллект продолжает развиваться...'
-```
+- **Python 3.10+**, **uv** (workspace)
+- **PyTorch** (в корневом проекте закреплён `torch==2.8.0`, библиотека `llm` требует `torch>=2.3.0`)
+- **Transformers**, **Datasets** — только для `hf-proxy`
 
 ## 🔧 Разработка
 
-### Добавление зависимостей
 ```bash
-# В корневой проект
-uv add package-name
+# Тесты библиотеки llm
+cd llm && uv run pytest
 
-# В конкретный пакет
-cd llm && uv add package-name
-
-# Dev-зависимости
-uv add --dev pytest black
-```
-
-### Запуск тестов
-```bash
-uv run pytest
-```
-
-### Форматирование кода
-```bash
-uv run black .
+# Линтинг и форматирование
 uv run ruff check .
+uv run black .
+
+# Добавление зависимости в корневой проект или в конкретный пакет
+uv add package-name
+cd llm && uv add package-name
 ```
 
 ## 🤝 Вклад в проект
 
-1. Форкните репозиторий
-2. Создайте feature ветку
-3. Внесите изменения
-4. Запустите тесты: `uv run pytest`
-5. Отформатируйте код: `uv run black . && uv run ruff check .`
-6. Создайте pull request
+1. Создайте feature-ветку
+2. Внесите изменения и добавьте тесты
+3. Убедитесь, что `uv run pytest` в каталоге `llm/` проходит
+4. Создайте pull request
 
 ## 📄 Лицензия
 
 MIT License
-
----
-
-**Разработано с ❤️ для исследований в области LLM**
-
-*Обновлено: Октябрь 2025*

@@ -73,6 +73,8 @@ result         = Norm2(ffn_out + out)
 
 `GPT.generate(x, max_new_tokens, do_sample, temperature=1.0, top_k=None, top_p=None, use_cache=True, attention_mask=None, **kwargs)` — унифицированная сигнатура, общая для всех архитектур в этом репозитории: greedy (`do_sample=False`), sampling с температурой, top-k, top-p (nucleus), с опциональным KV-кэшем.
 
+> ⚠️ **Генерация с KV-кэшем работает неверно.** `GPT.forward` пытается вычислить `start_pos` из кэша, но проверяет структуру `cache[0][0]` как кортеж, хотя это тензор K. Поэтому `start_pos` всегда 0, и при `use_cache=True` (по умолчанию) каждый новый токен получает позиционный эмбеддинг позиции 0. Результат генерации с кэшем отличается от результата без кэша; для корректной генерации передавайте `use_cache=False`.
+
 ## Что изменилось в GPT-2
 
 - normalization: **post-LN → pre-LN**;

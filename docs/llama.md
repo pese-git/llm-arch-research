@@ -67,11 +67,13 @@ result    = ffn_out + out
 | `max_position_embeddings` | 128 | максимальная длина последовательности (и буфер RoPE cos/sin) |
 | `dropout` | 0.1 | dropout в attention и FFN |
 
-## ⚠️ Известное расхождение с докстрингом
+## Известное расхождение с докстрингом
 
-Докстринг класса `Llama` (и README проекта) описывает **Grouped Query Attention** (`num_q_heads`/`num_kv_heads`) как часть архитектуры LLaMA в этом репозитории. Фактическая реализация ([`llama.py:78-101`](../llm/src/llm/models/llama/llama.py)) читает из конфига только `num_heads` и строит обычный `MultiHeadAttention` через `CachedDecoder` — `GroupedQueryAttention` в `llama.py` не импортируется и не используется. Конфиг [`llama_train.json`](../experiments/llm_only/configs/llama_train.json) это подтверждает: там нет ключей `num_q_heads`/`num_kv_heads`, только `num_heads`.
+Раньше докстринг класса `Llama` и README проекта описывали **Grouped Query Attention** (`num_q_heads`/`num_kv_heads`) как часть LLaMA в этом репозитории. Фактически `Llama.__init__` читает из конфига только `num_heads` и строит обычный `MultiHeadAttention` через `CachedDecoder`; `GroupedQueryAttention` в `llama.py` не используется. Конфиг [`llama_train.json`](../experiments/llm_only/configs/llama_train.json) это подтверждает: там только `num_heads`. Докстринг и README исправлены под реализацию.
 
-Иными словами, фактически реализован **LLaMA-1** в его исходном виде (RoPE + RMSNorm + SwiGLU + обычный MHA, без GQA — GQA появилась только в LLaMA-2 70B), а не архитектура, описанная в докстринге. GQA в этом репозитории впервые реализована в [Mistral](mistral.md).
+Иными словами, реализован **LLaMA-1** в исходном виде (RoPE + RMSNorm + SwiGLU + обычный MHA; GQA появилась только в LLaMA-2 70B). GQA в этом репозитории впервые реализована в [Mistral](mistral.md).
+
+Ещё два отличия от оригинала: все `Linear`-слои (Q/K/V, выходная проекция attention, голова на словарь) созданы с bias, а dropout применяется в attention и FFN.
 
 ## Генерация
 

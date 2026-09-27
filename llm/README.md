@@ -1,270 +1,157 @@
-# LLM Framework - Фреймворк для языковых моделей
+# llm — библиотека архитектур LLM
 
-Модульная библиотека для создания, обучения и использования больших языковых моделей (LLM) с поддержкой различных архитектур (GPT, LLaMA и др.).
+Модульная учебная библиотека на PyTorch: строительные блоки трансформера и шесть собранных из них моделей — **GPT, GPT-2, LLaMA, Mistral, Mixtral, Gemma**. Зависит только от `torch` и `numpy`.
 
-## 🏗️ Архитектура
+Разбор каждой архитектуры — в [../docs/](../docs/README.md).
 
-Библиотека построена по модульному принципу с четким разделением ответственности:
+## 🏗️ Структура
 
 ```
-llm/
-├── core/                 # Базовые компоненты
-│   ├── base_model.py    # Абстрактный базовый класс моделей
-│   ├── cached_decoder.py # Универсальный декодер с кэшированием
-│   ├── decoder.py       # Базовый декодер
-│   ├── multi_head_attention.py # Многоголовое внимание
-│   ├── head_attention.py # Одно-головое внимание
-│   ├── feed_forward.py  # Стандартный FFN слой
-│   ├── token_embeddings.py # Векторные представления токенов
-│   ├── positional_embeddings.py # Абсолютные позиционные эмбеддинги
-│   ├── rope.py          # Rotary Positional Embeddings (RoPE)
-│   ├── rms_norm.py      # RMS Normalization
-│   ├── swi_glu.py       # SwiGLU активация
-│   ├── silu.py          # SiLU активация
-│   └── gelu.py          # GELU активация
-├── models/              # Конкретные реализации моделей
-│   ├── gpt/            # GPT архитектуры
-│   │   ├── gpt.py      # Базовая GPT
-│   │   ├── gpt2.py     # GPT-2 реализация
-│   │   └── __init__.py
-│   ├── llama/          # LLaMA архитектура
-│   │   ├── llama.py    # LLaMA реализация
-│   │   └── __init__.py
-│   └── mistral/        # Mistral архитектура
-│       ├── mistral.py  # Mistral реализация
-│       └── __init__.py
-├── tokenizers/          # Токенизаторы
-│   ├── base_tokenizer.py # Базовый интерфейс
-│   └── bpe_tokenizer.py # BPE токенизатор
-├── datasets/            # Работа с датасетами
-│   ├── text_dataset.py    # Стандартный датасет
-│   └── streaming_text_dataset.py # Стриминговый датасет
-└── training/           # Утилиты обучения
-    ├── trainer.py      # Тренировочный цикл
-    ├── optimizer.py    # Оптимизаторы
-    └── scheduler.py    # Планировщики обучения
+src/llm/
+├── core/                         # строительные блоки
+│   ├── base_model.py             # BaseModel — абстрактный базовый класс
+│   ├── token_embeddings.py       # TokenEmbeddings
+│   ├── positional_embeddings.py  # PositionalEmbeddings — обучаемые абсолютные позиции (GPT, GPT-2)
+│   ├── rope.py                   # RoPE — Rotary Positional Embeddings
+│   ├── multi_head_attention.py   # MultiHeadAttention (+ опциональный RoPE, KV-кэш)
+│   ├── multi_query_attention.py  # MultiQueryAttention — одна общая K/V-голова (Gemma)
+│   ├── group_query_attention.py  # GroupedQueryAttention + sliding window (Mistral, Mixtral)
+│   ├── feed_forward.py           # FeedForward с GELU
+│   ├── swi_glu.py                # SwiGLU
+│   ├── geglu.py                  # GeGLU
+│   ├── gelu.py, silu.py          # активации
+│   ├── rms_norm.py               # RMSNorm
+│   ├── moe.py                    # MoE — top-k роутинг по SwiGLU-экспертам
+│   ├── cached_decoder.py         # CachedDecoder — параметризуемый pre-LN блок (LLaMA)
+│   ├── gpt_decoder.py            # GptDecoder (post-LN)
+│   ├── gpt2_decoder.py           # Gpt2Decoder (pre-LN)
+│   ├── mistral_decoder.py        # MistralDecoder
+│   ├── mixtral_decoder.py        # MixtralDecoder
+│   └── gemma_decoder.py          # GemmaDecoder
+├── models/
+│   ├── gpt/                      # GPT, GPT2
+│   ├── llama/                    # Llama
+│   ├── mistral/                  # Mistral
+│   ├── mixtral/                  # Mixtral
+│   └── gemma/                    # Gemma
+├── tokenizers/                   # BaseTokenizer, BPETokenizer, SimpleBPETokenizer
+├── datasets/                     # TextDataset, StreamingTextDataset, TextWithSpecialTokensDataset
+├── training/                     # Trainer, get_optimizer, get_linear_schedule_with_warmup
+└── evaluation/                   # заготовка, пока пустая
 ```
 
-## 🧩 Ключевые компоненты
+## 🏆 Архитектуры
 
-### BaseModel (`core/base_model.py`)
-**Абстрактный базовый класс** для всех языковых моделей с единым интерфейсом.
+| Модель | Класс | Attention | Позиции | Норма | FFN | Блок |
+|---|---|---|---|---|---|---|
+| GPT | `llm.models.gpt.GPT` | MHA | обучаемые | LayerNorm, post-LN | GELU | `GptDecoder` |
+| GPT-2 | `llm.models.gpt.GPT2` | MHA | обучаемые | LayerNorm, pre-LN + финальная | GELU | `Gpt2Decoder` |
+| LLaMA | `llm.models.llama.Llama` | MHA | RoPE | RMSNorm | SwiGLU | `CachedDecoder` |
+| Mistral | `llm.models.mistral.Mistral` | GQA + sliding window | RoPE | RMSNorm | SwiGLU | `MistralDecoder` |
+| Mixtral | `llm.models.mixtral.Mixtral` | GQA + sliding window | RoPE | RMSNorm | MoE (SwiGLU) | `MixtralDecoder` |
+| Gemma | `llm.models.gemma.Gemma` | MQA | RoPE | RMSNorm | GeGLU | `GemmaDecoder` |
+
+### Ключи конфига
+
+Конфиг модели — обычный `dict`. Размер головы во всех моделях вычисляется как `embed_dim // <число голов>`; ключ `head_size` в конфиге не читается.
+
+| Ключ | GPT, GPT-2, LLaMA | Mistral | Mixtral | Gemma |
+|---|---|---|---|---|
+| `vocab_size`, `embed_dim`, `num_layers`, `max_position_embeddings`, `dropout` | ✅ | ✅ | ✅ | ✅ |
+| `num_heads` | ✅ | | | |
+| `num_q_heads` | | ✅ | ✅ | ✅ |
+| `num_kv_heads` | | ✅ | ✅ | |
+| `window_size` | | ✅ | ✅ | |
+| `num_experts`, `top_k_experts` | | | ✅ | |
+
+## 🚀 Примеры
+
+### Создание модели и forward
 
 ```python
-class BaseModel(nn.Module, ABC):
-    @abstractmethod
-    def forward(self, input_ids: torch.Tensor, attention_mask: Optional[torch.Tensor] = None) -> torch.Tensor:
-        """Прямой проход модели."""
-    
-    @abstractmethod
-    def generate(self, input_ids: torch.Tensor, max_length: int = 50) -> torch.Tensor:
-        """Генерация текста."""
-```
-
-### CachedDecoder (`core/cached_decoder.py`)
-**Универсальный декодер** с поддержкой dependency injection и кэширования KV-памяти.
-
-```python
-CachedDecoder(
-    feed_forward_layer=FeedForward(...),  # или SwiGLU
-    norm_layer=nn.LayerNorm,              # или RMSNorm
-    rope=RoPE(...),                       # опционально
-    # ... другие параметры
-)
-```
-
-### RoPE (`core/rope.py`)
-**Rotary Positional Embeddings** - ротационные позиционные эмбеддинги.
-
-**Математическая основа:**
-```
-θ_i = base^(-2i/d)
-q'_m = q_m * cos(mθ_i) + rotate(q_m) * sin(mθ_i)
-```
-
-### RMSNorm (`core/rms_norm.py`)
-**Root Mean Square Normalization** - упрощенная нормализация без среднего.
-
-**Формула:**
-```
-RMSNorm(x) = (x / RMS(x)) * w
-где RMS(x) = sqrt(mean(x²) + eps)
-```
-
-### SwiGLU (`core/swi_glu.py`)
-**Swish-Gated Linear Unit** - современная активация с gating mechanism.
-
-**Формула:**
-```
-SwiGLU(x) = Swish(xW_g + b_g) ⊙ (xW_u + b_u) * W_d + b_d
-```
-
-## 🚀 Примеры использования
-
-### Создание классической GPT модели
-```python
-from llm.models.gpt import GPT
-
-config = {
-    "vocab_size": 50257,
-    "embed_dim": 768,
-    "num_heads": 12,
-    "num_layers": 12,
-    "max_position_embeddings": 1024,
-    "dropout": 0.1
-}
-
-model = GPT(config)
-```
-
-### Создание GPT2 модели
-```python
-from llm.models.gpt import GPT2
-
-config = {
-    "vocab_size": 50257,
-    "embed_dim": 768,
-    "num_heads": 12,
-    "num_layers": 12,
-    "max_position_embeddings": 1024,
-    "dropout": 0.1
-}
-
-model = GPT2(config)
-```
-
-### Создание LLaMA модели
-```python
+import torch
 from llm.models.llama import Llama
-from llm.core.swi_glu import SwiGLU
-from llm.core.rms_norm import RMSNorm
 
-config = {
+model = Llama({
     "vocab_size": 32000,
-    "embed_dim": 4096,
-    "num_heads": 32,
-    "num_layers": 32,
-    "max_position_embeddings": 2048,
-    "dropout": 0.1
-}
+    "embed_dim": 512,
+    "num_heads": 8,
+    "num_layers": 6,
+    "max_position_embeddings": 1024,
+    "dropout": 0.1,
+})
 
-model = Llama(config)
+input_ids = torch.randint(0, 32000, (2, 16))
+
+# Все модели возвращают кортеж (logits, cache).
+# logits: [batch, seq_len, vocab_size]; cache: список (K, V) по слоям или None
+logits, cache = model(input_ids, use_cache=False)
 ```
 
-### Генерация текста
+### Генерация
+
+У всех моделей одинаковая сигнатура:
+
 ```python
-# Прямой проход
-output = model(input_ids, attention_mask)
-
-# Генерация текста
-generated = model.generate(input_ids, max_length=100)
+generate(x, max_new_tokens, do_sample, temperature=1.0, top_k=None, top_p=None, use_cache=True, attention_mask=None)
 ```
 
-## 📊 Входные и выходные данные
+```python
+# Greedy
+out = model.generate(input_ids, max_new_tokens=50, do_sample=False)
 
-### Входные данные:
-- `input_ids`: `Tensor[int64]` формы `[batch_size, seq_len]` - индексы токенов
-- `attention_mask`: `Tensor[bool]` формы `[batch_size, seq_len]` - маска внимания
-- `cache`: `List[Tuple[Tensor, Tensor]]` - кэш ключей-значений для генерации
+# Sampling с температурой и top-p
+out = model.generate(input_ids, max_new_tokens=50, do_sample=True, temperature=0.8, top_p=0.9)
+```
 
-### Выходные данные:
-- `logits`: `Tensor[float32]` формы `[batch_size, seq_len, vocab_size]` - вероятности токенов
-- `cache`: `List[Tuple[Tensor, Tensor]]` - обновленный кэш (при использовании)
+`attention_mask` принимается для совместимости, но сейчас не используется.
 
-## 🏆 Поддерживаемые архитектуры
+### Токенизатор и обучение
 
-### GPT (Original) Особенности
-- ✅ Многоголовое внимание
-- ✅ Layer Normalization (после внимания и FFN)
-- ✅ GELU активация
-- ✅ Learned positional embeddings
-- ✅ Базовая архитектура трансформер-декодера
+```python
+from llm.tokenizers import BPETokenizer
+from llm.datasets.text_dataset import TextDataset
+from llm.training.trainer import Trainer
 
-### GPT-2 Особенности
-- ✅ Layer Normalization (перед вниманием и FFN)
-- ✅ GELU активация
-- ✅ Learned positional embeddings
-- ✅ Кэширование KV для быстрой генерации
-- ✅ Улучшенная инициализация слоёв
+texts = ["Первый текст для обучения.", "Второй текст для обучения."]
 
-### LLaMA Особенности
-- ✅ Rotary Positional Embeddings (RoPE)
-- ✅ RMS Normalization вместо LayerNorm
-- ✅ SwiGLU активация вместо GELU
-- ✅ Оптимизированная структура декодера
-- ✅ Эффективное кэширование KV-памяти
+tokenizer = BPETokenizer()
+tokenizer.train(texts=texts, vocab_size=300, special_tokens=["<pad>", "<unk>", "<bos>", "<eos>"])
+tokenizer.save("bpe_tokenizer.json")
 
-### Mistral Особенности
-- ✅ Sliding Window Attention (оконное внимание)
-- ✅ Grouped Query Attention (GQA)
-- ✅ RoPE
-- ✅ RMSNorm
-- ✅ Разделённая архитектура на блоки с эффективным управлением памятью
-- ✅ Совместимость с HuggingFace через hf-proxy
+dataset = TextDataset(texts, tokenizer, block_size=64)
+trainer = Trainer(model=model, train_dataset=dataset, lr=3e-4, batch_size=8, num_epochs=3, warmup_steps=100)
+trainer.train()
+```
 
-## 🤝 Интеграция с HuggingFace и BPE
+`Trainer` — минимальный цикл: AdamW, линейный warmup/decay, gradient clipping 1.0, устройство `cuda` или `cpu`. Сохранение чекпоинтов, AMP и gradient accumulation в нём не реализованы.
 
-- Встроенная поддержка собственных BPE токенизаторов и экспериментальная поддержка токенизаторов через HuggingFace (см. hf-proxy).
-- hf-proxy — экспериментальный модуль! Совместимость с будущими версиями Transformers не гарантируется; API может меняться.
-- Допускается загрузка/конвертация моделей в формат HF для использования экосистемы Transformers.
-- Для запуска моделей с токенизаторами HF используйте `hf-proxy` и соответствующие эксперименты из `experiments/hf_integration/`.
+## ⚠️ Известные ограничения
+
+- **KV-кэш в `GPT` и `GPT2`:** `start_pos` всегда 0, поэтому при `use_cache=True` новые токены получают позиционный эмбеддинг позиции 0.
+- **KV-кэш в `GroupedQueryAttention`** (Mistral, Mixtral) расходится с генерацией без кэша, как только длина кэша достигает `window_size`: кэш обрезается до окна, а позиция RoPE вычисляется из длины кэша.
+- **Генерация дальше `max_position_embeddings`** в моделях с RoPE падает с `RuntimeError`.
+- **При переданном `cache` causal-маска не применяется** — корректно, только пока на вход подаётся по одному новому токену.
+- **`attention_mask` не используется.**
+- **`MoE` без load-balancing loss.**
+- **`BaseModel`** объявляет `forward(input_ids, attention_mask) -> Tensor` и `generate(input_ids, max_length)`, но модели реализуют интерфейс, описанный выше.
 
 ## 🧪 Тестирование
 
-Запуск всех тестов:
 ```bash
 cd llm
-python -m pytest tests/ -v
+uv run pytest
 ```
 
-**Статус тестов:** ✅ 101+ тест, охвачены все основные компоненты (ядро, ядро-токенизация, архитектуры, обучение)
+Около 250 тестов, покрывающих все блоки `core/`, модели, токенизаторы, датасеты и обучение.
 
-## 📚 Научные концепции
+## 🔧 Добавление новой архитектуры
 
-### Трансформерная архитектура
-Основана на механизме **внимания**, позволяющем модели взвешивать важность разных частей входной последовательности.
-
-**Формула внимания:**
-```
-Attention(Q, K, V) = softmax(Q·Kᵀ/√d_k)·V
-```
-
-### RoPE (Rotary Positional Embeddings)
-Инновационный метод кодирования позиционной информации через **вращение векторов** в комплексном пространстве.
-
-**Преимущества:**
-- Относительное позиционное кодирование
-- Лучшая экстраполяция на длинные последовательности
-- Сохранение нормы векторов
-
-### RMSNorm vs LayerNorm
-**RMSNorm** устраняет вычитание среднего, что делает его более стабильным и эффективным при обучении больших моделей.
-
-### SwiGLU vs GELU
-**SwiGLU** с gating mechanism показывает лучшую производительность благодаря способности выборочно передавать информацию.
-
-## 🔧 Настройка и расширение
-
-Библиотека разработана с учетом **расширяемости**. Для добавления новой архитектуры:
-
-1. **Наследоваться** от `BaseModel`
-2. **Реализовать** обязательные методы `forward()` и `generate()`
-3. **Использовать** модульные компоненты из `core/`
-4. **Добавить** конфигурацию модели
-
-### Пример расширения:
-```python
-class NewModel(BaseModel):
-    def __init__(self, config):
-        super().__init__(config)
-        # Использование готовых компонентов
-        self.decoder = CachedDecoder(...)
-        
-    def forward(self, input_ids, attention_mask=None):
-        # Реализация прямого прохода
-        pass
-```
+1. Соберите блок декодера из компонентов `core/` (или используйте `CachedDecoder`, передав `norm_layer` и `feed_forward_layer`).
+2. Создайте класс модели, наследующий `BaseModel`, с `forward(x, use_cache=True, cache=None) -> (logits, cache)` и `generate(...)` с общей сигнатурой.
+3. Добавьте тесты в `tests/core/` и `tests/models/`.
+4. Зарегистрируйте модель в `experiments/llm_only/run_llm_experiment.py` и добавьте конфиги в `experiments/llm_only/configs/`.
 
 ## 📄 Лицензия
 
-Проект распространяется под MIT License.
+MIT License
