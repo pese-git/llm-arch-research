@@ -7,7 +7,7 @@
 
 ## Обзор
 
-Gemma (Google DeepMind, 2024) в этом репозитории реализована как RoPE + RMSNorm трансформер с **Multi-Query Attention** (MQA — одна общая голова K/V на все Q-головы, предельный случай GQA) и **GeGLU**-FFN (GELU-gated, а не SiLU-gated, как в SwiGLU).
+Gemma (Google DeepMind, 2024, [arXiv:2403.08295](https://arxiv.org/abs/2403.08295)) в этом репозитории реализована как RoPE + RMSNorm трансформер с **Multi-Query Attention** (MQA — одна общая голова K/V на все Q-головы, предельный случай GQA) и **GeGLU**-FFN (GELU-gated, а не SiLU-gated, как в SwiGLU).
 
 ## Архитектура блока декодера
 
@@ -34,7 +34,7 @@ flowchart LR
 
 ### Multi-Query Attention vs GQA
 
-В [Mistral](mistral.md#grouped-query-attention) число KV-голов — настраиваемый параметр (`num_kv_heads`), обычно несколько. В реализации MQA здесь этого параметра вообще нет: `MultiQueryAttention` всегда использует **одну** общую K/V-голову на все Q-головы ([`core/multi_query_attention.py`](../llm/src/llm/core/multi_query_attention.py)) — это не частный случай настраиваемой GQA, а отдельный, более узкий механизм.
+MQA предложена в [Shazeer, 2019](https://arxiv.org/abs/1911.02150), GQA — в [Ainslie et al., 2023](https://arxiv.org/abs/2305.13245) как обобщение между MQA и MHA. В [Mistral](mistral.md#grouped-query-attention) число KV-голов — настраиваемый параметр (`num_kv_heads`), обычно несколько. В реализации MQA здесь этого параметра вообще нет: `MultiQueryAttention` всегда использует **одну** общую K/V-голову на все Q-головы ([`core/multi_query_attention.py`](../llm/src/llm/core/multi_query_attention.py)) — это не частный случай настраиваемой GQA, а отдельный, более узкий механизм.
 
 ## Компоненты
 
@@ -83,3 +83,16 @@ result    = ffn_out + out
 ## Генерация
 
 `Gemma.generate(...)` — унифицированная сигнатура (см. [gpt.md](gpt.md#генерация)).
+
+## Литература
+
+Основная статья:
+
+- Gemma Team. *Gemma: Open Models Based on Gemini Research and Technology*. 2024. [arXiv:2403.08295](https://arxiv.org/abs/2403.08295)
+
+Компоненты:
+
+- Shazeer. *Fast Transformer Decoding: One Write-Head is All You Need*. 2019. [arXiv:1911.02150](https://arxiv.org/abs/1911.02150) — Multi-Query Attention
+- Shazeer. *GLU Variants Improve Transformer*. 2020. [arXiv:2002.05202](https://arxiv.org/abs/2002.05202) — SwiGLU и GeGLU
+- Su et al. *RoFormer: Enhanced Transformer with Rotary Position Embedding*. 2021. [arXiv:2104.09864](https://arxiv.org/abs/2104.09864)
+- Zhang, Sennrich. *Root Mean Square Layer Normalization*. 2019. [arXiv:1910.07467](https://arxiv.org/abs/1910.07467)

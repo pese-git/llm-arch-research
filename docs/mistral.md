@@ -33,11 +33,11 @@ flowchart LR
 
 ### Grouped Query Attention
 
-Вместо одинакового числа голов для Q и K/V, GQA использует **больше** Q-голов, чем KV-голов: K/V вычисляются один раз на группу и переиспользуются (`repeat`) для нескольких Q-голов. Это сокращает размер KV-кэша и объём вычислений в K/V-проекциях, почти не теряя в качестве по сравнению с обычным MHA.
+Механизм предложен в [Ainslie et al., 2023](https://arxiv.org/abs/2305.13245). Вместо одинакового числа голов для Q и K/V, GQA использует **больше** Q-голов, чем KV-голов: K/V вычисляются один раз на группу и переиспользуются (`repeat`) для нескольких Q-голов. Это сокращает размер KV-кэша и объём вычислений в K/V-проекциях, почти не теряя в качестве по сравнению с обычным MHA.
 
 ### Sliding Window Attention
 
-Вместо полной causal-маски (токен видит вообще всё прошлое) используется маска с ограниченным окном `window_size`: токен видит только последние `window_size` позиций. Это ограничивает объём вычислений на длинных последовательностях ценой явного лимита на дальность зависимостей внутри одного слоя (через стек слоёв эффективное поле видимости растёт линейно с числом слоёв, как в dilated/local attention).
+Идея local attention со скользящим окном — из [Longformer](https://arxiv.org/abs/2004.05150). Вместо полной causal-маски (токен видит вообще всё прошлое) используется маска с ограниченным окном `window_size`: токен видит только последние `window_size` позиций. Это ограничивает объём вычислений на длинных последовательностях ценой явного лимита на дальность зависимостей внутри одного слоя (через стек слоёв эффективное поле видимости растёт линейно с числом слоёв, как в dilated/local attention).
 
 > ⚠️ **Известная ошибка KV-кэша.** Кэш в `GroupedQueryAttention` обрезается до последних `window_size` позиций, а позиция для RoPE берётся как длина кэша (`start_pos = k_cache.shape[2]`). Как только кэш заполняется, позиции перестают расти, и генерация с `use_cache=True` начинает расходиться с генерацией без кэша. Кроме того, маска без кэша пропускает `window_size + 1` позиций (`row - col <= window_size`), а кэш хранит `window_size`. См. [известные ограничения](README.md#известные-ограничения).
 
@@ -91,3 +91,17 @@ result    = ffn_out + out
 - GQA, sliding window, RoPE и RMSNorm остаются без изменений — блок декодера почти идентичен по структуре, отличие только в FFN-части.
 
 Подробности — в [mixtral.md](mixtral.md).
+
+## Литература
+
+Основная статья:
+
+- Jiang et al. *Mistral 7B*. 2023. [arXiv:2310.06825](https://arxiv.org/abs/2310.06825)
+
+Компоненты:
+
+- Ainslie et al. *GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints*. 2023. [arXiv:2305.13245](https://arxiv.org/abs/2305.13245)
+- Beltagy, Peters, Cohan. *Longformer: The Long-Document Transformer*. 2020. [arXiv:2004.05150](https://arxiv.org/abs/2004.05150) — sliding window attention
+- Su et al. *RoFormer: Enhanced Transformer with Rotary Position Embedding*. 2021. [arXiv:2104.09864](https://arxiv.org/abs/2104.09864)
+- Zhang, Sennrich. *Root Mean Square Layer Normalization*. 2019. [arXiv:1910.07467](https://arxiv.org/abs/1910.07467)
+- Shazeer. *GLU Variants Improve Transformer*. 2020. [arXiv:2002.05202](https://arxiv.org/abs/2002.05202) — SwiGLU и GeGLU

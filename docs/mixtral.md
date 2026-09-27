@@ -7,7 +7,7 @@
 
 ## Обзор
 
-Mixtral 8x7B (Mistral AI, 2023) — это [Mistral](mistral.md) с одним структурным изменением: плотный `SwiGLU`-FFN заменён на **Mixture-of-Experts** (MoE) — несколько параллельных SwiGLU-экспертов, из которых на каждый токен активируется только небольшое подмножество (top-k). Attention-часть (GQA + sliding window + RoPE) не меняется вообще — Mixtral в этом репозитории буквально переиспользует `GroupedQueryAttention`.
+Mixtral 8x7B (Mistral AI, 2023, [arXiv:2401.04088](https://arxiv.org/abs/2401.04088)) — это [Mistral](mistral.md) с одним структурным изменением: плотный `SwiGLU`-FFN заменён на **Mixture-of-Experts** (MoE) — несколько параллельных SwiGLU-экспертов, из которых на каждый токен активируется только небольшое подмножество (top-k). Attention-часть (GQA + sliding window + RoPE) не меняется вообще — Mixtral в этом репозитории буквально переиспользует `GroupedQueryAttention`.
 
 ## Архитектура блока декодера
 
@@ -60,7 +60,7 @@ flowchart LR
 3. Каждый эксперт — самостоятельный блок `SwiGLU`. Эксперт, которого не выбрал ни один токен в батче, полностью пропускается (`if not expert_mask.any(): continue`) — реальная разреженность вычислений, а не маскирование после полного прохода через всех экспертов.
 4. Результат — взвешенная сумма выходов выбранных экспертов на каждый токен.
 
-> ⚠️ **Нет load-balancing loss.** В оригинальном Mixtral роутер обучается со вспомогательным loss, который выравнивает загрузку экспертов. Здесь его нет: `MoE.forward` возвращает только выход, и при обучении роутер может свестись к нескольким «любимым» экспертам. Кроме того, Mixtral наследует от Mistral [ошибку KV-кэша в sliding window](mistral.md#sliding-window-attention).
+> ⚠️ **Нет load-balancing loss.** В оригинальном Mixtral роутер обучается со вспомогательным loss, который выравнивает загрузку экспертов (формулировка — из [Switch Transformers](https://arxiv.org/abs/2101.03961), разд. 2.2). Здесь его нет: `MoE.forward` возвращает только выход, и при обучении роутер может свестись к нескольким «любимым» экспертам. Кроме того, Mixtral наследует от Mistral [ошибку KV-кэша в sliding window](mistral.md#sliding-window-attention).
 
 ## Компоненты
 
@@ -105,3 +105,17 @@ result    = ffn_out + out
 ## Генерация
 
 `Mixtral.generate(...)` — унифицированная сигнатура (см. [gpt.md](gpt.md#генерация)).
+
+## Литература
+
+Основная статья:
+
+- Jiang et al. *Mixtral of Experts*. 2024. [arXiv:2401.04088](https://arxiv.org/abs/2401.04088)
+
+Компоненты:
+
+- Shazeer et al. *Outrageously Large Neural Networks: The Sparsely-Gated Mixture-of-Experts Layer*. 2017. [arXiv:1701.06538](https://arxiv.org/abs/1701.06538)
+- Fedus, Zoph, Shazeer. *Switch Transformers: Scaling to Trillion Parameter Models with Simple and Efficient Sparsity*. 2021. [arXiv:2101.03961](https://arxiv.org/abs/2101.03961) — load-balancing loss для роутера
+- Jiang et al. *Mistral 7B*. 2023. [arXiv:2310.06825](https://arxiv.org/abs/2310.06825)
+- Ainslie et al. *GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints*. 2023. [arXiv:2305.13245](https://arxiv.org/abs/2305.13245)
+- Beltagy, Peters, Cohan. *Longformer: The Long-Document Transformer*. 2020. [arXiv:2004.05150](https://arxiv.org/abs/2004.05150) — sliding window attention

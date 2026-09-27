@@ -7,7 +7,7 @@
 
 ## Обзор
 
-GPT-1 (Radford et al., *"Improving Language Understanding by Generative Pre-Training"*, OpenAI 2018) — первая архитектура, показавшая, что decoder-only трансформер, обученный на задаче предсказания следующего токена, переносится на широкий круг downstream-задач почти без изменения архитектуры. В этом репозитории воспроизведена "классическая" версия: обучаемые абсолютные позиционные эмбеддинги, стандартный multi-head attention и **post-LN** блок декодера (нормализация после residual-сложения — так, как было в оригинальной статье, до того как GPT-2 перешёл на pre-LN).
+GPT-1 (Radford et al., [*"Improving Language Understanding by Generative Pre-Training"*](https://cdn.openai.com/research-covers/language-unsupervised/language_understanding_paper.pdf), OpenAI 2018) — первая архитектура, показавшая, что decoder-only трансформер, обученный на задаче предсказания следующего токена, переносится на широкий круг downstream-задач почти без изменения архитектуры. В этом репозитории воспроизведена "классическая" версия: обучаемые абсолютные позиционные эмбеддинги, стандартный multi-head attention и **post-LN** блок декодера (нормализация после residual-сложения — так, как было в оригинальной статье, до того как GPT-2 перешёл на pre-LN).
 
 ## Архитектура блока декодера
 
@@ -82,3 +82,16 @@ result         = Norm2(ffn_out + out)
 - FFN и attention переиспользуют ту же математику (GELU, стандартный MHA), но собраны в отдельный класс `Gpt2Decoder` вместо параметризуемого `GptDecoder`.
 
 Подробности — в [gpt2.md](gpt2.md).
+
+## Литература
+
+Основная статья:
+
+- Radford, Narasimhan, Salimans, Sutskever. *Improving Language Understanding by Generative Pre-Training*. OpenAI, 2018. [PDF](https://cdn.openai.com/research-covers/language-unsupervised/language_understanding_paper.pdf) (на arXiv не публиковалась)
+
+Компоненты:
+
+- Vaswani et al. *Attention Is All You Need*. 2017. [arXiv:1706.03762](https://arxiv.org/abs/1706.03762)
+- Liu et al. *Generating Wikipedia by Summarizing Long Sequences*. 2018. [arXiv:1801.10198](https://arxiv.org/abs/1801.10198) — decoder-only трансформер, на который опирается GPT-1
+- Hendrycks, Gimpel. *Gaussian Error Linear Units (GELUs)*. 2016. [arXiv:1606.08415](https://arxiv.org/abs/1606.08415)
+- Ba, Kiros, Hinton. *Layer Normalization*. 2016. [arXiv:1607.06450](https://arxiv.org/abs/1607.06450)
