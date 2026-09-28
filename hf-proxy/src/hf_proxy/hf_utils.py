@@ -37,15 +37,18 @@ class HFUtils:
         Конвертирует llm модель в формат HuggingFace.
 
         Args:
-            llm_model: Модель из библиотеки llm
+            llm_model: Модель из библиотеки llm или уже созданный HFGPTAdapter
             tokenizer: Токенизатор (HF или кастомный)
             model_name: Имя модели для сохранения
 
         Returns:
             tuple: (адаптированная модель, токенизатор)
         """
-        # Создаем адаптер
-        hf_model = HFAdapter.from_llm_model(llm_model)
+        # Создаем адаптер, если модель еще не адаптирована
+        if isinstance(llm_model, HFGPTAdapter):
+            hf_model = llm_model
+        else:
+            hf_model = HFAdapter.from_llm_model(llm_model)
 
         # Если токенизатор не передан, создаем стандартный
         if tokenizer is None:
@@ -284,7 +287,7 @@ def create_hf_pipeline(llm_model, tokenizer=None, device: str = "auto", **kwargs
     Создает HuggingFace pipeline из llm модели.
 
     Args:
-        llm_model: Модель из библиотеки llm
+        llm_model: Модель из библиотеки llm или уже созданный HFGPTAdapter
         tokenizer: Токенизатор
         device: Устройство для вычислений
         **kwargs: Дополнительные параметры pipeline

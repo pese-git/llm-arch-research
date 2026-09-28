@@ -44,6 +44,15 @@ class TestConvertToHFFormat:
         assert isinstance(tokenizer, HFTokenizerAdapter)
         assert tokenizer.llm_tokenizer is bpe_tokenizer
 
+    def test_accepts_adapted_model(self, gpt_model, bpe_tokenizer):
+        adapter = HFAdapter.from_llm_model(gpt_model)
+        model, _ = HFUtils.convert_to_hf_format(adapter, bpe_tokenizer)
+        assert model is adapter
+
+    def test_passes_through_hf_tokenizer_adapter(self, gpt_model, hf_tokenizer):
+        _, tokenizer = HFUtils.convert_to_hf_format(gpt_model, hf_tokenizer)
+        assert tokenizer is hf_tokenizer
+
     def test_passes_through_other_tokenizer(self, gpt_model):
         tokenizer = object()
         _, result = HFUtils.convert_to_hf_format(gpt_model, tokenizer)
@@ -247,3 +256,26 @@ def test_create_hf_pipeline(gpt_model, bpe_tokenizer, monkeypatch):
     assert isinstance(kwargs["tokenizer"], HFTokenizerAdapter)
     assert kwargs["device"] == "cpu"
     assert kwargs["batch_size"] == 2
+
+
+def test_create_hf_pipeline_from_adapter(gpt_model, hf_tokenizer, monkeypatch):
+    pipeline = MagicMock(return_value="pipe")
+    monkeypatch.setattr(transformers, "pipeline", pipeline)
+    adapter = HFAdapter.from_llm_model(gpt_model)
+
+    create_hf_pipeline(adapter, hf_tokenizer, device="cpu")
+
+    assert pipeline.call_args.kwargs["model"] is adapter
+    assert pipeline.call_args.kwargs["tokenizer"] is hf_tokenizer
+
+
+@pytest.mark.parametrize("wrap", [False, True], ids=["llm_model", "hf_adapter"])
+def test_create_hf_pipeline_generates(gpt_model, hf_tokenizer, wrap):
+    """Настоящий transformers.pipeline с моделью из llm или готовым адаптером."""
+    model = HFAdapter.from_llm_model(gpt_model) if wrap else gpt_model
+    pipe = create_hf_pipeline(model, hf_tokenizer, device="cpu")
+
+    result = pipe("hello", max_new_tokens=3, do_sample=False)
+
+    assert isinstance(result, list) and len(result) == 1
+    assert result[0]["generated_text"].startswith("hello")
