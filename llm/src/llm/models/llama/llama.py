@@ -3,6 +3,7 @@ from torch import nn, Tensor
 import torch.nn.functional as F
 
 from llm.core.base_model import BaseModel
+from llm.core.generation import validate_sampling_args
 from llm.core.token_embeddings import TokenEmbeddings
 from llm.core.swi_glu import SwiGLU
 from llm.core.rms_norm import RMSNorm
@@ -194,10 +195,10 @@ class Llama(BaseModel):
     
         Исключения:
             ValueError: Если x длиннее максимально допустимой длины (max_seq_len модели).
-            ValueError: Если temperature ≤ 0.
-            ValueError: Если одновременно заданы top_k и top_p.
-            ValueError: Если top_k ≤ 0.
-            ValueError: Если top_p не в диапазоне (0, 1].
+            ValueError: Если do_sample=True и temperature ≤ 0.
+            ValueError: Если do_sample=True и одновременно заданы top_k и top_p.
+            ValueError: Если do_sample=True и top_k ≤ 0.
+            ValueError: Если do_sample=True и top_p не в диапазоне (0, 1].
     
         Примеры:
             >>> # Строго жадная генерация
@@ -221,6 +222,8 @@ class Llama(BaseModel):
             - Holtzman et al., "The Curious Case of Neural Text Degeneration" (nucleus/top-p): https://arxiv.org/abs/1904.09751
             - LLaMA: https://arxiv.org/abs/2302.13971
         """
+        validate_sampling_args(do_sample, temperature, top_k, top_p)
+
         cache = None
 
         for _ in range(max_new_tokens):

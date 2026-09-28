@@ -43,6 +43,7 @@
 - **Что:** в докстринге описаны `ValueError` при `temperature ≤ 0`, одновременных `top_k` и `top_p`, `top_k ≤ 0`, `top_p ∉ (0, 1]`. В коде проверок нет.
 - **Воспроизведено:** `temperature=0.0` и `top_k=5, top_p=0.9` принимаются молча. При `temperature ≤ 0` (в том числе отрицательной) масштабирование просто пропускается. `top_k=0` падает с невнятным `RuntimeError: probability tensor contains either inf, nan or element < 0`.
 - **Исправление:** добавить проверки из докстринга в начало метода.
+- **Статус:** исправлено в ветке `test/tokenizer-and-temperature`: общая `validate_sampling_args` (`core/generation.py`) вызывается в начале `generate` всех шести моделей. Проверки действуют при `do_sample=True`; при жадной генерации параметры сэмплирования не влияют на результат и не проверяются (`temperature=0` допустима).
 
 #### 49. Top-p отбрасывает токен, пересекающий порог — P2
 
@@ -112,7 +113,7 @@
 - **1** — падение `generate` за `max_position_embeddings`. Воспроизведено на GPT-2 с `max_position_embeddings=16`, промптом 10 и `max_new_tokens=10`: с кэшем `IndexError`, без кэша `ValueError`.
 - **2** — нет causal-маски при кэше и `seq_len > 1`. На GPT-2 префилл 4 + 6 расходится с полным forward на 0.12–0.16.
 - **3** — `attention_mask`: `GPT2.forward` его не принимает, `generate` принимает и игнорирует.
-- **4**, **49** — нет валидации аргументов `generate`, top-p отбрасывает пограничный токен.
+- **49** — top-p отбрасывает пограничный токен (**4**, валидация аргументов `generate`, исправлен для всех моделей).
 - **8** — `use_cache=True` по умолчанию и нет `no_grad`.
 - **9** — dtype в `FeedForward`.
 - **10** — интерфейс `BaseModel`.
@@ -187,7 +188,7 @@
 - **1** — падение `generate` за `max_position_embeddings`. Воспроизведено с `max_position_embeddings=16`, промптом 10 и `max_new_tokens=10`: с кэшем `RuntimeError: shape '[1, 1, 1, <head_size / 2>]' is invalid for input of size 0` из `RoPE.forward` (пустой срез cos/sin; при `embed_dim=32, num_heads=4` — `[1, 1, 1, 4]`), без кэша `ValueError`. В моделях с RoPE контекст нельзя просто обрезать окном и продолжить с кэшем: при обрезке нужно пересчитать K заново с новыми позициями.
 - **2** — нет causal-маски при кэше и `seq_len > 1`. Префилл 4 + 6 расходится с полным forward на 0.14–0.28.
 - **3** — игнорируется `attention_mask`. У `Llama.forward` такого параметра нет вовсе, а `generate` его принимает: `attention_mask` из нулей даёт тот же результат, что и без маски.
-- **4**, **49** — нет валидации аргументов `generate` (`temperature=0.0` и `top_k=5, top_p=0.9` принимаются молча), top-p отбрасывает пограничный токен.
+- **49** — top-p отбрасывает пограничный токен (**4**, валидация аргументов `generate`, исправлен для всех моделей).
 - **8** — `use_cache=True` по умолчанию и нет `no_grad`. В `eval()` логиты имеют `requires_grad=True`.
 - **10** — интерфейс `BaseModel`.
 - **12** — мёртвые проверки `hasattr(torch, "bool")` (в `generate` LLaMA — тройные тернарники прямо в строках) и сравнения `== True` / `!= None`.
@@ -251,7 +252,7 @@
 Общие с предыдущими моделями пункты касаются Mistral так же и здесь не повторяются:
 - **1** — падение `generate` за `max_position_embeddings`. Воспроизведено с `max_position_embeddings=16`, промптом 10 и `max_new_tokens=10`: с кэшем `RuntimeError: shape '[1, 1, 1, 4]' is invalid for input of size 0` из `RoPE.forward`. Для Mistral это особенно заметно: sliding window и rolling-buffer кэш позволяют генерировать сколь угодно долго, и мешает только таблица cos/sin.
 - **3** — игнорируется `attention_mask`. `Mistral.forward` его не принимает, а `generate` принимает: `attention_mask` из нулей даёт тот же результат, что и без маски.
-- **4**, **49** — нет валидации аргументов `generate` (`temperature=0.0` и `top_k=5, top_p=0.9` принимаются молча), top-p отбрасывает пограничный токен.
+- **49** — top-p отбрасывает пограничный токен (**4**, валидация аргументов `generate`, исправлен для всех моделей).
 - **8** — `use_cache=True` по умолчанию и нет `no_grad`. В `eval()` логиты имеют `requires_grad=True`.
 - **10** — интерфейс `BaseModel`.
 - **12** — мёртвые проверки `hasattr(torch, "bool")` и сравнения `== True` / `!= None`.
@@ -341,7 +342,7 @@
 
 Общие с предыдущими моделями пункты касаются Mixtral так же и здесь не повторяются:
 - **1** — падение `generate` за `max_position_embeddings`. Воспроизведено с `max_position_embeddings=16`, промптом 10 и `max_new_tokens=10`: с кэшем `RuntimeError: shape '[1, 1, 1, 4]' is invalid for input of size 0` из `RoPE.forward`.
-- **3**, **4**, **22** — `attention_mask` и `**kwargs` в `generate` игнорируются, аргументы не валидируются.
+- **3**, **22** — `attention_mask` и `**kwargs` в `generate` игнорируются (**4**, валидация аргументов, исправлен).
 - **8** — `use_cache=True` по умолчанию и нет `no_grad`. Воспроизведено: в `train()` `forward` возвращает кэш; `Trainer` вызывает `self.model(input_ids)` и собирает K/V всех слоёв на каждом шаге.
 - **10**, **12**, **18**, **19** — интерфейс `BaseModel`, мёртвые `hasattr(torch, "bool")`, дублирование `generate`, пограничные случаи top-k.
 - **23**, **24** — SwiGLU с `4·d` и bias во всех `Linear`. У Mixtral 8x7B эксперт — `hidden_dim = 14336` при `dim = 4096`, все проекции, включая роутер, без bias.
@@ -437,7 +438,7 @@
 Общие с предыдущими моделями пункты касаются Gemma так же и здесь не повторяются:
 - **1** — падение `generate` за `max_position_embeddings`. Воспроизведено с `max_position_embeddings=16`, промптом 10 и `max_new_tokens=10`: с кэшем `RuntimeError: shape '[1, 1, 1, 4]' is invalid for input of size 0` из `RoPE.forward`, без кэша `ValueError`. `Gemma.forward` пропускает проверку длины при кэше, а `MultiQueryAttention` сравнивает с лимитом только `seq_len`, без `start_pos`.
 - **3** — игнорируется `attention_mask`. `Gemma.forward` его не принимает, `generate` принимает: `attention_mask` из нулей даёт тот же результат, что и без маски. Параметр `mask` в `GemmaDecoder.forward` и `MultiQueryAttention.forward` тоже не используется.
-- **4**, **49** — нет валидации аргументов `generate` (`temperature=0.0` и `top_k=5, top_p=0.9` принимаются молча), top-p отбрасывает пограничный токен.
+- **49** — top-p отбрасывает пограничный токен (**4**, валидация аргументов `generate`, исправлен для всех моделей).
 - **8** — `use_cache=True` по умолчанию и нет `no_grad`. В `eval()` логиты имеют `requires_grad=True`, кэш возвращается по умолчанию.
 - **10**, **12**, **18** — интерфейс `BaseModel`, мёртвые `hasattr(torch, "bool")` и сравнения `== True` / `!= None`, дублирование `generate`.
 - **19** — `top_k=100` при `vocab_size=50` падает с `RuntimeError: selected index k out of range`.

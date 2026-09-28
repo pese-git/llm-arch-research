@@ -26,6 +26,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Optional, Dict
 from llm.core.base_model import BaseModel
+from llm.core.generation import validate_sampling_args
 from llm.core.gpt_decoder import GptDecoder
 from llm.core.token_embeddings import TokenEmbeddings
 from llm.core.positional_embeddings import PositionalEmbeddings
@@ -233,10 +234,10 @@ class GPT(BaseModel):
     
         Исключения:
             ValueError: Если x длиннее max_seq_len модели.
-            ValueError: Если temperature ≤ 0.
-            ValueError: Если одновременно заданы top_k и top_p.
-            ValueError: Если top_k ≤ 0.
-            ValueError: Если top_p вне диапазона (0, 1].
+            ValueError: Если do_sample=True и temperature ≤ 0.
+            ValueError: Если do_sample=True и одновременно заданы top_k и top_p.
+            ValueError: Если do_sample=True и top_k ≤ 0.
+            ValueError: Если do_sample=True и top_p вне диапазона (0, 1].
     
         Примеры:
             >>> # Жадная (детерминированная) генерация
@@ -260,6 +261,8 @@ class GPT(BaseModel):
             - Holtzman et al., "The Curious Case of Neural Text Degeneration" (nucleus sampling): https://arxiv.org/abs/1904.09751
             - Оригинальный GPT-2: https://cdn.openai.com/better-language-models/language-models.pdf
         """
+        validate_sampling_args(do_sample, temperature, top_k, top_p)
+
         cache = None
         
         for _ in range(max_new_tokens):

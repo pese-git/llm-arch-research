@@ -5,6 +5,7 @@ from torch import Tensor
 import torch.nn.functional as F
 from math import sqrt
 from llm.core.base_model import BaseModel
+from llm.core.generation import validate_sampling_args
 from llm.core.token_embeddings import TokenEmbeddings
 from llm.core.rope import RoPE
 from llm.core.rms_norm import RMSNorm
@@ -257,7 +258,7 @@ class Gemma(BaseModel):
         Примечания:
         -----------
         - Нельзя указывать одновременно top_k и top_p (будет выброшено исключение).
-        - temperature <= 0 некорректно (будет выброшено исключение).
+        - При do_sample=True temperature <= 0 некорректно (будет выброшено ValueError), как и одновременные top_k и top_p, top_k <= 0, top_p вне (0, 1].
         - Поддержка cache (use_cache=True) значительно ускоряет генерацию длинных последовательностей и позволяет использовать beam search/decoding.
         - Для воспроизводимых результатов установите torch.manual_seed перед генерацией.
         - Метод возвращает только token_ids, если нужны logits — используйте .forward напрямую.
@@ -267,6 +268,8 @@ class Gemma(BaseModel):
         - Holtzman et al., "The Curious Case of Neural Text Degeneration" (nucleus/top-p sampling): https://arxiv.org/abs/1904.09751
         - Gemma: https://arxiv.org/abs/2403.07794
         """
+
+        validate_sampling_args(do_sample, temperature, top_k, top_p)
 
         cache = None
 
