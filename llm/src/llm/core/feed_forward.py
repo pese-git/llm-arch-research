@@ -1,6 +1,5 @@
 from torch import nn
 import torch
-import math
 from .gelu import GELU
 
 
@@ -112,15 +111,12 @@ class FeedForward(nn.Module):
             >>> x = torch.randn(8, 16, 256)
             >>> y = ffn(x)
             >>> y.shape  # [8, 16, 256]
+
+        Тип вычислений задается снаружи, как и для остальных слоев:
+        model.half() / model.to(dtype) или torch.autocast. Сам блок веса
+        не приводит: иначе один вызов с fp16 навсегда менял бы тип и точность
+        весов, а под autocast терялись бы fp32-копии параметров.
         """
-        # Сохраняем dtype входных данных
-        input_dtype = x.dtype
-
-        # Приводим веса к нужному типу если необходимо
-        if input_dtype != self._layer1.weight.dtype:
-            self._layer1 = self._layer1.to(dtype=input_dtype)
-            self._layer2 = self._layer2.to(dtype=input_dtype)
-
         # Пропустим тензор x по очереди через все созданные слои
         x = self._layer1(x)
         x = self._activation(x)

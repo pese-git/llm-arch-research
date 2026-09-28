@@ -204,3 +204,38 @@ class TestFeedForward:
             assert not torch.allclose(
                 ff._layer2.bias, torch.zeros_like(ff._layer2.bias)
             )
+
+    def test_mismatched_input_dtype_leaves_weights_untouched(self):
+        """Вход другого типа не должен менять тип и значения весов модуля."""
+        ff = FeedForward(8, dropout=0.0)
+        weights = {name: p.detach().clone() for name, p in ff.named_parameters()}
+
+        with pytest.raises(RuntimeError):
+            ff(torch.randn(2, 3, 8, dtype=torch.float64))
+
+        for name, param in ff.named_parameters():
+            assert param.dtype == torch.float32, name
+            assert torch.equal(param, weights[name]), name
+
+    def test_explicit_dtype_conversion(self):
+        """Тип вычислений задается снаружи через .to(dtype), как у остальных слоев."""
+        ff = FeedForward(8, dropout=0.0).to(torch.float64)
+        out = ff(torch.randn(2, 3, 8, dtype=torch.float64))
+
+        assert out.dtype == torch.float64
+        assert all(p.dtype == torch.float64 for p in ff.parameters())
+
+    @pytest.mark.skipif(not hasattr(torch, "autocast"), reason="torch.autocast недоступен")
+    def test_autocast_keeps_fp32_weights(self):
+        """Под autocast вычисления идут в bf16, а параметры остаются fp32."""
+        ff = FeedForward(8, dropout=0.0)
+        proj = nn.Linear(8, 8)
+
+        with torch.autocast("cpu", dtype=torch.bfloat16):
+            out = ff(proj(torch.randn(2, 3, 8)))
+
+        assert out.dtype == torch.bfloat16
+        assert all(p.dtype == torch.float32 for p in ff.parameters())
+
+        out.float().sum().backward()
+        assert all(p.grad is not None and p.grad.dtype == torch.float32 for p in ff.parameters())
