@@ -1,2 +1,4 @@
-def hello() -> str:
-    return "Hello from llm!"
+"""
+Обучение моделей: trainer.Trainer, optimizer.get_optimizer,
+scheduler.get_linear_schedule_with_warmup.
+"""
