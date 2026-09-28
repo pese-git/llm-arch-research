@@ -170,7 +170,8 @@ class GroupedQueryAttention(nn.Module):
         Возвращает:
         -----------
         - output: torch.Tensor формы [batch, seq_len, emb_size]
-        - kv_cache: кэш новых KV (если use_cache=True), иначе None
+        - kv_cache: (K, V, next_pos), если use_cache=True, иначе None. K и V — последние window_size
+          позиций (до дублирования голов), next_pos — абсолютная позиция следующего токена для RoPE
 
         Важно:
         -------
@@ -213,12 +214,11 @@ class GroupedQueryAttention(nn.Module):
         k = k.transpose(1, 2)
         v = v.transpose(1, 2)
 
-        start_pos = 0
-        if cache is not None:
-            k_cache, v_cache = cache
-            cache_len = k_cache.shape[2]
-            start_pos = cache_len
-        
+        # Кэш — (K, V, next_pos). K и V обрезаны до последних window_size позиций (rolling buffer),
+        # поэтому абсолютную позицию для RoPE нельзя брать из длины кэша — она хранится отдельно.
+        start_pos = cache[2] if cache is not None else 0
+
+
         # Пропустите матрицы запроса и ключа через экземпляр rope, чтобы выполнить поворот.
         if self._rope is not None:
             # Применяем RoPE к Q и K (НЕ к V!)
@@ -228,7 +228,7 @@ class GroupedQueryAttention(nn.Module):
         # Если cache пришел, то объединяем кэш и одну строку из ключа и значения. Это будут новые key и value  для последующих вычислений.
         # 5. Кэширование (для autoregressive generation)
         if cache is not None:
-            k_cache, v_cache = cache
+            k_cache, v_cache, _ = cache
             k = torch.cat([k_cache, k], dim=2)  # Concat по seq_len (dim=2)
             v = torch.cat([v_cache, v], dim=2)
 
@@ -286,7 +286,7 @@ class GroupedQueryAttention(nn.Module):
             # Обрезаем оригинальный K и V (до дублирования)
             k_to_cache = k[:, :, -self._window_size:, :]
             v_to_cache = v[:, :, -self._window_size:, :]
-            kv_cache = (k_to_cache, v_to_cache)
+            kv_cache = (k_to_cache, v_to_cache, start_pos + seq_len)
             return output, kv_cache
         else:
             return output, None

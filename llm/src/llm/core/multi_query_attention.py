@@ -199,11 +199,14 @@ class MultiQueryAttention(nn.Module):
         k = k.transpose(1, 2)
         v = v.transpose(1, 2)
 
+        # Позиция первого нового токена = длина кэша: без неё RoPE повернёт новые Q и K как позицию 0.
+        start_pos = cache[0].shape[2] if cache is not None else 0
+
         # Пропустите матрицы запроса и ключа через экземпляр rope, чтобы выполнить поворот.
         if self._rope is not None:
             # Применяем RoPE к Q и K (НЕ к V!)
-            q = self._rope(q)  # [B, T, hs]
-            k = self._rope(k)  # [B, T, hs]
+            q = self._rope(q, start_pos=start_pos)  # [B, T, hs]
+            k = self._rope(k, start_pos=start_pos)  # [B, T, hs]
 
 
         # Если cache пришел, то объединяем кэш и одну строку из ключа и значения. Это будут новые key и value  для последующих вычислений.
