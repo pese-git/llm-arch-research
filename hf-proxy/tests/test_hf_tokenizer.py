@@ -359,3 +359,137 @@ class TestSaveLoad:
     def test_from_pretrained_bad_path(self, tmp_path):
         with pytest.raises(ValueError):
             HFTokenizerAdapter.from_pretrained(str(tmp_path / "missing.json"))
+
+
+CUSTOM_SPECIAL = ["[PAD]", "[UNK]", "[BOS]", "[EOS]"]
+
+
+@pytest.fixture
+def custom_bpe():
+    """BPE со своими именами специальных токенов."""
+    from llm.tokenizers import BPETokenizer
+
+    tokenizer = BPETokenizer()
+    tokenizer.pad_token, tokenizer.unk_token, tokenizer.bos_token, tokenizer.eos_token = CUSTOM_SPECIAL
+    tokenizer.train(["hello world", "hello there"], vocab_size=30, special_tokens=CUSTOM_SPECIAL)
+    return tokenizer
+
+
+class TestCustomSpecialTokens:
+    def test_adapter_copies_custom_names_and_ids(self, custom_bpe):
+        adapter = HFTokenizerAdapter(custom_bpe)
+
+        assert (adapter.pad_token, adapter.unk_token, adapter.bos_token, adapter.eos_token) == tuple(
+            CUSTOM_SPECIAL
+        )
+        assert adapter.pad_token_id == custom_bpe.pad_token_id
+        assert adapter.unk_token_id == custom_bpe.unk_token_id
+        assert adapter.bos_token_id == custom_bpe.bos_token_id
+        assert adapter.eos_token_id == custom_bpe.eos_token_id
+
+    def test_save_load_roundtrip_keeps_custom_tokens(self, custom_bpe, tmp_path):
+        HFTokenizerAdapter(custom_bpe).save_pretrained(str(tmp_path))
+        loaded = HFTokenizerAdapter.from_pretrained(str(tmp_path))
+
+        assert (loaded.pad_token, loaded.unk_token, loaded.bos_token, loaded.eos_token) == tuple(
+            CUSTOM_SPECIAL
+        )
+        assert loaded.pad_token_id == custom_bpe.pad_token_id
+        assert loaded.eos_token_id == custom_bpe.eos_token_id
+        assert loaded.encode("hello world") == HFTokenizerAdapter(custom_bpe).encode("hello world")
+
+    def test_saved_file_names(self, custom_bpe, tmp_path):
+        # точные имена: на регистронезависимой ФС (macOS) ошибка в регистре иначе не видна
+        HFTokenizerAdapter(custom_bpe).save_pretrained(str(tmp_path))
+        assert sorted(p.name for p in tmp_path.iterdir()) == ["tokenizer_config.json", "vocab.json"]
+
+
+class TestAdapterDefaults:
+    def test_defaults_for_tokenizer_without_special_attributes(self):
+        """Для токенизатора без атрибутов спецтокенов берутся имена и id по умолчанию."""
+
+        class Minimal:
+            def get_vocab(self):
+                return {"a": 0}
+
+            def get_vocab_size(self):
+                return 1
+
+        adapter = HFTokenizerAdapter(Minimal())
+
+        assert (adapter.pad_token, adapter.unk_token, adapter.bos_token, adapter.eos_token) == (
+            "<pad>", "<unk>", "<bos>", "<eos>"
+        )
+        assert (adapter.pad_token_id, adapter.unk_token_id, adapter.bos_token_id, adapter.eos_token_id) == (
+            0, 1, 2, 3
+        )
+
+    def test_from_pretrained_defaults_for_missing_keys(self, hf_tokenizer, tmp_path):
+        """Конфиг без полей спецтокенов загружается со значениями по умолчанию."""
+        hf_tokenizer.save_pretrained(str(tmp_path))
+        config_path = tmp_path / "tokenizer_config.json"
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        for name in ["pad", "unk", "bos", "eos"]:
+            del config[f"{name}_token"], config[f"{name}_token_id"]
+        del config["llm_tokenizer_type"]
+        config_path.write_text(json.dumps(config), encoding="utf-8")
+
+        loaded = HFTokenizerAdapter.from_pretrained(str(tmp_path))
+
+        assert type(loaded.llm_tokenizer).__name__ == "BPETokenizer"
+        assert (loaded.pad_token, loaded.unk_token, loaded.bos_token, loaded.eos_token) == (
+            "<pad>", "<unk>", "<bos>", "<eos>"
+        )
+        assert (loaded.pad_token_id, loaded.unk_token_id, loaded.bos_token_id, loaded.eos_token_id) == (
+            0, 1, 2, 3
+        )
+
+    @pytest.mark.parametrize("missing", ["tokenizer_config.json", "vocab.json"])
+    def test_from_pretrained_requires_both_files(self, hf_tokenizer, tmp_path, missing):
+        hf_tokenizer.save_pretrained(str(tmp_path))
+        (tmp_path / missing).unlink()
+
+        with pytest.raises(FileNotFoundError):
+            HFTokenizerAdapter.from_pretrained(str(tmp_path))
+
+    def test_from_pretrained_passes_through_kwargs(self, hf_tokenizer, tmp_path, monkeypatch):
+        hf_tokenizer.save_pretrained(str(tmp_path))
+        seen = {}
+        original_init = HFTokenizerAdapter.__init__
+
+        def spy(self, llm_tokenizer, **kwargs):
+            seen.update(kwargs)
+            original_init(self, llm_tokenizer)
+
+        monkeypatch.setattr(HFTokenizerAdapter, "__init__", spy)
+        HFTokenizerAdapter.from_pretrained(str(tmp_path), extra=1)
+        assert seen == {"extra": 1}
+
+
+class TestNoImplicitPaddingOrTruncation:
+    """padding/truncation выключены по умолчанию; max_length сам их не включает."""
+
+    def test_call_batch_keeps_lengths(self, hf_tokenizer):
+        ids = hf_tokenizer(["hello", "hello world"])["input_ids"]
+        assert [len(x) for x in ids] == [len(hf_tokenizer.encode("hello")), len(hf_tokenizer.encode("hello world"))]
+
+    def test_call_max_length_alone_changes_nothing(self, hf_tokenizer):
+        full = hf_tokenizer.encode("hello world")
+        assert hf_tokenizer("hello world", max_length=2)["input_ids"] == [full]
+        assert hf_tokenizer("hello", max_length=50)["input_ids"] == [hf_tokenizer.encode("hello")]
+
+    def test_call_padding_max_length_pads_to_exact_length(self, hf_tokenizer):
+        full = hf_tokenizer.encode("hello")
+        ids = hf_tokenizer("hello", padding="max_length", max_length=len(full))["input_ids"]
+        assert ids == [full]
+
+    def test_encode_max_length_alone_changes_nothing(self, hf_tokenizer):
+        full = hf_tokenizer.encode("hello world")
+        assert hf_tokenizer.encode("hello world", max_length=2) == full
+        assert hf_tokenizer.encode("hello world", max_length=50) == full
+
+    def test_encode_exact_length_unchanged(self, hf_tokenizer):
+        full = hf_tokenizer.encode("hello world")
+        assert hf_tokenizer.encode(
+            "hello world", truncation=True, padding=True, max_length=len(full)
+        ) == full

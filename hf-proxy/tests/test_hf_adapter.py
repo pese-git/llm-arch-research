@@ -141,8 +141,8 @@ class TestHFAdapter:
         save_dir = tmp_path / "model"
         HFAdapter.save_pretrained(adapter, str(save_dir))
 
-        assert (save_dir / "config.json").is_file()
-        assert (save_dir / "pytorch_model.bin").is_file()
+        # точные имена: на регистронезависимой ФС (macOS) ошибка в регистре иначе не видна
+        assert sorted(p.name for p in save_dir.iterdir()) == ["config.json", "pytorch_model.bin"]
 
         with open(save_dir / "config.json", encoding="utf-8") as f:
             config = json.load(f)

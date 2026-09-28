@@ -116,9 +116,10 @@ class TestPushToHub:
 
         hub.create_repo.assert_called_once_with("my-model", private=False, exist_ok=True)
         assert hub.uploaded["repo_id"] == "my-model"
-        assert {"config.json", "pytorch_model.bin", "README.md"} <= set(
-            hub.uploaded["files"]
-        )
+        assert hub.uploaded["files"] == [
+            "README.md", "config.json", "pytorch_model.bin", "tokenizer_config.json", "vocab.json"
+        ]
+        assert hub.ModelCard.from_template.call_args.kwargs["model_name"] == "my-model"
 
     def test_organization_and_private(self, gpt_model, hf_tokenizer, hub):
         model = HFAdapter.from_llm_model(gpt_model)
@@ -161,9 +162,16 @@ class TestLoadFromHub:
             SimpleNamespace(from_pretrained=MagicMock(return_value=hf_config)),
         )
 
-        loaded, tokenizer = HFUtils.load_from_hub(str(tmp_path))
+        # Без config.json рядом с весами размеры берутся только из AutoConfig
+        os.remove(tmp_path / "config.json")
+        loaded, tokenizer = HFUtils.load_from_hub(str(tmp_path), revision="main")
 
+        transformers.AutoTokenizer.from_pretrained.assert_called_once_with(
+            str(tmp_path), revision="main"
+        )
+        hf_utils.AutoConfig.from_pretrained.assert_called_once_with(str(tmp_path), revision="main")
         assert tokenizer is fake_tokenizer
+        assert loaded.config.num_attention_heads == llm_config["num_heads"]
         assert isinstance(loaded, HFGPTAdapter)
         loaded.eval()
         with torch.no_grad():
@@ -189,6 +197,7 @@ class TestCompareWithHFModel:
             "AutoModelForCausalLM",
             SimpleNamespace(from_pretrained=MagicMock(return_value=model)),
         )
+        self.tokenizer = tokenizer
         return logits
 
     def test_identical_models(self, reference):
@@ -203,6 +212,34 @@ class TestCompareWithHFModel:
         result = HFUtils.compare_with_hf_model(lambda ids: -reference)
         assert result["kl_divergence"] > 0
         assert result["cosine_similarity"] == pytest.approx(-1.0, abs=1e-5)
+
+    def test_loads_requested_reference(self, reference):
+        HFUtils.compare_with_hf_model(
+            lambda ids: reference.clone(), hf_model_name="my-org/ref", test_input="Привет"
+        )
+
+        transformers.AutoTokenizer.from_pretrained.assert_called_once_with("my-org/ref")
+        transformers.AutoModelForCausalLM.from_pretrained.assert_called_once_with("my-org/ref")
+        self.tokenizer.assert_called_once_with("Привет", return_tensors="pt")
+
+    def test_default_reference_is_gpt2(self, reference):
+        HFUtils.compare_with_hf_model(lambda ids: reference.clone())
+
+        transformers.AutoModelForCausalLM.from_pretrained.assert_called_once_with("gpt2")
+        self.tokenizer.assert_called_once_with("Hello world", return_tensors="pt")
+
+    def test_kl_divergence_value(self, reference):
+        torch.manual_seed(2)
+        llm_logits = torch.randn_like(reference)
+        # вероятность ~0 у части токенов: log(p + eps) должен остаться конечным
+        llm_logits[..., :3] = -1e4
+
+        result = HFUtils.compare_with_hf_model(lambda ids: llm_logits)
+
+        hf_probs = torch.softmax(reference[0, -1], dim=-1)
+        llm_probs = torch.softmax(llm_logits[0, -1], dim=-1)
+        expected = (hf_probs * (hf_probs.log() - torch.log(llm_probs + 1e-8))).sum() / hf_probs.numel()
+        assert result["kl_divergence"] == pytest.approx(expected.item(), rel=1e-4)
 
     def test_with_llm_gpt(self, gpt_model, reference):
         result = HFUtils.compare_with_hf_model(gpt_model)
