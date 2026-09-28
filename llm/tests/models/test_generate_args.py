@@ -102,3 +102,33 @@ def test_top_k_one_is_greedy(model, prompt):
         top1 = model.generate(prompt, max_new_tokens=4, do_sample=True, top_k=1)
 
     assert torch.equal(top1, greedy)
+
+
+# Семантика сэмплирования: в предельных случаях сэмплирование обязано совпасть
+# с жадной генерацией. Батч из двух промптов, чтобы ошибки в оси (softmax/cumsum
+# по батчу вместо словаря) тоже меняли результат.
+SAMPLING_LIMITS = {
+    "near_zero_temperature": {"temperature": 1e-4},
+    "tiny_top_p": {"top_p": 1e-6},
+    "top_k_one": {"top_k": 1},
+}
+
+
+@pytest.mark.parametrize("kwargs", list(SAMPLING_LIMITS.values()), ids=list(SAMPLING_LIMITS))
+def test_sampling_limit_equals_greedy(model, prompt, kwargs):
+    with torch.no_grad():
+        greedy = model.generate(prompt, max_new_tokens=6, do_sample=False)
+        torch.manual_seed(1)
+        sampled = model.generate(prompt, max_new_tokens=6, do_sample=True, **kwargs)
+
+    assert torch.equal(sampled, greedy)
+
+
+def test_plain_sampling_differs_from_greedy(model, prompt):
+    """Контроль для теста выше: обычное сэмплирование с этим seed дает другой результат."""
+    with torch.no_grad():
+        greedy = model.generate(prompt, max_new_tokens=6, do_sample=False)
+        torch.manual_seed(1)
+        sampled = model.generate(prompt, max_new_tokens=6, do_sample=True)
+
+    assert not torch.equal(sampled, greedy)
