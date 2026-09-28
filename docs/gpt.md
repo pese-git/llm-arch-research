@@ -145,7 +145,7 @@ flowchart LR
 | Токен-эмбеддинги | `TokenEmbeddings` | [`core/token_embeddings.py`](../llm/src/llm/core/token_embeddings.py) |
 | Позиционные эмбеддинги | `PositionalEmbeddings` (обучаемые, абсолютные) | [`core/positional_embeddings.py`](../llm/src/llm/core/positional_embeddings.py) |
 | Attention | `MultiHeadAttention` (стандартный causal MHA, без RoPE/GQA) | [`core/multi_head_attention.py`](../llm/src/llm/core/multi_head_attention.py) |
-| FFN | `FeedForward` (2-слойный MLP, GELU) | [`core/feed_forward.py`](../llm/src/llm/core/feed_forward.py) |
+| FFN | `FeedForward` (2-слойный MLP, tanh-аппроксимация GELU — `activation="gelu_tanh"`, как в оригинальном коде OpenAI; меняется ключом `activation` в конфиге) | [`core/feed_forward.py`](../llm/src/llm/core/feed_forward.py) |
 | Блок декодера | `GptDecoder` (**post-LN**) | [`core/gpt_decoder.py`](../llm/src/llm/core/gpt_decoder.py) |
 | Модель целиком | `GPT` | [`models/gpt/gpt.py`](../llm/src/llm/models/gpt/gpt.py) |
 
@@ -171,6 +171,7 @@ result         = Norm2(ffn_out + out)
 | `num_layers` | 4 | число блоков `GptDecoder` в стеке |
 | `max_position_embeddings` | 128 | максимальная длина последовательности (размер буфера позиционных эмбеддингов и causal-маски) |
 | `dropout` | 0.1 | dropout в attention и FFN |
+| `activation` | (нет в примере) | необязательный: активация FFN — `"gelu_tanh"` (по умолчанию, tanh-аппроксимация GELU, как в оригинальном коде OpenAI), `"gelu"` (точный GELU через erf) или `"relu"` |
 
 ## Генерация
 

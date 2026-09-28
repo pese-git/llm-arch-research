@@ -4,6 +4,7 @@ Tests for GPT model.
 
 import pytest
 import torch
+from llm.core.gelu import GELU
 from llm.models.gpt import GPT
 
 
@@ -282,8 +283,14 @@ class TestGPT:
         assert (probs >= 0).all() and (probs <= 1).all()
 
     def test_default_activation_is_gelu(self, gpt_config):
-        """By default FFN uses GELU, as in the GPT-1 paper."""
+        """By default FFN uses tanh-approximated GELU, as in the original GPT-1 code."""
         model = GPT(gpt_config)
+        for decoder in model._decoders:
+            assert isinstance(decoder._ff._activation, GELU)
+
+    def test_exact_gelu_activation_from_config(self, gpt_config):
+        """activation='gelu' in config switches FFN to exact (erf) GELU."""
+        model = GPT({**gpt_config, "activation": "gelu"})
         for decoder in model._decoders:
             assert isinstance(decoder._ff._activation, torch.nn.GELU)
 

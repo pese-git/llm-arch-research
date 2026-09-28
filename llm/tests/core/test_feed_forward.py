@@ -87,6 +87,25 @@ class TestFeedForward:
 
         assert torch.allclose(actual_output, expected_output, rtol=1e-4)
 
+    def test_gelu_variants(self):
+        """'gelu' — точный GELU через erf, 'gelu_tanh' — tanh-аппроксимация (OpenAI GPT/GPT-2)."""
+        x = torch.linspace(-4, 4, 101)
+        exact = FeedForward(8, activation="gelu")._activation
+        tanh_approx = FeedForward(8, activation="gelu_tanh")._activation
+
+        assert torch.allclose(exact(x), 0.5 * x * (1 + torch.erf(x / 2 ** 0.5)), atol=1e-6)
+        assert torch.allclose(
+            tanh_approx(x),
+            0.5 * x * (1 + torch.tanh((2 / torch.pi) ** 0.5 * (x + 0.044715 * x ** 3))),
+            atol=1e-6,
+        )
+        # Варианты действительно различаются
+        assert (exact(x) - tanh_approx(x)).abs().max() > 1e-5
+
+    def test_unknown_activation(self):
+        with pytest.raises(ValueError):
+            FeedForward(8, activation="gelu_exact")
+
     def test_gradient_flow(self, embed_dim, random_float_inputs):
         """Test that gradients flow through FeedForward."""
         ff = FeedForward(embed_dim)

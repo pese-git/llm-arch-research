@@ -58,7 +58,7 @@ class GPT(BaseModel):
         num_layers,        # глубина модели (число блоков)
         max_position_embeddings,
         dropout,
-        activation         # опционально: активация FFN, по умолчанию "gelu"
+        activation         # опционально: активация FFN, по умолчанию "gelu_tanh"
     }
 
     Формула и поток данных:
@@ -97,8 +97,9 @@ class GPT(BaseModel):
               num_layers: int — число Transformer блоков
               max_position_embeddings: int — макс. длина последовательности
               dropout: float — dropout
-              activation: str, опционально — активация FFN ("gelu" по умолчанию, как в статье;
-                  "relu" — упрощённый учебный вариант; "gelu_exact")
+              activation: str, опционально — активация FFN ("gelu_tanh" по умолчанию —
+                  tanh-аппроксимация GELU, как в оригинальном коде; "gelu" — точный GELU через erf;
+                  "relu" — упрощённый учебный вариант)
 
         Внутри:
         -------
@@ -124,7 +125,7 @@ class GPT(BaseModel):
                     head_size=config["embed_dim"] // config["num_heads"],
                     max_seq_len=config["max_position_embeddings"],
                     dropout=config["dropout"],
-                    activation=config.get("activation", "gelu"),
+                    activation=config.get("activation", "gelu_tanh"),
                 )
                 for _ in range(config["num_layers"])
             ]

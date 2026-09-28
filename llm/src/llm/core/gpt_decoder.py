@@ -58,7 +58,7 @@ class GptDecoder(nn.Module):
         head_size: int,
         max_seq_len: int,
         dropout: float = 0.1,
-        activation: str = "gelu",
+        activation: str = "gelu_tanh",
     ):
         """
         Инициализация стандартного decoder-блока для Transformer.
@@ -75,9 +75,10 @@ class GptDecoder(nn.Module):
             Максимальная длина последовательности (важно для mask)
         dropout: float, default=0.1
             Dropout после внимания и FFN
-        activation: str, default="gelu"
-            Активация в FeedForward ("gelu", "relu", "gelu_exact").
-            GELU — как в оригинальной GPT-1; ReLU — упрощённый учебный вариант.
+        activation: str, default="gelu_tanh"
+            Активация в FeedForward ("gelu_tanh", "gelu", "relu").
+            "gelu_tanh" — tanh-аппроксимация GELU, как в оригинальном коде GPT-1;
+            "gelu" — точный GELU через erf; "relu" — упрощённый учебный вариант.
 
         Внутри:
         -------
@@ -94,10 +95,11 @@ class GptDecoder(nn.Module):
             max_seq_len=max_seq_len,
             dropout=dropout,
         )
-        # По умолчанию GELU, а не ReLU (дефолт FeedForward), т.к. GPT-1 использует GELU:
+        # По умолчанию GELU (tanh-аппроксимация), а не ReLU (дефолт FeedForward), т.к. GPT-1 использует GELU:
         # "For the activation function, we used the Gaussian Error Linear Unit (GELU)"
         # — Radford et al., "Improving Language Understanding by Generative Pre-Training", 2018, разд. 4.1
         # https://cdn.openai.com/research-covers/language-unsupervised/language_understanding_paper.pdf
+        # Вариант — tanh-аппроксимация, как в оригинальном коде (openai/finetune-transformer-lm, train.py).
         self._ff = FeedForward(
             emb_size=emb_size,
             dropout=dropout,

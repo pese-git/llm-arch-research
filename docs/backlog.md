@@ -96,7 +96,6 @@
 - Пример в докстринге `GptDecoder` использует `Decoder(...)` и ожидает от `decoder(x)` тензор, а возвращается кортеж.
 - Докстринг `GptDecoder.forward` называет аргумент `mask` (на деле `attention_mask`) и обещает тензор на выходе.
 - В References класса `GPT` битая ссылка на статью: `research-covers/languageunsupervised/` (нет дефиса, правильно `language-unsupervised`).
-- После `feat/gpt-activation` (f1508d5) докстринги `GPT` и `GptDecoder` предлагают `"gelu_exact"`, который на деле tanh-аппроксимация (см. пункт 13), и называют erf-GELU (`"gelu"`) «как в статье», хотя в коде OpenAI — tanh. [gpt.md](gpt.md) не упоминает новый ключ `config["activation"]`.
 
 #### 12. Мусор в коде — P3
 
@@ -123,10 +122,9 @@
 
 #### 13. GELU: точная erf-версия вместо tanh-аппроксимации — P2
 
-- **Что:** `Gpt2Decoder` создаёт `FeedForward(activation="gelu")`, а это `nn.GELU()`, то есть erf. Оригинальный код OpenAI (`gpt-2/src/model.py`) и HF (`GPT2Config.activation_function="gelu_new"`) используют tanh-аппроксимацию. Кроме того, опция `'gelu_exact'` в `FeedForward` на деле подключает tanh-аппроксимацию, то есть название обратно смыслу. То же касается GPT-1: там тоже tanh (`finetune-transformer-lm/train.py`; в HF `modeling_openai` `ACT_FNS["gelu"]` — это `gelu_new`). В GPT-1 активация теперь задаётся `config["activation"]`, но по умолчанию — `"gelu"` (erf).
-- **Воспроизведено:** при одинаковых весах логиты отличаются от эталона с tanh-GELU на ~1e-4. С tanh-GELU расхождение 5e-7.
-- **Исправление:** переименовать `'gelu_exact'` → `'gelu_tanh'`, в `Gpt2Decoder` передавать `activation="gelu_tanh"`, в `GPT.__init__` сменить значение по умолчанию на `config.get("activation", "gelu_tanh")`, обновить тест `test_default_activation_is_gelu` в `tests/models/test_gpt.py` и докстринги с `"gelu_exact"` (пункт 11).
-- **Статус:** частично сделано в ветке `fix/gelu-tanh` (коммит `32a2db5`), в `master` не влито. Ветка основана до `feat/gpt-activation` и конфликтует с `master` в `core/gpt_decoder.py` (там `activation="gelu_tanh"` зашит, а в `master` активация пробрасывается из конфига). Нужен rebase и правки из «Исправления» для GPT-1; часть GPT-2 (`gpt2_decoder.py`) применяется без конфликтов.
+- **Что:** `Gpt2Decoder` и `GptDecoder` использовали `nn.GELU()`, то есть erf. Оригинальный код OpenAI (`gpt-2/src/model.py`, `finetune-transformer-lm/train.py`) и HF (`GPT2Config.activation_function="gelu_new"`; в `modeling_openai` `ACT_FNS["gelu"]` — это `gelu_new`) используют tanh-аппроксимацию. Опция `'gelu_exact'` в `FeedForward` на деле подключала tanh-аппроксимацию.
+- **Воспроизведено:** при одинаковых весах логиты отличались от эталона с tanh-GELU на ~1e-4. С tanh-GELU расхождение 5e-7.
+- **Статус:** исправлено в ветке `fix/gelu-tanh`: `'gelu_exact'` переименован в `'gelu_tanh'`, `Gpt2Decoder` использует `'gelu_tanh'`, у GPT-1 это значение по умолчанию для `config["activation"]` (`'gelu'` — точный erf-вариант — остаётся доступным).
 
 #### 14. Нет weight tying, у lm-head есть bias — P2
 
