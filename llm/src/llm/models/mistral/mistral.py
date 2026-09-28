@@ -233,9 +233,9 @@ class Mistral(BaseModel):
                 vocab_size = logits_scaled.size(-1)
 
                 # создаём маску: 1, если токен НЕ в topk_indices
-                mask = torch.ones_like(logits_scaled, dtype=torch.bool if hasattr(torch, "bool") else torch.uint8)
-                mask.scatter_(1, topk_indices, False if hasattr(torch, "bool") else 0)  # 0 там, где top-k индексы
-                masked_logits[mask.bool() if hasattr(torch, "bool") else mask.byte()] = float('-inf')
+                mask = torch.ones_like(logits_scaled, dtype=torch.bool)
+                mask.scatter_(1, topk_indices, False)  # 0 там, где top-k индексы
+                masked_logits[mask.bool()] = float('-inf')
 
                 logits_scaled = masked_logits
 
@@ -247,12 +247,12 @@ class Mistral(BaseModel):
                 # 3. Посчитаем кумулятивную сумму вероятностей:
                 cum_probs = torch.cumsum(sorted_probs, dim=-1)  # [B, vocab_size]
                 # 4. Определим маску: оставить токены, пока сумма < top_p
-                sorted_mask = (cum_probs <= top_p).bool() if hasattr(torch, "bool") else  (cum_probs <= top_p).byte()  # [B, vocab_size]
+                sorted_mask = cum_probs <= top_p  # [B, vocab_size]
                 # Гарантируем, что хотя бы первый токен останется
-                sorted_mask[:, 0] = True if hasattr(torch, "bool") else 1
+                sorted_mask[:, 0] = True
                 # 5. Преобразуем маску обратно в оригинальный порядок:
                 # Создаём полную маску из 0
-                mask = torch.zeros_like(probs, dtype=torch.bool if hasattr(torch, "bool") else torch.uint8)
+                mask = torch.zeros_like(probs, dtype=torch.bool)
                 # Устанавливаем 1 в местах нужных токенов
                 mask.scatter_(dim=1, index=sorted_indices, src=sorted_mask)
                 # 6. Зануляем логиты токенов вне топ-p:
