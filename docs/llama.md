@@ -12,25 +12,99 @@ LLaMA (Touvron et al., [*"LLaMA: Open and Efficient Foundation Language Models"*
 ## Архитектура блока декодера
 
 ```mermaid
-flowchart LR
-    Tokens(["Tokens"]) --> TokEmb["Token Emb"]:::blue
-    TokEmb --> N1["RMSNorm"]:::gray
-    N1 --> Attn["Multi-Head Attention<br/>+ RoPE(Q,K)"]:::blue
-    Attn --> A1(("+"))
-    TokEmb -.->|residual| A1
-    A1 --> N2["RMSNorm"]:::gray
-    N2 --> FFN["SwiGLU"]:::purple
-    FFN --> A2(("+"))
-    A1 -.->|residual| A2
-    A2 --> Dc2["Decoder"]:::green --> Dots(["⋯"]) --> Dc5["Decoder"]:::green --> NF["RMSNorm<br/>(финальный)"]:::gray --> Lin["Linear"]:::gray --> Soft["Softmax"]:::purple
+%%{init: {"flowchart": {"rankSpacing": 28, "nodeSpacing": 28}}}%%
+flowchart TB
+    Ids(["token ids"]):::io --> TokEmb["Token Embedding"]:::blue
+    TokEmb --> Drop["Dropout"]:::gray
+    subgraph Dec["CachedDecoder × num_layers · pre-RMSNorm"]
+        direction TB
+        X(["x"]):::io --> N1["RMSNorm"]:::grayHl
+        N1 --> Attn["Masked Multi-Head Attention"]:::blue
+        R["RoPE<br/>cos/sin от позиции · без параметров<br/>один модуль на все слои"]:::ropeHl
+        R -. "поворот Q и K" .-> Attn
+        Attn --> A1(("+")):::add
+        X -. residual .-> A1
+        A1 --> N2["RMSNorm"]:::grayHl
+        N2 --> FFN["SwiGLU"]:::purpleHl
+        FFN --> A2(("+")):::add
+        A1 -. residual .-> A2
+    end
+    Drop --> Dec
+    Dec --> NF["RMSNorm<br/>(финальный)"]:::gray --> Lin
+    Lin["Linear → vocab_size"]:::gray --> Out(["logits"]):::io
+    Out -. "generate(): softmax → выбор токена" .-> Next(["следующий токен"]):::io
+    style Dec fill:transparent,stroke:#82b366,stroke-width:2px,color:#5b9a3c
 
+    classDef io fill:#ffffff,stroke:#999999,color:#1a1a1a;
+    classDef add fill:#ffffff,stroke:#666666,color:#1a1a1a;
     classDef blue fill:#dae8fc,stroke:#6c8ebf,color:#1a1a1a;
+    classDef blueHl fill:#dae8fc,stroke:#2f5f9e,stroke-width:3px,color:#1a1a1a;
     classDef purple fill:#e1d5e7,stroke:#9673a6,color:#1a1a1a;
-    classDef green fill:#d5e8d4,stroke:#82b366,color:#1a1a1a;
+    classDef purpleHl fill:#e1d5e7,stroke:#6a3d85,stroke-width:3px,color:#1a1a1a;
     classDef gray fill:#f5f5f5,stroke:#666666,color:#1a1a1a;
+    classDef grayHl fill:#f5f5f5,stroke:#333333,stroke-width:3px,color:#1a1a1a;
+    classDef gold fill:#fff2cc,stroke:#d6b656,color:#1a1a1a;
+    classDef rope fill:#d5f0ec,stroke:#3a9e8f,color:#1a1a1a;
+    classDef ropeHl fill:#d5f0ec,stroke:#1f6f63,stroke-width:3px,color:#1a1a1a;
+    classDef dim fill:#f5f5f5,stroke:#bbbbbb,color:#999999,stroke-dasharray:4 3;
 ```
 
-Обратите внимание: отдельного блока позиционных эмбеддингов на входе больше нет — позиция вносится через RoPE прямо внутри attention (вращением Q/K), а не сложением с эмбеддингом токена.
+Обратите внимание: отдельного блока позиционных эмбеддингов на входе больше нет. Позиция вносится через RoPE прямо внутри attention каждого слоя (поворотом Q и K), а не сложением с эмбеддингом токена, поэтому на схеме RoPE стоит сбоку и подключён к attention пунктиром, а не находится в основном потоке данных.
+
+## Attention с RoPE
+
+RoPE ([Su et al., 2021](https://arxiv.org/abs/2104.09864)) кодирует позицию не прибавлением вектора к эмбеддингу, как в GPT, а **поворотом** векторов Q и K внутри attention. Вектор каждой головы разбивается на пары координат `(x₂ᵢ, x₂ᵢ₊₁)`, и каждая пара поворачивается на угол `m·θᵢ`, где `m` — позиция токена:
+
+```
+[x'₂ᵢ  ]   [cos(m·θᵢ)  −sin(m·θᵢ)] [x₂ᵢ  ]
+[x'₂ᵢ₊₁] = [sin(m·θᵢ)   cos(m·θᵢ)] [x₂ᵢ₊₁],     θᵢ = base^(−2i/head_size),  base = 10000
+```
+
+Зачем так:
+
+- **Относительная позиция.** Скалярное произведение повёрнутых векторов `q_m · k_n` зависит только от разности `m − n`: attention «видит» расстояние между токенами, хотя каждый вектор поворачивается по своей абсолютной позиции.
+- **Норма сохраняется.** Поворот не меняет длину векторов, поэтому масштаб `Q·Kᵀ` остаётся прежним.
+- **Нет обучаемых параметров.** `RoPE` заранее вычисляет таблицы `cos`/`sin` размером `max_position_embeddings × head_size/2`. Один экземпляр создаётся в `Llama.__init__` и передаётся во все слои.
+- **`V` не поворачивается:** позиция нужна, чтобы решить, *куда* смотреть (веса внимания), а не *что* забирать.
+
+```mermaid
+%%{init: {"flowchart": {"rankSpacing": 28, "nodeSpacing": 28}}}%%
+flowchart TB
+    X(["x"]):::io --> Wq["W_q"]:::gray --> Q["Q"]:::blue
+    X --> Wk["W_k"]:::gray --> K["K"]:::blue
+    X --> Wv["W_v"]:::gray --> V["V"]:::blue
+    Pos(["позиции m = start_pos … start_pos + seq_len − 1"]):::io
+    Q --> RQ["RoPE(Q)<br/>поворот на угол m·θᵢ"]:::rope
+    K --> RK["RoPE(K)<br/>поворот на угол m·θᵢ"]:::rope
+    Pos -.-> RQ
+    Pos -.-> RK
+    RQ --> QK["Q · Kᵀ<br/>зависит только от m − n"]:::gray
+    RK --> KV["KV-кэш<br/>(K хранится уже повёрнутым)"]:::io
+    KV --> QK
+    QK --> Scale["÷ √head_size"]:::gray
+    Scale --> Mask["causal mask"]:::gold
+    Mask --> SM["softmax"]:::purple
+    SM --> AV["weights · V"]:::gray
+    V -- "V не поворачивается" --> AV
+    AV --> O(["выход головы"]):::io
+
+    classDef io fill:#ffffff,stroke:#999999,color:#1a1a1a;
+    classDef add fill:#ffffff,stroke:#666666,color:#1a1a1a;
+    classDef blue fill:#dae8fc,stroke:#6c8ebf,color:#1a1a1a;
+    classDef blueHl fill:#dae8fc,stroke:#2f5f9e,stroke-width:3px,color:#1a1a1a;
+    classDef purple fill:#e1d5e7,stroke:#9673a6,color:#1a1a1a;
+    classDef purpleHl fill:#e1d5e7,stroke:#6a3d85,stroke-width:3px,color:#1a1a1a;
+    classDef gray fill:#f5f5f5,stroke:#666666,color:#1a1a1a;
+    classDef grayHl fill:#f5f5f5,stroke:#333333,stroke-width:3px,color:#1a1a1a;
+    classDef gold fill:#fff2cc,stroke:#d6b656,color:#1a1a1a;
+    classDef rope fill:#d5f0ec,stroke:#3a9e8f,color:#1a1a1a;
+    classDef ropeHl fill:#d5f0ec,stroke:#1f6f63,stroke-width:3px,color:#1a1a1a;
+    classDef dim fill:#f5f5f5,stroke:#bbbbbb,color:#999999,stroke-dasharray:4 3;
+```
+
+В коде ([`core/rope.py`](../llm/src/llm/core/rope.py)) `RoPE.forward(x, start_pos)` берёт строки таблиц `cos/sin[start_pos : start_pos + seq_len]`. При генерации с KV-кэшем `start_pos` равен длине кэша, а сам кэш хранит K уже повёрнутым, поэтому старые ключи не пересчитываются. Позиций дальше `max_position_embeddings` в таблицах нет — отсюда падение генерации за этой границей (см. [известные ограничения](README.md#известные-ограничения)).
+
+Mistral, Mixtral и Gemma используют тот же класс `RoPE` и применяют его так же — к Q и K внутри своих вариантов attention.
 
 ## Компоненты
 

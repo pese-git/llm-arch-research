@@ -12,46 +12,82 @@ Mixtral 8x7B (Mistral AI, 2023, [arXiv:2401.04088](https://arxiv.org/abs/2401.04
 ## Архитектура блока декодера
 
 ```mermaid
-flowchart LR
-    Tokens(["Tokens"]) --> TokEmb["Token Emb"]:::blue
-    TokEmb --> N1["RMSNorm"]:::gray
-    N1 --> Attn["Grouped Query Attention<br/>+ RoPE + Sliding Window"]:::blue
-    Attn --> A1(("+"))
-    TokEmb -.->|residual| A1
-    A1 --> N2["RMSNorm"]:::gray
-    N2 --> MoE["MoE<br/>(top-k из N SwiGLU-экспертов)"]:::purpleHl
-    MoE --> A2(("+"))
-    A1 -.->|residual| A2
-    A2 --> Dc2["Decoder"]:::green --> Dots(["⋯"]) --> Dc5["Decoder"]:::green --> NF["RMSNorm<br/>(финальный)"]:::gray --> Lin["Linear"]:::gray --> Soft["Softmax"]:::purple
+%%{init: {"flowchart": {"rankSpacing": 28, "nodeSpacing": 28}}}%%
+flowchart TB
+    Ids(["token ids"]):::io --> TokEmb["Token Embedding"]:::blue
+    TokEmb --> Drop["Dropout"]:::gray
+    subgraph Dec["MixtralDecoder × num_layers · pre-RMSNorm"]
+        direction TB
+        X(["x"]):::io --> N1["RMSNorm"]:::gray
+        N1 --> Attn["Grouped Query Attention<br/>sliding window"]:::blue
+        R["RoPE<br/>cos/sin от позиции · без параметров<br/>один модуль на все слои"]:::rope
+        R -. "поворот Q и K" .-> Attn
+        Attn --> A1(("+")):::add
+        X -. residual .-> A1
+        A1 --> N2["RMSNorm"]:::gray
+        N2 --> FFN["MoE<br/>top-k из num_experts SwiGLU-экспертов"]:::purpleHl
+        FFN --> A2(("+")):::add
+        A1 -. residual .-> A2
+    end
+    Drop --> Dec
+    Dec --> NF["RMSNorm<br/>(финальный)"]:::gray --> Lin
+    Lin["Linear → vocab_size"]:::gray --> Out(["logits"]):::io
+    Out -. "generate(): softmax → выбор токена" .-> Next(["следующий токен"]):::io
+    style Dec fill:transparent,stroke:#82b366,stroke-width:2px,color:#5b9a3c
 
+    classDef io fill:#ffffff,stroke:#999999,color:#1a1a1a;
+    classDef add fill:#ffffff,stroke:#666666,color:#1a1a1a;
     classDef blue fill:#dae8fc,stroke:#6c8ebf,color:#1a1a1a;
+    classDef blueHl fill:#dae8fc,stroke:#2f5f9e,stroke-width:3px,color:#1a1a1a;
     classDef purple fill:#e1d5e7,stroke:#9673a6,color:#1a1a1a;
-    classDef purpleHl fill:#e1d5e7,stroke:#7a4f91,stroke-width:3px,color:#1a1a1a;
-    classDef green fill:#d5e8d4,stroke:#82b366,color:#1a1a1a;
+    classDef purpleHl fill:#e1d5e7,stroke:#6a3d85,stroke-width:3px,color:#1a1a1a;
     classDef gray fill:#f5f5f5,stroke:#666666,color:#1a1a1a;
+    classDef grayHl fill:#f5f5f5,stroke:#333333,stroke-width:3px,color:#1a1a1a;
+    classDef gold fill:#fff2cc,stroke:#d6b656,color:#1a1a1a;
+    classDef rope fill:#d5f0ec,stroke:#3a9e8f,color:#1a1a1a;
+    classDef ropeHl fill:#d5f0ec,stroke:#1f6f63,stroke-width:3px,color:#1a1a1a;
+    classDef dim fill:#f5f5f5,stroke:#bbbbbb,color:#999999,stroke-dasharray:4 3;
 ```
+
+Как RoPE поворачивает Q и K — в разделе [Attention с RoPE](llama.md#attention-с-rope) документа LLaMA.
 
 ### MoE изнутри
 
 ```mermaid
-flowchart LR
-    X["x"]:::gold --> Router["Router<br/>Linear(emb, num_experts)"]:::gray
-    Router --> TopK["Top-K по логитам"]:::gray
-    TopK --> Softmax["Softmax весов<br/>по выбранным K"]:::purple
-    X --> E1["Expert 1<br/>(SwiGLU)"]:::blue
-    X --> E2["Expert 2<br/>(SwiGLU)"]:::blue
-    X --> Edots(["⋯"])
-    X --> En["Expert N<br/>(SwiGLU)"]:::blue
-    Softmax --> Sum["Σ weight × expert(x)"]:::gold
-    E1 --> Sum
-    E2 --> Sum
+%%{init: {"flowchart": {"rankSpacing": 28, "nodeSpacing": 28}}}%%
+flowchart TB
+    X(["x · один токен"]):::io --> Router["Router<br/>Linear(emb_size → num_experts)"]:::gray
+    Router --> TopK["top-k логитов<br/>k = top_k_experts"]:::gray
+    TopK --> W["softmax по выбранным k<br/>→ веса w₁ … w_k"]:::purple
+    TopK -- "индексы экспертов" --> Disp["dispatch:<br/>x → выбранные эксперты"]:::gray
+    X --> Disp
+    subgraph Experts[" "]
+        direction LR
+        E1["Expert 1<br/>(выбран)"]:::blue
+        E2["Expert 2"]:::dim
+        Ed["⋯"]:::dim
+        En["Expert N<br/>(выбран)"]:::blue
+    end
+    Disp --> E1
+    Disp --> En
+    E1 --> Sum["Σ wᵢ · Expertᵢ(x)"]:::gold
     En --> Sum
-    Sum --> Out["out"]:::gold
+    W --> Sum
+    Sum --> Drop["Dropout"]:::gray --> Out(["out"]):::io
+    style Experts fill:transparent,stroke:#6c8ebf,stroke-dasharray:4 3
 
+    classDef io fill:#ffffff,stroke:#999999,color:#1a1a1a;
+    classDef add fill:#ffffff,stroke:#666666,color:#1a1a1a;
     classDef blue fill:#dae8fc,stroke:#6c8ebf,color:#1a1a1a;
+    classDef blueHl fill:#dae8fc,stroke:#2f5f9e,stroke-width:3px,color:#1a1a1a;
     classDef purple fill:#e1d5e7,stroke:#9673a6,color:#1a1a1a;
+    classDef purpleHl fill:#e1d5e7,stroke:#6a3d85,stroke-width:3px,color:#1a1a1a;
     classDef gray fill:#f5f5f5,stroke:#666666,color:#1a1a1a;
+    classDef grayHl fill:#f5f5f5,stroke:#333333,stroke-width:3px,color:#1a1a1a;
     classDef gold fill:#fff2cc,stroke:#d6b656,color:#1a1a1a;
+    classDef rope fill:#d5f0ec,stroke:#3a9e8f,color:#1a1a1a;
+    classDef ropeHl fill:#d5f0ec,stroke:#1f6f63,stroke-width:3px,color:#1a1a1a;
+    classDef dim fill:#f5f5f5,stroke:#bbbbbb,color:#999999,stroke-dasharray:4 3;
 ```
 
 Механика [`MoE.forward`](../llm/src/llm/core/moe.py):

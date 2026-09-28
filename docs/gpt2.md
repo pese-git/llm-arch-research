@@ -12,25 +12,42 @@ GPT-2 (Radford et al., [*"Language Models are Unsupervised Multitask Learners"*]
 ## Архитектура блока декодера
 
 ```mermaid
-flowchart LR
-    Tokens(["Tokens"]) --> TokEmb["Token Emb"]:::blue
-    Tokens --> PosEmb["Position Emb<br/>(learned)"]:::purple
-    TokEmb --> Sum(("+"))
+%%{init: {"flowchart": {"rankSpacing": 28, "nodeSpacing": 28}}}%%
+flowchart TB
+    Ids(["token ids"]):::io --> TokEmb["Token Embedding"]:::blue
+    Ids --> PosEmb["Position Embedding<br/>(обучаемые)"]:::purple
+    TokEmb --> Sum(("+")):::add
     PosEmb --> Sum
-    Sum --> N1["Norm"]:::gray
-    N1 --> Attn["Masked Multi-Head<br/>Attention"]:::blue
-    Attn --> A1(("+"))
-    Sum -.->|residual| A1
-    A1 --> N2["Norm"]:::gray
-    N2 --> FFN["Feed Forward<br/>(GELU)"]:::purple
-    FFN --> A2(("+"))
-    A1 -.->|residual| A2
-    A2 --> Dc2["Decoder"]:::green --> Dots(["⋯"]) --> Dc5["Decoder"]:::green --> NF["Norm<br/>(финальный)"]:::gray --> Lin["Linear"]:::gray --> Soft["Softmax"]:::purple
+    Sum --> Drop["Dropout"]:::gray
+    subgraph Dec["Gpt2Decoder × num_layers · pre-LN"]
+        direction TB
+        X(["x"]):::io --> N1["LayerNorm"]:::grayHl
+        N1 --> Attn["Masked Multi-Head Attention"]:::blue
+        Attn --> A1(("+")):::add
+        X -. residual .-> A1
+        A1 --> N2["LayerNorm"]:::grayHl
+        N2 --> FFN["Feed Forward<br/>Linear → GELU → Linear"]:::purple
+        FFN --> A2(("+")):::add
+        A1 -. residual .-> A2
+    end
+    Drop --> Dec
+    Dec --> NF["LayerNorm<br/>(финальный)"]:::grayHl --> Lin
+    Lin["Linear → vocab_size"]:::gray --> Out(["logits"]):::io
+    Out -. "generate(): softmax → выбор токена" .-> Next(["следующий токен"]):::io
+    style Dec fill:transparent,stroke:#82b366,stroke-width:2px,color:#5b9a3c
 
+    classDef io fill:#ffffff,stroke:#999999,color:#1a1a1a;
+    classDef add fill:#ffffff,stroke:#666666,color:#1a1a1a;
     classDef blue fill:#dae8fc,stroke:#6c8ebf,color:#1a1a1a;
+    classDef blueHl fill:#dae8fc,stroke:#2f5f9e,stroke-width:3px,color:#1a1a1a;
     classDef purple fill:#e1d5e7,stroke:#9673a6,color:#1a1a1a;
-    classDef green fill:#d5e8d4,stroke:#82b366,color:#1a1a1a;
+    classDef purpleHl fill:#e1d5e7,stroke:#6a3d85,stroke-width:3px,color:#1a1a1a;
     classDef gray fill:#f5f5f5,stroke:#666666,color:#1a1a1a;
+    classDef grayHl fill:#f5f5f5,stroke:#333333,stroke-width:3px,color:#1a1a1a;
+    classDef gold fill:#fff2cc,stroke:#d6b656,color:#1a1a1a;
+    classDef rope fill:#d5f0ec,stroke:#3a9e8f,color:#1a1a1a;
+    classDef ropeHl fill:#d5f0ec,stroke:#1f6f63,stroke-width:3px,color:#1a1a1a;
+    classDef dim fill:#f5f5f5,stroke:#bbbbbb,color:#999999,stroke-dasharray:4 3;
 ```
 
 ## Компоненты

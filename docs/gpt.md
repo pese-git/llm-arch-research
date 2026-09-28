@@ -12,28 +12,131 @@ GPT-1 (Radford et al., [*"Improving Language Understanding by Generative Pre-Tra
 ## Архитектура блока декодера
 
 ```mermaid
-flowchart LR
-    Tokens(["Tokens"]) --> TokEmb["Token Emb"]:::blue
-    Tokens --> PosEmb["Position Emb<br/>(learned)"]:::purple
-    TokEmb --> Sum(("+"))
+%%{init: {"flowchart": {"rankSpacing": 28, "nodeSpacing": 28}}}%%
+flowchart TB
+    Ids(["token ids"]):::io --> TokEmb["Token Embedding"]:::blue
+    Ids --> PosEmb["Position Embedding<br/>(обучаемые)"]:::purple
+    TokEmb --> Sum(("+")):::add
     PosEmb --> Sum
-    Sum --> Attn["Masked Multi-Head<br/>Attention"]:::blue
-    Attn --> A1(("+"))
-    Sum -.->|residual| A1
-    A1 --> N1["Norm"]:::gray
-    N1 --> FFN["Feed Forward<br/>(GELU)"]:::purple
-    FFN --> A2(("+"))
-    N1 -.->|residual| A2
-    A2 --> N2["Norm"]:::gray
-    N2 --> Dc2["Decoder"]:::green --> Dots(["⋯"]) --> Dc5["Decoder"]:::green --> Lin["Linear"]:::gray --> Soft["Softmax"]:::purple
+    Sum --> Drop["Dropout"]:::gray
+    subgraph Dec["GptDecoder × num_layers · post-LN"]
+        direction TB
+        X(["x"]):::io --> Attn["Masked Multi-Head Attention"]:::blue
+        Attn --> A1(("+")):::add
+        X -. residual .-> A1
+        A1 --> N1["LayerNorm"]:::gray
+        N1 --> FFN["Feed Forward<br/>Linear → GELU → Linear"]:::purple
+        FFN --> A2(("+")):::add
+        N1 -. residual .-> A2
+        A2 --> N2["LayerNorm"]:::gray
+    end
+    Drop --> Dec
+    Dec --> Lin
+    Lin["Linear → vocab_size"]:::gray --> Out(["logits"]):::io
+    Out -. "generate(): softmax → выбор токена" .-> Next(["следующий токен"]):::io
+    style Dec fill:transparent,stroke:#82b366,stroke-width:2px,color:#5b9a3c
 
+    classDef io fill:#ffffff,stroke:#999999,color:#1a1a1a;
+    classDef add fill:#ffffff,stroke:#666666,color:#1a1a1a;
     classDef blue fill:#dae8fc,stroke:#6c8ebf,color:#1a1a1a;
+    classDef blueHl fill:#dae8fc,stroke:#2f5f9e,stroke-width:3px,color:#1a1a1a;
     classDef purple fill:#e1d5e7,stroke:#9673a6,color:#1a1a1a;
-    classDef green fill:#d5e8d4,stroke:#82b366,color:#1a1a1a;
+    classDef purpleHl fill:#e1d5e7,stroke:#6a3d85,stroke-width:3px,color:#1a1a1a;
     classDef gray fill:#f5f5f5,stroke:#666666,color:#1a1a1a;
+    classDef grayHl fill:#f5f5f5,stroke:#333333,stroke-width:3px,color:#1a1a1a;
+    classDef gold fill:#fff2cc,stroke:#d6b656,color:#1a1a1a;
+    classDef rope fill:#d5f0ec,stroke:#3a9e8f,color:#1a1a1a;
+    classDef ropeHl fill:#d5f0ec,stroke:#1f6f63,stroke-width:3px,color:#1a1a1a;
+    classDef dim fill:#f5f5f5,stroke:#bbbbbb,color:#999999,stroke-dasharray:4 3;
 ```
 
-Обратите внимание: `Norm` стоит **после** сложения с residual-связью (`x + Attention(x)`, затем норма) — это ключевое отличие от GPT-2 и всех более поздних архитектур в этом репозитории, которые используют pre-LN.
+Обратите внимание: `LayerNorm` стоит **после** сложения с residual-связью (`x + Attention(x)`, затем норма) — это ключевое отличие от GPT-2 и всех более поздних архитектур в этом репозитории, которые используют pre-LN.
+
+## Устройство компонентов
+
+### Multi-Head Attention
+
+`h = num_heads` голов считаются параллельно; в коде это не отдельные модули, а одна проекция `Linear(emb_size, h · head_size)` для каждого из Q, K, V с последующим `reshape` на головы.
+
+```mermaid
+%%{init: {"flowchart": {"rankSpacing": 28, "nodeSpacing": 28}}}%%
+flowchart TB
+    X(["x · [batch, seq_len, emb_size]"]):::io
+    X --> H1["Head 1"]:::blue
+    X --> H2["Head 2"]:::blue
+    X --> Hd["⋯"]:::io
+    X --> Hh["Head h"]:::blue
+    H1 --> Cat["Concat<br/>[batch, seq_len, h · head_size]"]:::gray
+    H2 --> Cat
+    Hh --> Cat
+    Cat --> WO["Linear W_O → emb_size"]:::gray --> Drop["Dropout"]:::gray --> Out(["out"]):::io
+
+    classDef io fill:#ffffff,stroke:#999999,color:#1a1a1a;
+    classDef add fill:#ffffff,stroke:#666666,color:#1a1a1a;
+    classDef blue fill:#dae8fc,stroke:#6c8ebf,color:#1a1a1a;
+    classDef blueHl fill:#dae8fc,stroke:#2f5f9e,stroke-width:3px,color:#1a1a1a;
+    classDef purple fill:#e1d5e7,stroke:#9673a6,color:#1a1a1a;
+    classDef purpleHl fill:#e1d5e7,stroke:#6a3d85,stroke-width:3px,color:#1a1a1a;
+    classDef gray fill:#f5f5f5,stroke:#666666,color:#1a1a1a;
+    classDef grayHl fill:#f5f5f5,stroke:#333333,stroke-width:3px,color:#1a1a1a;
+    classDef gold fill:#fff2cc,stroke:#d6b656,color:#1a1a1a;
+    classDef rope fill:#d5f0ec,stroke:#3a9e8f,color:#1a1a1a;
+    classDef ropeHl fill:#d5f0ec,stroke:#1f6f63,stroke-width:3px,color:#1a1a1a;
+    classDef dim fill:#f5f5f5,stroke:#bbbbbb,color:#999999,stroke-dasharray:4 3;
+```
+
+### Одна голова: scaled dot-product attention с causal-маской
+
+Маска запрещает позиции `i` смотреть на будущие позиции `j > i`: после `softmax` их веса становятся нулевыми.
+
+```mermaid
+%%{init: {"flowchart": {"rankSpacing": 28, "nodeSpacing": 28}}}%%
+flowchart TB
+    X(["x"]):::io --> Wq["W_q"]:::gray --> Q["Q"]:::blue
+    X --> Wk["W_k"]:::gray --> K["K"]:::blue
+    X --> Wv["W_v"]:::gray --> V["V"]:::blue
+    Q --> QK["Q · Kᵀ"]:::gray
+    K --> QK
+    QK --> Scale["÷ √head_size"]:::gray
+    Scale --> Mask["causal mask<br/>позиции j > i → −∞"]:::gold
+    Mask --> SM["softmax по строкам"]:::purple
+    SM --> AV["weights · V"]:::gray
+    V --> AV
+    AV --> O(["выход головы · [batch, seq_len, head_size]"]):::io
+
+    classDef io fill:#ffffff,stroke:#999999,color:#1a1a1a;
+    classDef add fill:#ffffff,stroke:#666666,color:#1a1a1a;
+    classDef blue fill:#dae8fc,stroke:#6c8ebf,color:#1a1a1a;
+    classDef blueHl fill:#dae8fc,stroke:#2f5f9e,stroke-width:3px,color:#1a1a1a;
+    classDef purple fill:#e1d5e7,stroke:#9673a6,color:#1a1a1a;
+    classDef purpleHl fill:#e1d5e7,stroke:#6a3d85,stroke-width:3px,color:#1a1a1a;
+    classDef gray fill:#f5f5f5,stroke:#666666,color:#1a1a1a;
+    classDef grayHl fill:#f5f5f5,stroke:#333333,stroke-width:3px,color:#1a1a1a;
+    classDef gold fill:#fff2cc,stroke:#d6b656,color:#1a1a1a;
+    classDef rope fill:#d5f0ec,stroke:#3a9e8f,color:#1a1a1a;
+    classDef ropeHl fill:#d5f0ec,stroke:#1f6f63,stroke-width:3px,color:#1a1a1a;
+    classDef dim fill:#f5f5f5,stroke:#bbbbbb,color:#999999,stroke-dasharray:4 3;
+```
+
+### Feed Forward
+
+```mermaid
+flowchart LR
+    X(["x"]):::io --> L1["Linear<br/>emb_size → 4·emb_size"]:::gray --> Act["GELU"]:::purple --> L2["Linear<br/>4·emb_size → emb_size"]:::gray --> Drop["Dropout"]:::gray --> Out(["out"]):::io
+
+    classDef io fill:#ffffff,stroke:#999999,color:#1a1a1a;
+    classDef add fill:#ffffff,stroke:#666666,color:#1a1a1a;
+    classDef blue fill:#dae8fc,stroke:#6c8ebf,color:#1a1a1a;
+    classDef blueHl fill:#dae8fc,stroke:#2f5f9e,stroke-width:3px,color:#1a1a1a;
+    classDef purple fill:#e1d5e7,stroke:#9673a6,color:#1a1a1a;
+    classDef purpleHl fill:#e1d5e7,stroke:#6a3d85,stroke-width:3px,color:#1a1a1a;
+    classDef gray fill:#f5f5f5,stroke:#666666,color:#1a1a1a;
+    classDef grayHl fill:#f5f5f5,stroke:#333333,stroke-width:3px,color:#1a1a1a;
+    classDef gold fill:#fff2cc,stroke:#d6b656,color:#1a1a1a;
+    classDef rope fill:#d5f0ec,stroke:#3a9e8f,color:#1a1a1a;
+    classDef ropeHl fill:#d5f0ec,stroke:#1f6f63,stroke-width:3px,color:#1a1a1a;
+    classDef dim fill:#f5f5f5,stroke:#bbbbbb,color:#999999,stroke-dasharray:4 3;
+```
 
 ## Компоненты
 

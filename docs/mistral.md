@@ -12,24 +12,44 @@ Mistral 7B (Mistral AI, 2023, [arXiv:2310.06825](https://arxiv.org/abs/2310.0682
 ## Архитектура блока декодера
 
 ```mermaid
-flowchart LR
-    Tokens(["Tokens"]) --> TokEmb["Token Emb"]:::blue
-    TokEmb --> N1["RMSNorm"]:::gray
-    N1 --> Attn["Grouped Query Attention<br/>+ RoPE + Sliding Window"]:::blueHl
-    Attn --> A1(("+"))
-    TokEmb -.->|residual| A1
-    A1 --> N2["RMSNorm"]:::gray
-    N2 --> FFN["SwiGLU"]:::purple
-    FFN --> A2(("+"))
-    A1 -.->|residual| A2
-    A2 --> Dc2["Decoder"]:::green --> Dots(["⋯"]) --> Dc5["Decoder"]:::green --> NF["RMSNorm<br/>(финальный)"]:::gray --> Lin["Linear"]:::gray --> Soft["Softmax"]:::purple
+%%{init: {"flowchart": {"rankSpacing": 28, "nodeSpacing": 28}}}%%
+flowchart TB
+    Ids(["token ids"]):::io --> TokEmb["Token Embedding"]:::blue
+    TokEmb --> Drop["Dropout"]:::gray
+    subgraph Dec["MistralDecoder × num_layers · pre-RMSNorm"]
+        direction TB
+        X(["x"]):::io --> N1["RMSNorm"]:::gray
+        N1 --> Attn["Grouped Query Attention<br/>sliding window"]:::blueHl
+        R["RoPE<br/>cos/sin от позиции · без параметров<br/>один модуль на все слои"]:::rope
+        R -. "поворот Q и K" .-> Attn
+        Attn --> A1(("+")):::add
+        X -. residual .-> A1
+        A1 --> N2["RMSNorm"]:::gray
+        N2 --> FFN["SwiGLU"]:::purple
+        FFN --> A2(("+")):::add
+        A1 -. residual .-> A2
+    end
+    Drop --> Dec
+    Dec --> NF["RMSNorm<br/>(финальный)"]:::gray --> Lin
+    Lin["Linear → vocab_size"]:::gray --> Out(["logits"]):::io
+    Out -. "generate(): softmax → выбор токена" .-> Next(["следующий токен"]):::io
+    style Dec fill:transparent,stroke:#82b366,stroke-width:2px,color:#5b9a3c
 
+    classDef io fill:#ffffff,stroke:#999999,color:#1a1a1a;
+    classDef add fill:#ffffff,stroke:#666666,color:#1a1a1a;
     classDef blue fill:#dae8fc,stroke:#6c8ebf,color:#1a1a1a;
-    classDef blueHl fill:#dae8fc,stroke:#4a7ebf,stroke-width:3px,color:#1a1a1a;
+    classDef blueHl fill:#dae8fc,stroke:#2f5f9e,stroke-width:3px,color:#1a1a1a;
     classDef purple fill:#e1d5e7,stroke:#9673a6,color:#1a1a1a;
-    classDef green fill:#d5e8d4,stroke:#82b366,color:#1a1a1a;
+    classDef purpleHl fill:#e1d5e7,stroke:#6a3d85,stroke-width:3px,color:#1a1a1a;
     classDef gray fill:#f5f5f5,stroke:#666666,color:#1a1a1a;
+    classDef grayHl fill:#f5f5f5,stroke:#333333,stroke-width:3px,color:#1a1a1a;
+    classDef gold fill:#fff2cc,stroke:#d6b656,color:#1a1a1a;
+    classDef rope fill:#d5f0ec,stroke:#3a9e8f,color:#1a1a1a;
+    classDef ropeHl fill:#d5f0ec,stroke:#1f6f63,stroke-width:3px,color:#1a1a1a;
+    classDef dim fill:#f5f5f5,stroke:#bbbbbb,color:#999999,stroke-dasharray:4 3;
 ```
+
+Как RoPE поворачивает Q и K — в разделе [Attention с RoPE](llama.md#attention-с-rope) документа LLaMA.
 
 ### Grouped Query Attention
 

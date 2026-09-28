@@ -140,28 +140,45 @@ hf_model = HFAdapter.from_llm_model(gpt)   # HFGPTAdapter — наследник
 Пример блока декодера на примере GPT-1 (подробный разбор — в [notebooks/gpt.ipynb](notebooks/gpt.ipynb)):
 
 ```mermaid
-flowchart LR
-    Tokens(["Tokens"]) --> TokEmb["Token Emb"]:::blue
-    Tokens --> PosEmb["Position Emb"]:::purple
-    TokEmb --> Sum(("+"))
+%%{init: {"flowchart": {"rankSpacing": 28, "nodeSpacing": 28}}}%%
+flowchart TB
+    Ids(["token ids"]):::io --> TokEmb["Token Embedding"]:::blue
+    Ids --> PosEmb["Position Embedding<br/>(обучаемые)"]:::purple
+    TokEmb --> Sum(("+")):::add
     PosEmb --> Sum
-    Sum --> Attn["Masked Multi-Head<br/>Attention"]:::blue
-    Attn --> A1(("+"))
-    Sum -.->|residual| A1
-    A1 --> N1["Norm"]:::gray
-    N1 --> FFN["Feed Forward<br/>Network"]:::purple
-    FFN --> A2(("+"))
-    N1 -.->|residual| A2
-    A2 --> N2["Norm"]:::gray
-    N2 --> Dc2["Decoder"]:::green --> Dc3["Decoder"]:::green --> Dots(["⋯"]) --> Dc4["Decoder"]:::green --> Dc5["Decoder"]:::green --> Lin["Linear"]:::gray --> Soft["Softmax"]:::purple
+    Sum --> Drop["Dropout"]:::gray
+    subgraph Dec["GptDecoder × num_layers · post-LN"]
+        direction TB
+        X(["x"]):::io --> Attn["Masked Multi-Head Attention"]:::blue
+        Attn --> A1(("+")):::add
+        X -. residual .-> A1
+        A1 --> N1["LayerNorm"]:::gray
+        N1 --> FFN["Feed Forward<br/>Linear → GELU → Linear"]:::purple
+        FFN --> A2(("+")):::add
+        N1 -. residual .-> A2
+        A2 --> N2["LayerNorm"]:::gray
+    end
+    Drop --> Dec
+    Dec --> Lin
+    Lin["Linear → vocab_size"]:::gray --> Out(["logits"]):::io
+    Out -. "generate(): softmax → выбор токена" .-> Next(["следующий токен"]):::io
+    style Dec fill:transparent,stroke:#82b366,stroke-width:2px,color:#5b9a3c
 
+    classDef io fill:#ffffff,stroke:#999999,color:#1a1a1a;
+    classDef add fill:#ffffff,stroke:#666666,color:#1a1a1a;
     classDef blue fill:#dae8fc,stroke:#6c8ebf,color:#1a1a1a;
+    classDef blueHl fill:#dae8fc,stroke:#2f5f9e,stroke-width:3px,color:#1a1a1a;
     classDef purple fill:#e1d5e7,stroke:#9673a6,color:#1a1a1a;
-    classDef green fill:#d5e8d4,stroke:#82b366,color:#1a1a1a;
+    classDef purpleHl fill:#e1d5e7,stroke:#6a3d85,stroke-width:3px,color:#1a1a1a;
     classDef gray fill:#f5f5f5,stroke:#666666,color:#1a1a1a;
+    classDef grayHl fill:#f5f5f5,stroke:#333333,stroke-width:3px,color:#1a1a1a;
+    classDef gold fill:#fff2cc,stroke:#d6b656,color:#1a1a1a;
+    classDef rope fill:#d5f0ec,stroke:#3a9e8f,color:#1a1a1a;
+    classDef ropeHl fill:#d5f0ec,stroke:#1f6f63,stroke-width:3px,color:#1a1a1a;
+    classDef dim fill:#f5f5f5,stroke:#bbbbbb,color:#999999,stroke-dasharray:4 3;
 ```
 
-**Генерация:** greedy, sampling с температурой, top-k, top-p, KV-кэш (корректно работает в LLaMA и Gemma, см. ограничения ниже).
+**Генерация:** greedy, sampling с температурой, top-k, top-p, KV-кэш (корректно работает только в LLaMA, см. ограничения ниже).
 
 **Обучение:** собственный BPE-токенизатор, `Trainer` (AdamW, линейный warmup, gradient clipping). Сохранение весов и конфига выполняет скрипт `run_llm_experiment.py`, а не сам `Trainer`.
 
@@ -227,6 +244,7 @@ flowchart LR
 Проект учебный; перед использованием для чего-то серьёзного учтите:
 
 - **KV-кэш в GPT/GPT-2 не сдвигает позиции:** при `use_cache=True` все новые токены получают позиционный эмбеддинг позиции 0, и генерация отличается от генерации без кэша.
+- **KV-кэш в Gemma не сдвигает позиции RoPE:** `MultiQueryAttention` вызывает RoPE без `start_pos`, поэтому новые Q и K поворачиваются как позиция 0.
 - **KV-кэш в Mistral/Mixtral расходится с генерацией без кэша**, как только длина кэша достигает `window_size`: кэш обрезается до окна, а позиция RoPE берётся из длины кэша и перестаёт расти.
 - **Генерация дальше `max_position_embeddings`** в моделях с RoPE падает с `RuntimeError` вместо понятной ошибки.
 - **`attention_mask` не используется** ни в моделях, ни в hf-proxy: в батчах с паддингом модель «видит» pad-токены.
