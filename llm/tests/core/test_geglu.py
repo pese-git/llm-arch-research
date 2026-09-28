@@ -16,13 +16,21 @@ def test_forward_no_batch(geglu):
     y = geglu(x.unsqueeze(0))
     assert y.shape == (1, 1, 16)
 
-@pytest.mark.skip(reason="float16 not supported without parameter casting")
 def test_forward_dtype_fp16():
-    geglu = GeGLU(emb_size=8, dropout=0.0)
+    # Тип вычислений задается снаружи: модуль переводится в fp16 целиком
+    geglu = GeGLU(emb_size=8, dropout=0.0).half()
     x = torch.randn(2, 4, 8).half()
     y = geglu(x)
     assert y.shape == x.shape
     assert y.dtype == torch.float16
+    assert all(p.dtype == torch.float16 for p in geglu.parameters())
+
+
+def test_forward_dtype_mismatch_raises():
+    # Как и остальные слои, GeGLU не приводит веса к типу входа сам
+    geglu = GeGLU(emb_size=8, dropout=0.0)
+    with pytest.raises(RuntimeError):
+        geglu(torch.randn(2, 4, 8).half())
 
 def test_forward_no_dropout():
     geglu = GeGLU(emb_size=4, dropout=0.0)

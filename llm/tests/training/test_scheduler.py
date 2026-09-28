@@ -56,7 +56,9 @@ def test_scheduler_full_decay_to_zero():
     model = DummyModel()
     optimizer = get_optimizer(model, lr=1.0, optimizer_type="adamw")
     scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=2, num_training_steps=2)
-    scheduler.step()
-    scheduler.step()
+    # Порядок как в цикле обучения: сначала шаг оптимизатора, затем планировщика
+    for _ in range(2):
+        optimizer.step()
+        scheduler.step()
     for param_group in optimizer.param_groups:
         assert param_group['lr'] == 0.0
