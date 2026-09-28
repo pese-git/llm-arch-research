@@ -1,0 +1,519 @@
+# Бэклог
+
+Технический долг, найденный при разборе кода. Каждая запись: где проблема, как её воспроизвести, как исправить.
+
+Приоритеты: **P1** — неверный результат или падение; **P2** — расхождение с документацией или статьёй, дешёвые исправления; **P3** — качество кода.
+
+Состояние кода — `master` после влития `fix/kv-cache` (PR #8) и `feat/gpt-activation` (PR #9), на 2026-09-28. Пункты с пометкой «воспроизведено» проверены запуском (torch 2.8). Величины расхождений при префилле кусками зависят от seed и приведены для порядка.
+
+Пункты 49–55 добавлены при сверке бэклога с кодом и первоисточниками. Они стоят в разделах своих архитектур, номера не перенумерованы, чтобы не ломать перекрёстные ссылки.
+
+## GPT-1
+
+Модель: [`models/gpt/gpt.py`](../llm/src/llm/models/gpt/gpt.py), блок: [`core/gpt_decoder.py`](../llm/src/llm/core/gpt_decoder.py). Пункты 2, 3, 8 и 10 касаются общих модулей и затрагивают и другие архитектуры.
+
+### Баги
+
+#### 1. `generate` падает за пределами `max_position_embeddings` — P1
+
+- **Где:** `GPT.generate`, `GPT.forward`, `PositionalEmbeddings.forward`.
+- **Что:** контекст не обрезается. Проверки длины смотрят на `seq_len`, а не на `start_pos + seq_len`: в `GPT.forward` (`x.size(1)`), в `PositionalEmbeddings.forward` и в `MultiHeadAttention.forward` (проверяется только текущий кусок, без длины кэша). `GPT2.forward` при переданном кэше пропускает проверку совсем.
+- **Воспроизведено:** `max_position_embeddings=16`, промпт 10 токенов, `max_new_tokens=10`. С кэшем — `IndexError: index out of range in self` из `nn.Embedding` (на CUDA — device-side assert). Без кэша — `ValueError`.
+- **Исправление:** при `x.size(1) > max_seq_len` обрезать окно `x[:, -max_seq_len:]` и пересчитывать без кэша (абсолютные позиции сдвигаются, кэш становится невалидным). Проверять `start_pos + seq_len` в `forward`, `PositionalEmbeddings` и `MultiHeadAttention`.
+- **Статус:** общая часть упомянута в [известных ограничениях](README.md#известные-ограничения).
+
+#### 2. Нет causal-маски при кэше и `seq_len > 1` — P1
+
+- **Где:** [`core/multi_head_attention.py`](../llm/src/llm/core/multi_head_attention.py), `if cache is None: scores = scores.masked_fill(...)`.
+- **Что:** если передать кэш и несколько токенов (префилл кусками, спекулятивное декодирование), будущие токены внутри куска не маскируются. `generate` подаёт по одному токену, поэтому там не проявляется.
+- **Воспроизведено:** префилл 4 + 6 токенов через кэш расходится с полным forward на 0.21 по логитам.
+- **Исправление:** всегда накладывать маску со сдвигом `self._tril_mask[start_pos:start_pos + seq_len, :start_pos + seq_len]`.
+- **Статус:** упомянуто в [известных ограничениях](README.md#известные-ограничения).
+
+#### 3. `attention_mask` молча игнорируется — P1
+
+- **Где:** принимается в `GPT.forward`, `GptDecoder.forward`, `MultiHeadAttention.forward`, но нигде не применяется. У `GPT2.forward` такого параметра нет вовсе (передача даёт `TypeError`), маску принимает только `GPT2.generate`. `hf-proxy/src/hf_proxy/hf_adapter.py` в `forward` маску отбрасывает (`self.llm_model(input_ids)`), а в `generate` передаёт, ожидая, что она сработает.
+- **Воспроизведено:** `attention_mask` из нулей даёт логиты, побитово равные вызову без маски.
+- **Исправление:** пробросить маску до attention и накладывать её вместе с causal-маской (`[B, T]` → `[B, 1, 1, T_kv]`). Либо, пока не реализовано, убрать параметр или бросать `NotImplementedError`, чтобы не было молчаливой ошибки.
+- **Статус:** упомянуто в [известных ограничениях](README.md#известные-ограничения).
+
+#### 4. `generate` не валидирует аргументы, хотя докстринг обещает — P2
+
+- **Где:** `GPT.generate`.
+- **Что:** в докстринге описаны `ValueError` при `temperature ≤ 0`, одновременных `top_k` и `top_p`, `top_k ≤ 0`, `top_p ∉ (0, 1]`. В коде проверок нет.
+- **Воспроизведено:** `temperature=0.0` и `top_k=5, top_p=0.9` принимаются молча. При `temperature ≤ 0` (в том числе отрицательной) масштабирование просто пропускается. `top_k=0` падает с невнятным `RuntimeError: probability tensor contains either inf, nan or element < 0`.
+- **Исправление:** добавить проверки из докстринга в начало метода.
+
+#### 49. Top-p отбрасывает токен, пересекающий порог — P2
+
+- **Где:** `generate` во всех шести моделях, `sorted_mask = cum_probs <= top_p`.
+- **Что:** маска оставляет только токены, у которых накопленная вероятность *включая сам токен* не больше `top_p`. Токен, на котором сумма переходит порог, выкидывается, хотя в nucleus sampling (Holtzman et al., 2019; `TopPLogitsWarper` в HF) он входит в ядро. При вероятностях `[0.5, 0.3, 0.2]` и `top_p=0.7` остаётся один токен вместо двух; при `top_p` меньше вероятности самого частого токена ядро держится только за счёт принудительного первого токена.
+- **Исправление:** сдвинуть маску — `cum_probs - sorted_probs < top_p` (или `sorted_mask[..., 1:] = sorted_mask[..., :-1].clone(); sorted_mask[..., 0] = True`). Вносить в общую функцию выбора токена (пункт 18).
+- **Попутно:** при `temperature ≤ 0` `logits_scaled` — тот же тензор, что `logits`, и запись `-inf` на месте в ветке top-p портит выход `forward`. Сейчас безвредно, но после вынесения в общую функцию лучше клонировать.
+
+### Отклонения от GPT-1
+
+#### 5. Нет weight tying — P2
+
+- **Что:** в оригинальном коде OpenAI (`finetune-transformer-lm/train.py`: `tf.matmul(h, we, transpose_b=True)`, без bias) и в HuggingFace (`OpenAIGPTLMHeadModel.lm_head`, без bias, привязан к `tokens_embed`) выходная проекция делит веса с токенными эмбеддингами. В тексте статьи GPT-1 это явно не сказано — следует из кода. Здесь `_linear` — отдельный `nn.Linear` с bias.
+- **Последствия:** примерно на `vocab_size × embed_dim` параметров больше; веса `openai-community/openai-gpt` напрямую не загружаются.
+- **Исправление:** `_linear = nn.Linear(embed_dim, vocab_size, bias=False)` и `_linear.weight = _token_embeddings._embedding.weight`, под флагом конфига, если нужна обратная совместимость чекпойнтов.
+
+#### 6. Нет dropout на весах внимания — P3
+
+- **Что:** в GPT-1 (разд. 4.1 статьи: «residual, embedding, and attention dropouts» 0.1; `attn_pdrop=0.1` в HF) dropout применяется к весам после softmax. Здесь есть только dropout после выходной проекции.
+- **Исправление:** `weights = self._attn_dropout(F.softmax(scores, dim=-1))`, отдельным параметром.
+
+#### 7. Нет инициализации весов из статьи — P3
+
+- **Что:** в статье (разд. 4.1) и в `train.py` веса инициализируются N(0, 0.02). В репозитории используется инициализация PyTorch по умолчанию: std весов `Linear` ≈ 0.1, эмбеддингов ≈ 1.0.
+- **Исправление:** метод `_init_weights` (Linear/Embedding — `normal_(0, 0.02)`, bias — нули) и вызов `self.apply(...)` в `__init__`.
+
+### Качество кода
+
+#### 8. `use_cache=True` по умолчанию и нет `torch.no_grad()` в `generate` — P2
+
+- **Что:** при обучении `forward` возвращает ненужные K/V каждого слоя. `generate` без `no_grad` у вызывающего строит autograd-граф на всю генерацию.
+- **Воспроизведено:** в `eval()` логиты имеют `requires_grad=True`, кэш возвращается по умолчанию.
+- **Исправление:** `use_cache=False` по умолчанию в `forward` (проверить `Trainer` и `hf_adapter`), декоратор `@torch.no_grad()` на `generate`.
+
+#### 9. Приведение dtype внутри `FeedForward.forward` — P3
+
+- **Где:** [`core/feed_forward.py`](../llm/src/llm/core/feed_forward.py).
+- **Что:** `_layer1`/`_layer2` переприсваиваются во время forward, если dtype входа отличается. Это скрывает ошибки dtype и рассинхронизирует состояние оптимизатора.
+- **Исправление:** убрать, приводить модель снаружи (`model.to(dtype)`) или использовать `torch.autocast`.
+
+#### 10. Интерфейс `BaseModel` не соответствует моделям — P3
+
+- **Где:** [`core/base_model.py`](../llm/src/llm/core/base_model.py).
+- **Что:** объявлены `forward(input_ids, attention_mask) -> Tensor` и `generate(input_ids, max_length)`; `GPT` возвращает `(logits, cache)` и принимает `max_new_tokens`, `do_sample` и т.д.
+- **Исправление:** привести абстрактные сигнатуры к фактическим.
+- **Статус:** упомянуто в [известных ограничениях](README.md#известные-ограничения).
+
+#### 11. Документация противоречит коду — P2
+
+- Докстринг `GptDecoder` называет блок «pre-LN» и приводит pre-LN псевдокод; в коде post-LN.
+- Пример в докстринге `GptDecoder` использует `Decoder(...)` и ожидает от `decoder(x)` тензор, а возвращается кортеж.
+- Докстринг `GptDecoder.forward` называет аргумент `mask` (на деле `attention_mask`) и обещает тензор на выходе.
+- В References класса `GPT` битая ссылка на статью: `research-covers/languageunsupervised/` (нет дефиса, правильно `language-unsupervised`).
+- После `feat/gpt-activation` (f1508d5) докстринги `GPT` и `GptDecoder` предлагают `"gelu_exact"`, который на деле tanh-аппроксимация (см. пункт 13), и называют erf-GELU (`"gelu"`) «как в статье», хотя в коде OpenAI — tanh. [gpt.md](gpt.md) не упоминает новый ключ `config["activation"]`.
+
+#### 12. Мусор в коде — P3
+
+- Закомментированный старый `generate` в конце `gpt.py`.
+- Неиспользуемые импорты: `Optional`, `Dict` в `gpt.py`, `math` в `feed_forward.py`.
+- Мёртвые проверки `hasattr(torch, "bool")` (актуальны только для PyTorch < 1.2).
+- Сравнения `do_sample == True`, `top_k != None` вместо `if do_sample`, `is not None`.
+
+## GPT-2
+
+Модель: [`models/gpt/gpt2.py`](../llm/src/llm/models/gpt/gpt2.py), блок: [`core/gpt2_decoder.py`](../llm/src/llm/core/gpt2_decoder.py).
+
+Общие с GPT-1 пункты касаются GPT-2 так же и здесь не повторяются:
+- **1** — падение `generate` за `max_position_embeddings`. Воспроизведено на GPT-2 с `max_position_embeddings=16`, промптом 10 и `max_new_tokens=10`: с кэшем `IndexError`, без кэша `ValueError`.
+- **2** — нет causal-маски при кэше и `seq_len > 1`. На GPT-2 префилл 4 + 6 расходится с полным forward на 0.12–0.16.
+- **3** — `attention_mask`: `GPT2.forward` его не принимает, `generate` принимает и игнорирует.
+- **4**, **49** — нет валидации аргументов `generate`, top-p отбрасывает пограничный токен.
+- **8** — `use_cache=True` по умолчанию и нет `no_grad`.
+- **9** — dtype в `FeedForward`.
+- **10** — интерфейс `BaseModel`.
+- **12** — мёртвые проверки `hasattr(torch, "bool")` и сравнения `== True` / `!= None`.
+
+### Отклонения от GPT-2
+
+#### 13. GELU: точная erf-версия вместо tanh-аппроксимации — P2
+
+- **Что:** `Gpt2Decoder` создаёт `FeedForward(activation="gelu")`, а это `nn.GELU()`, то есть erf. Оригинальный код OpenAI (`gpt-2/src/model.py`) и HF (`GPT2Config.activation_function="gelu_new"`) используют tanh-аппроксимацию. Кроме того, опция `'gelu_exact'` в `FeedForward` на деле подключает tanh-аппроксимацию, то есть название обратно смыслу. То же касается GPT-1: там тоже tanh (`finetune-transformer-lm/train.py`; в HF `modeling_openai` `ACT_FNS["gelu"]` — это `gelu_new`). В GPT-1 активация теперь задаётся `config["activation"]`, но по умолчанию — `"gelu"` (erf).
+- **Воспроизведено:** при одинаковых весах логиты отличаются от эталона с tanh-GELU на ~1e-4. С tanh-GELU расхождение 5e-7.
+- **Исправление:** переименовать `'gelu_exact'` → `'gelu_tanh'`, в `Gpt2Decoder` передавать `activation="gelu_tanh"`, в `GPT.__init__` сменить значение по умолчанию на `config.get("activation", "gelu_tanh")`, обновить тест `test_default_activation_is_gelu` в `tests/models/test_gpt.py` и докстринги с `"gelu_exact"` (пункт 11).
+- **Статус:** частично сделано в ветке `fix/gelu-tanh` (коммит `32a2db5`), в `master` не влито. Ветка основана до `feat/gpt-activation` и конфликтует с `master` в `core/gpt_decoder.py` (там `activation="gelu_tanh"` зашит, а в `master` активация пробрасывается из конфига). Нужен rebase и правки из «Исправления» для GPT-1; часть GPT-2 (`gpt2_decoder.py`) применяется без конфликтов.
+
+#### 14. Нет weight tying, у lm-head есть bias — P2
+
+- **Что:** в оригинале (`gpt-2/src/model.py`: `tf.matmul(h, wte, transpose_b=True)`) и в HF (`GPT2LMHeadModel.lm_head`, `bias=False`, `tie_word_embeddings=True`) выходная проекция делит веса с `wte`. Здесь `_linear` — отдельный `nn.Linear` с bias.
+- **Воспроизведено:** `m._linear.bias is not None`, `m._linear.weight is not m._token_embeddings._embedding.weight`.
+- **Последствия:** для конфигурации 124M лишних ~38M параметров (`50257 × 768`). Веса `openai-community/gpt2` напрямую не загружаются.
+- **Исправление:** как в пункте 5 для GPT-1.
+
+#### 15. Нет dropout на весах внимания — P3
+
+- **Что:** в HF-реализации GPT-2 (`attn_pdrop=0.1`) dropout применяется к весам после softmax. В `gpt-2/src/model.py` dropout нет вовсе — это код только для инференса. Здесь только dropout после выходной проекции (`resid_pdrop`).
+- **Исправление:** общее с пунктом 6, так как `MultiHeadAttention` общий.
+
+#### 16. Нет инициализации весов из статьи — P3
+
+- **Что:** статья GPT-2 (разд. 2.3) масштабирует веса residual-слоёв на `1/√N`, где N — число residual-слоёв; в HF (`GPT2PreTrainedModel._init_weights`) это `0.02 / √(2·num_layers)` для `c_proj` в attention и MLP, остальные веса — N(0, 0.02). Значение 0.02 в статье не указано, оно из кода: в `gpt-2/src/model.py` 0.02 для весов и `wte`, но 0.01 для `wpe`, а масштабирования residual-проекций в коде нет. В репозитории инициализация PyTorch по умолчанию.
+- **Исправление:** как в пункте 7, плюс `normal_(0, 0.02 / math.sqrt(2 * num_layers))` для `MultiHeadAttention._layer` и `FeedForward._layer2`.
+
+### Качество кода
+
+#### 17. `_tril_mask` сохраняется в `state_dict` — P2
+
+- **Где:** [`core/multi_head_attention.py`](../llm/src/llm/core/multi_head_attention.py), `register_buffer('_tril_mask', ...)`. Затрагивает все модели на `MultiHeadAttention`.
+- **Что:** буфер `max_seq_len × max_seq_len` persistent: попадает в каждый чекпоинт по одному на слой и привязывает чекпоинт к `max_seq_len`.
+- **Воспроизведено:** ключи `_decoders.{i}._heads._tril_mask` в `state_dict`. При `max_position_embeddings=1024` это 1 МБ на слой.
+- **Исправление:** `register_buffer(..., persistent=False)`. Старые чекпоинты при этом загружаются только с `strict=False` или после удаления ключей.
+
+#### 18. `generate` скопирован в шесть моделей — P2
+
+- **Где:** `generate` в `gpt.py`, `gpt2.py`, `llama.py`, `mistral.py`, `mixtral.py`, `gemma.py`.
+- **Что:** логика temperature/top-k/top-p/sampling одинакова, поэтому каждое исправление (пункты 1, 4, 19, `hasattr(torch, "bool")`) нужно вносить шесть раз.
+- **Исправление:** вынести выбор следующего токена в общую функцию (например, `core/sampling.py`) или в `BaseModel.generate` поверх `forward(x, use_cache, cache)`.
+
+#### 19. Пограничные случаи в `generate` — P3
+
+- **Что:**
+  - `top_k > vocab_size` падает в `torch.topk`;
+  - нет остановки по `eos_token_id`, всегда генерируется ровно `max_new_tokens`.
+- **Воспроизведено:** `top_k=100` при `vocab_size=50` — `RuntimeError: selected index k out of range`.
+- **Исправление:** `top_k = min(top_k, vocab_size)`; параметр `eos_token_id` с остановкой, когда все последовательности батча его сгенерировали.
+
+#### 20. `head_size` без проверки делимости — P3
+
+- **Где:** `GPT.__init__` и `GPT2.__init__`, `head_size=config["embed_dim"] // config["num_heads"]`.
+- **Что:** при `embed_dim % num_heads != 0` размер головы молча усекается, и внимание работает в пространстве меньше `embed_dim`.
+- **Воспроизведено:** `embed_dim=30, num_heads=4` принимается, `head_size=7`, Q/K/V — 28 измерений.
+- **Исправление:** `assert`/`ValueError` в `__init__`. Связано с тем, что ключ `head_size` в конфигах не читается (см. [известные ограничения](README.md#известные-ограничения)).
+
+#### 21. Документация и мусор — P3
+
+- Пример в докстринге модуля: `GPT2({"vocab_size": 50257, ...})` и `model.generate(input_ids, max_length=30)`. Воспроизведено: `TypeError`, нет обязательных `max_new_tokens` и `do_sample`. Там же и в докстринге класса `model(input_ids)` описан как возвращающий логиты, а возвращается кортеж.
+- Неиспользуемые импорты в `gpt2.py`: `FeedForward`, `Tensor`.
+- Параметр `rope` в `Gpt2Decoder` (и импорт `RoPE`) — GPT-2 его не использует.
+
+## LLaMA
+
+Модель: [`models/llama/llama.py`](../llm/src/llm/models/llama/llama.py), блок: [`core/cached_decoder.py`](../llm/src/llm/core/cached_decoder.py), attention: [`core/multi_head_attention.py`](../llm/src/llm/core/multi_head_attention.py) с [`core/rope.py`](../llm/src/llm/core/rope.py).
+
+Общие с GPT пункты касаются LLaMA так же и здесь не повторяются:
+- **1** — падение `generate` за `max_position_embeddings`. Воспроизведено с `max_position_embeddings=16`, промптом 10 и `max_new_tokens=10`: с кэшем `RuntimeError: shape '[1, 1, 1, <head_size / 2>]' is invalid for input of size 0` из `RoPE.forward` (пустой срез cos/sin; при `embed_dim=32, num_heads=4` — `[1, 1, 1, 4]`), без кэша `ValueError`. В моделях с RoPE контекст нельзя просто обрезать окном и продолжить с кэшем: при обрезке нужно пересчитать K заново с новыми позициями.
+- **2** — нет causal-маски при кэше и `seq_len > 1`. Префилл 4 + 6 расходится с полным forward на 0.14–0.28.
+- **3** — игнорируется `attention_mask`. У `Llama.forward` такого параметра нет вовсе, а `generate` его принимает: `attention_mask` из нулей даёт тот же результат, что и без маски.
+- **4**, **49** — нет валидации аргументов `generate` (`temperature=0.0` и `top_k=5, top_p=0.9` принимаются молча), top-p отбрасывает пограничный токен.
+- **8** — `use_cache=True` по умолчанию и нет `no_grad`. В `eval()` логиты имеют `requires_grad=True`.
+- **10** — интерфейс `BaseModel`.
+- **12** — мёртвые проверки `hasattr(torch, "bool")` (в `generate` LLaMA — тройные тернарники прямо в строках) и сравнения `== True` / `!= None`.
+- **17** — `_tril_mask` в `state_dict`: `MultiHeadAttention` общий.
+- **18** — дублирование `generate`.
+- **19** — `top_k=100` при `vocab_size=50` падает с `RuntimeError: selected index k out of range`.
+- **20** — проверка делимости. Воспроизведено: `embed_dim=100, num_heads=6` принимается, Q/K/V — 96 измерений. При нечётном `head_size` (`embed_dim=30, num_heads=4`) падает `assert` в `RoPE.__init__` с сообщением «head_size должен быть четным» — без упоминания `embed_dim` и `num_heads`.
+
+### Баги
+
+#### 22. `generate` молча принимает любые именованные аргументы — P2
+
+- **Где:** `Llama.generate(..., attention_mask=None, **kwargs)`.
+- **Что:** `**kwargs` нигде не используется, поэтому опечатки и аргументы из других API (`max_length`, `eos_token_id`) проглатываются без ошибки.
+- **Воспроизведено:** `generate(x, 2, do_sample=False, max_lenght=5)` выполняется без ошибок.
+- **Исправление:** `hf-proxy/src/hf_proxy/hf_adapter.py` пробрасывает `**kwargs` в `model.generate`, поэтому просто убрать параметр нельзя. Явно перечислить поддерживаемые ключи и бросать `TypeError` на остальных (или фильтровать ключи в адаптере).
+
+### Отклонения от LLaMA
+
+Докстринг `Llama` и [llama.md](llama.md#известное-расхождение-с-докстрингом) уже упоминают bias и dropout; ниже — что из этого следует и чего там нет.
+
+#### 23. SwiGLU с hidden = 4·d вместо ⅔·4·d — P2
+
+- **Где:** [`core/swi_glu.py`](../llm/src/llm/core/swi_glu.py), `nn.Linear(emb_size, 4 * emb_size)` для `_gate`, `_up`, `_down`.
+- **Что:** в LLaMA (разд. 2.2 статьи; `FeedForward` в `facebookresearch/llama/model.py`) скрытая размерность — `2/3 · 4d`, округлённая вверх до кратного `multiple_of=256`, чтобы три матрицы SwiGLU весили столько же, сколько две матрицы обычного FFN с `4d`. Здесь три матрицы по `4d`.
+- **Последствия:** FFN примерно в 1.5 раза тяжелее, чем в статье. Для `d=4096`: hidden 16384 вместо 11008, ~201M вместо ~135M параметров FFN на слой. При сравнении с GPT той же ширины LLaMA получает лишние параметры, и сравнение архитектур становится нечестным.
+- **Исправление:** параметр `hidden_dim` в `SwiGLU` (по умолчанию — формула LLaMA, опционально `multiple_of`). Затрагивает Mistral и Mixtral, которые используют тот же `SwiGLU`; меняет размеры весов, поэтому старые чекпоинты не загрузятся.
+- **Статус:** не задокументировано.
+
+#### 24. Bias во всех `Linear` — P3
+
+- **Что:** в LLaMA все проекции (`wq`, `wk`, `wv`, `wo`, `w1`–`w3`, `output`) без bias. Здесь bias есть в Q/K/V, выходной проекции attention, трёх матрицах SwiGLU и голове на словарь.
+- **Воспроизведено:** `m._decoders[0]._heads._q.bias is not None`, `m._linear.bias is not None`.
+- **Последствия:** веса Meta/HF LLaMA напрямую не загружаются (лишние ключи `*.bias`). Для загрузки весов HF, помимо bias, нужна перестановка строк `q_proj`/`k_proj`: HF использует `rotate_half` (половины вектора), а здесь, как у Meta, — чередующиеся пары `(2i, 2i+1)`.
+- **Исправление:** флаг `bias` в конфиге (по умолчанию `False` для LLaMA) с пробросом в `MultiHeadAttention` и `SwiGLU`.
+- **Статус:** задокументировано в докстринге и [llama.md](llama.md#известное-расхождение-с-докстрингом), но там перечислены Q/K/V, выходная проекция и голова — bias в матрицах SwiGLU не упомянут.
+
+### Качество кода
+
+#### 25. RoPE-буферы в `state_dict`, по копии на каждый слой — P2
+
+- **Где:** [`core/rope.py`](../llm/src/llm/core/rope.py), `register_buffer("cos_matrix", ...)` и `register_buffer("sin_matrix", ...)`. Один объект `RoPE` зарегистрирован в модели и в `MultiHeadAttention` каждого слоя.
+- **Что:** буферы persistent, и `state_dict` содержит их под `num_layers + 1` ключами: `_position_embeddings.cos_matrix`, `_decoders.{i}._heads._rope.cos_matrix` и т.д. Чекпоинт хранит одни и те же таблицы многократно и привязан к `max_position_embeddings` — увеличить контекст без правки `state_dict` нельзя.
+- **Воспроизведено:** при `num_layers=2` — три ключа `*.cos_matrix` и три `*.sin_matrix`.
+- **Исправление:** `persistent=False` (как в пункте 17). Затрагивает все модели с RoPE: Mistral, Mixtral, Gemma.
+
+#### 26. Документация и мусор — P3
+
+- Закомментированный блок вычисления `start_pos` и строка `# pos_out = ...` в `Llama.forward`; неиспользуемая переменная `vocab_size` в `generate`.
+- Неиспользуемые импорты: `Tensor` в `llama.py`, `FeedForward` в `cached_decoder.py`, `Optional` в `rope.py`, `swi_glu.py`, `rms_norm.py`.
+- Докстринг `CachedDecoder` описывает LayerNorm и GELU, хотя для LLaMA блок собирается с `RMSNorm` и `SwiGLU`.
+- Комментарий к форме выхода в `RoPE.forward` — `[batch_size, seq_len, head_size]`, фактически 4D `[batch, num_heads, seq_len, head_size]`.
+- В [README.md](README.md) устарели пометки «⚠️ без GQA, вопреки докстрингу» в таблице и пункт «LLaMA — нет GQA, вопреки докстрингу» в известных ограничениях: докстринг уже исправлен, расхождения больше нет.
+- Нет `save`/`load` ни в `Llama`, ни в `BaseModel`, хотя версия для внешнего стенда их требует.
+- [`tests/models/test_llama.py`](../llm/tests/models/test_llama.py) проверяет только формы. Кэшированная генерация по одному токену сверяется с полным forward в [`test_kv_cache.py`](../llm/tests/models/test_kv_cache.py) для всех моделей, но нет тестов на префилл кусками с кэшем (пункт 2), на генерацию до границы `max_position_embeddings` (пункт 1) и на то, что top-k/top-p оставляют нужное число токенов (пункт 49).
+
+## Mistral
+
+Модель: [`models/mistral/mistral.py`](../llm/src/llm/models/mistral/mistral.py), блок: [`core/mistral_decoder.py`](../llm/src/llm/core/mistral_decoder.py), attention: [`core/group_query_attention.py`](../llm/src/llm/core/group_query_attention.py) с [`core/rope.py`](../llm/src/llm/core/rope.py). `GroupedQueryAttention` общий с Mixtral, поэтому пункты 27–30 затрагивают и её.
+
+Общие с предыдущими моделями пункты касаются Mistral так же и здесь не повторяются:
+- **1** — падение `generate` за `max_position_embeddings`. Воспроизведено с `max_position_embeddings=16`, промптом 10 и `max_new_tokens=10`: с кэшем `RuntimeError: shape '[1, 1, 1, 4]' is invalid for input of size 0` из `RoPE.forward`. Для Mistral это особенно заметно: sliding window и rolling-buffer кэш позволяют генерировать сколь угодно долго, и мешает только таблица cos/sin.
+- **3** — игнорируется `attention_mask`. `Mistral.forward` его не принимает, а `generate` принимает: `attention_mask` из нулей даёт тот же результат, что и без маски.
+- **4**, **49** — нет валидации аргументов `generate` (`temperature=0.0` и `top_k=5, top_p=0.9` принимаются молча), top-p отбрасывает пограничный токен.
+- **8** — `use_cache=True` по умолчанию и нет `no_grad`. В `eval()` логиты имеют `requires_grad=True`.
+- **10** — интерфейс `BaseModel`.
+- **12** — мёртвые проверки `hasattr(torch, "bool")` и сравнения `== True` / `!= None`.
+- **18** — дублирование `generate`.
+- **19** — `top_k=100` при `vocab_size=50` падает с `RuntimeError: selected index k out of range`.
+- **22** — `**kwargs` в `generate`: `max_lenght=5` проглатывается без ошибки.
+- **24** — bias во всех `Linear`: у Mistral 7B проекции тоже без bias. Воспроизведено: `_heads._q.bias is not None`, `_linear.bias is not None`.
+- **25** — RoPE-буферы в `state_dict` по копии на слой.
+
+### Баги
+
+#### 27. Нет маски при кэше и `seq_len > 1` в `GroupedQueryAttention` — P1
+
+- **Где:** `GroupedQueryAttention.forward`, `if cache is None: scores = scores.masked_fill(...)`.
+- **Что:** то же, что пункт 2, но в отдельном модуле GQA, и ломается не только causal-часть, но и окно: токены куска видят будущее внутри куска, а ключи из кэша не обрезаются по окну для каждой строки. При одном новом токене маска не нужна: кэш содержит ровно `window_size` позиций, плюс сам токен — это `W + 1`, как и в маске без кэша.
+- **Воспроизведено:** префилл 4 + 6 токенов через кэш расходится с полным forward на 0.2–0.3 по логитам (так же 5 + 5 и 6 + 4) при `window_size=4`. Генерация по одному токену с кэшем совпадает с полным forward (3.6e-7).
+- **Исправление:** при кэше строить маску по абсолютным позициям: строки `start_pos … start_pos + T − 1`, столбцы — позиции ключей `start_pos − len(k_cache) … start_pos + T − 1`, разрешено `0 ≤ i − j ≤ window_size`.
+- **Статус:** общая часть упомянута в [известных ограничениях](README.md#известные-ограничения).
+
+#### 28. Ключ `head_size` в конфиге игнорируется — P2
+
+- **Где:** `Mistral.__init__`, `head_size=config["embed_dim"] // config["num_q_heads"]` для `RoPE` и `MistralDecoder`.
+- **Что:** в [`mistral_train.json`](../experiments/llm_only/configs/mistral_train.json) задан `"head_size": 64`, и он совпадает с `256 // 4` случайно. Если изменить одно из значений, второе молча не подстроится.
+- **Воспроизведено:** конфиг с `"head_size": 16` при `embed_dim=32, num_q_heads=4` даёт `head_size=8`.
+- **Исправление:** читать `config.get("head_size", embed_dim // num_q_heads)` и передавать это значение и в `RoPE`, и в `MistralDecoder`. Если размер задан явно, `num_q_heads * head_size` может не равняться `embed_dim` — выходная проекция `_layer` это уже поддерживает.
+- **Статус:** упомянуто в [известных ограничениях](README.md#известные-ограничения) для всех моделей.
+
+#### 29. Нет проверок `num_q_heads` и `num_kv_heads` — P2
+
+- **Где:** `GroupedQueryAttention.__init__`, `Mistral.__init__`.
+- **Что:**
+  - `num_q_heads % num_kv_heads != 0` принимается конструктором и падает только в первом `forward` внутри `_repeat_kv_heads` с непонятной ошибкой `reshape`;
+  - `embed_dim % num_q_heads != 0` молча усекает размер голов (как пункт 20).
+- **Воспроизведено:** `num_q_heads=4, num_kv_heads=3` — `RuntimeError: shape '[1, 4, 10, 8]' is invalid for input of size 240` при `forward`. `embed_dim=32, num_q_heads=3` — Q-проекция на 30 измерений.
+- **Исправление:** `ValueError` в `__init__` с понятным сообщением для обоих условий.
+
+### Отклонения от Mistral 7B
+
+#### 30. Размер скрытого слоя SwiGLU — P3
+
+- **Что:** Mistral 7B использует `hidden_dim = 14336` при `dim = 4096` (3.5·d, `intermediate_size` в HF). Здесь `4·d` в каждой из трёх матриц, то есть FFN примерно на 14% тяжелее. Исправление общее с пунктом 23: параметр `hidden_dim` в `SwiGLU`, для Mistral — из конфига.
+
+#### 50. `eps` в RMSNorm зашит как 1e-6 — P3
+
+- **Где:** [`core/rms_norm.py`](../llm/src/llm/core/rms_norm.py), `RMSNorm(dim, eps=1e-6)`; все модели и декодеры создают `RMSNorm` без `eps`.
+- **Что:** у Mistral 7B `norm_eps = 1e-5` (`rms_norm_eps` в HF), у LLaMA-1 — 1e-6, у Gemma — 1e-6. Задать значение из конфига нельзя. База RoPE 10 000 для LLaMA-1 и Mistral 7B v0.1 совпадает с оригиналом.
+- **Исправление:** читать `config.get("rms_norm_eps", 1e-6)` и пробрасывать в `RMSNorm` модели и декодеров.
+
+#### 51. Dropout в attention и FFN — P3
+
+- **Что:** в Mistral 7B dropout нет (в `mistral-inference` его нет вовсе, в HF `attention_dropout=0.0`). Здесь dropout есть в `GroupedQueryAttention` и в `SwiGLU`. Для LLaMA это указано в докстринге и [llama.md](llama.md#известное-расхождение-с-докстрингом), для Mistral — нигде.
+- **Исправление:** задокументировать в [mistral.md](mistral.md) или ставить `dropout=0.0` по умолчанию.
+
+### Качество кода
+
+#### 31. `_tril_mask` в `state_dict` — P2
+
+- **Где:** `GroupedQueryAttention.__init__`, `register_buffer("_tril_mask", ...)`.
+- **Что:** то же, что пункт 17, но в `GroupedQueryAttention`, поэтому исправление в `MultiHeadAttention` его не закроет. Маска `max_seq_len × max_seq_len` хранится в каждом слое и привязывает чекпоинт к `max_seq_len` и `window_size`.
+- **Воспроизведено:** ключи `_decoders.{i}._heads._tril_mask` в `state_dict`.
+- **Исправление:** `persistent=False`, либо строить маску на лету по позициям (заодно закрывает пункт 27).
+
+#### 32. Совместимость с PyTorch < 1.2 сделана наполовину — P3
+
+- **Где:** `GroupedQueryAttention.__init__` (`mask.bool() if hasattr(torch, "bool") else mask.byte()`), `~self._tril_mask[...]` в `forward`, top-k/top-p в `Mistral.generate`, `assert x.ndim == 4` в `RoPE.forward`.
+- **Что:** на torch ≥ 1.2 `hasattr(torch, "bool")` всегда истинно, и uint8-ветка никогда не выполняется, то есть не тестируется. На torch < 1.2 она, скорее всего, логически верна: там `~` над `ByteTensor` было логическим НЕ (побитовым стало в 1.2, PyTorch PR #22326), а uint8-маски допустимы в `masked_fill` и индексации. На современном torch та же ветка сломалась бы (`~` для uint8 даёт `[254, 255, …]`), но выполниться там не может. Вероятнее ломает старый стенд другое: атрибута `Tensor.ndim` в torch 1.1, по всей видимости, ещё нет (не проверено запуском). Внешний стенд с torch < 1.2 прошла только версия на float-масках с `== 0`.
+- **Исправление:** выбрать одно. Либо перейти на float-маски и `masked_fill(mask == 0, ...)` во всём коде и заменить `x.ndim` на `x.dim()`, либо отказаться от поддержки torch < 1.2 и убрать все `hasattr(torch, "bool")` (см. пункт 12).
+
+#### 33. Документация и мусор — P3
+
+- Докстринг `Mistral`: название статьи выдумано («Mistral: Fast and Efficient Dense and Mixture of Experts Transformer Models»), настоящее — «Mistral 7B».
+- Докстринг `GroupedQueryAttention`: ссылка «Self-attention with linear complexity (Vila et al.) arXiv:2302.05442» не соответствует статье (arXiv:2302.05442 — «Scaling Vision Transformers to 22 Billion Parameters», Dehghani et al.); утверждение, что GQA используется в GPT-4, не подтверждено; обещано требование `num_q_heads * head_size == emb_size`, которое не проверяется.
+- Докстринг `MistralDecoder` описывает «стек декодеров» с аргументом `num_layers`, хотя это один блок и такого аргумента нет; «RMSNorm перед и после» — на деле только pre-norm.
+- Параметр `mask` в `GroupedQueryAttention.forward` и `MistralDecoder.forward` принимается и не используется.
+- Закомментированный код: старый `PositionalEmbeddings` и `pos_out` в `Mistral`, старый блок кэширования и `_repeat_kv_heads` в `GroupedQueryAttention.forward`.
+- Неиспользуемые переменные и импорты: `k_seq_len` в `GroupedQueryAttention.forward`; `vocab_size` в `generate`; `sqrt`, `Tensor` в `mistral.py`.
+- Комментарии в `GroupedQueryAttention.forward`: сбитая нумерация шагов («Шаг 2», «3.», «5.», «8.», снова «3.», «4.») и неверные размерности (`# [B, T, hs]` там, где `[B, H, T, hs]`).
+- Кэш пересобирается через `torch.cat` и срез на каждом шаге. Для учебного кода это приемлемо, но настоящего rolling buffer (запись по индексу `pos % W`) нет, хотя документация так его называет.
+- Нет `save`/`load` в `Mistral`, хотя версия для внешнего стенда их требует.
+- [`tests/models/test_mistral.py`](../llm/tests/models/test_mistral.py) проверяет только формы; генерация по одному токену с кэшем покрыта [`test_kv_cache.py`](../llm/tests/models/test_kv_cache.py). Нет тестов на префилл кусками с кэшем (пункт 27), на генерацию до границы `max_position_embeddings` (пункт 1), на проверки из пункта 29 и на чтение `head_size` из конфига (пункт 28).
+
+## Mixtral
+
+Модель: [`models/mixtral/mixtral.py`](../llm/src/llm/models/mixtral/mixtral.py), блок: [`core/mixtral_decoder.py`](../llm/src/llm/core/mixtral_decoder.py), FFN: [`core/moe.py`](../llm/src/llm/core/moe.py) поверх [`core/swi_glu.py`](../llm/src/llm/core/swi_glu.py). Attention — тот же `GroupedQueryAttention`, что у Mistral.
+
+Сама математика MoE верна: выход совпадает с наивным циклом по токенам (для каждого токена сумма `softmax(top-k логитов) · expert(x)`) с точностью 7e-8. Это то же, что `Softmax(TopK(x·W_g))` в статье и softmax → top-k → перенормировка в HF.
+
+Общие с предыдущими моделями пункты касаются Mixtral так же и здесь не повторяются:
+- **1** — падение `generate` за `max_position_embeddings`. Воспроизведено с `max_position_embeddings=16`, промптом 10 и `max_new_tokens=10`: с кэшем `RuntimeError: shape '[1, 1, 1, 4]' is invalid for input of size 0` из `RoPE.forward`.
+- **3**, **4**, **22** — `attention_mask` и `**kwargs` в `generate` игнорируются, аргументы не валидируются.
+- **8** — `use_cache=True` по умолчанию и нет `no_grad`. Воспроизведено: в `train()` `forward` возвращает кэш; `Trainer` вызывает `self.model(input_ids)` и собирает K/V всех слоёв на каждом шаге.
+- **10**, **12**, **18**, **19** — интерфейс `BaseModel`, мёртвые `hasattr(torch, "bool")`, дублирование `generate`, пограничные случаи top-k.
+- **23**, **24** — SwiGLU с `4·d` и bias во всех `Linear`. У Mixtral 8x7B эксперт — `hidden_dim = 14336` при `dim = 4096`, все проекции, включая роутер, без bias.
+- **25** — RoPE-буферы в `state_dict` по копии на слой.
+- **27** — нет маски при кэше и `seq_len > 1`. Воспроизведено на Mixtral: префилл 6 + 8 токенов через кэш расходится с полным forward на 0.27–0.35 по логитам при `window_size=5`.
+- **49** — top-p отбрасывает пограничный токен.
+- **50**, **51** — `eps` RMSNorm не задаётся из конфига, dropout в attention (в Mixtral 8x7B его нет).
+- **28** — ключ `head_size` игнорируется. В [`mixtral_train.json`](../experiments/llm_only/configs/mixtral_train.json) `"head_size": 64` совпадает с `256 // 4` случайно.
+- **29**, **31**, **32**, **33** — проверки голов, `_tril_mask` в `state_dict`, половинчатая совместимость с torch < 1.2, мусор в `GroupedQueryAttention` (неиспользуемые `mask` и `k_seq_len`).
+
+### Баги
+
+#### 34. MoE падает в bf16/fp16 — P1
+
+- **Где:** `MoE.forward`, `weights_for_expert = torch.zeros(batch_size, seq_len, device=x.device)`.
+- **Что:** буфер весов создаётся без `dtype` и всегда float32. Запись в него `topk_weights[...]` в bf16/fp16 падает; обучение и инференс Mixtral в половинной точности невозможны.
+- **Воспроизведено:** `MoE(16, 4, 2).to(torch.bfloat16)` на bf16-входе — `RuntimeError: Index put requires the source and destination dtypes match, got Float for the destination and BFloat16 for the source`.
+- **Исправление:** `dtype=x.dtype`, либо переписать сборку выхода без промежуточного буфера (см. пункт 39).
+
+#### 35. Нет `save`/`load`, хотя докстринг их обещает — P2
+
+- **Где:** докстринг `Mixtral`: «save(path)/load(path, device) — сохранение и восстановление обученной модели».
+- **Что:** методов нет ни в `Mixtral`, ни в `BaseModel`.
+- **Воспроизведено:** `hasattr(Mixtral, "save")`, `hasattr(Mixtral, "load")` — `False`.
+- **Исправление:** реализовать в `BaseModel` (`state_dict` + `config`, `load` как `classmethod`) — закроет и Mistral, и LLaMA. Версия для внешнего стенда уже содержит рабочий вариант с полным набором аргументов конструктора.
+
+#### 36. `top_k_experts=0` принимается — P3
+
+- **Где:** `MoE.__init__` проверяет только `top_k_experts > num_experts`.
+- **Что:** при `top_k_experts=0` ни один эксперт не выбирается, FFN-ветка тождественно возвращает нули, модель молча превращается в attention-only. Отрицательное значение (`top_k_experts=-1`) конструктор тоже принимает.
+- **Воспроизведено:** `Mixtral` с `top_k_experts=0` строится и выполняет `forward` без ошибок, выход MoE ровно 0.
+- **Исправление:** `ValueError` при `top_k_experts < 1`.
+
+### Отклонения от Mixtral 8x7B
+
+#### 37. Нет load-balancing loss у роутера — P2
+
+- **Где:** `MoE.forward` возвращает только выход; логиты роутера наружу не отдаются, `Trainer` считает только cross-entropy.
+- **Что:** статья Mixtral вспомогательный loss не описывает, но HF-реализация (`load_balancing_loss_func` в `modeling_mixtral.py`), как и Switch Transformer и GShard, добавляет при обучении `num_experts · Σ fᵢ · Pᵢ` (доля токенов на эксперта × средняя вероятность роутера). Без него роутер склонен схлопываться на пару экспертов, остальные не обучаются, и MoE вырождается в узкий dense FFN.
+- **Исправление:** возвращать из `MoE` (или копить в атрибуте) `router_logits`, считать aux loss в модели с коэффициентом из конфига (`router_aux_loss_coef`, в HF `MixtralConfig` по умолчанию 0.001) и прибавлять в `Trainer`. Полезна и метрика загрузки экспертов в логах обучения.
+- **Статус:** задокументировано в [mixtral.md](mixtral.md#moe-изнутри) («⚠️ Нет load-balancing loss»), не исправлено.
+
+#### 38. Двойной dropout в MoE — P2
+
+- **Где:** `nn.Dropout` внутри каждого `SwiGLU` и ещё один на выходе `MoE`.
+- **Что:** выход эксперта прорежается дважды, и эффективная вероятность выше заданной `dropout`. В Mixtral dropout в FFN нет вовсе.
+- **Воспроизведено:** при `dropout=0.5` в `train()` обнуляется 62% элементов выхода MoE вместо 50% (`0.5 + 0.5 · 0.5²` для двух экспертов).
+- **Исправление:** оставить один dropout — на выходе `MoE` — и создавать экспертов с `dropout=0.0` (или добавить в `SwiGLU` флаг).
+
+#### 52. Sliding window attention, которого нет в Mixtral 8x7B — P2
+
+- **Где:** `Mixtral.__init__` передаёт `window_size=config["window_size"]` в `GroupedQueryAttention`.
+- **Что:** Mixtral 8x7B использует плотное внимание на весь контекст 32k («fully dense context length of 32k tokens» в статье; `sliding_window=None` в HF `MixtralConfig`). SWA — черта Mistral 7B v0.1, в Mixtral её нет. Здесь окно действует всегда.
+- **Исправление:** сделать `window_size` необязательным (`None` — без окна) и по умолчанию для Mixtral не задавать; убрать ключ из `mixtral_train.json`.
+- **Статус:** задокументировано в [mixtral.md](mixtral.md#отличия-от-mixtral-8x7b).
+
+#### 53. База RoPE 10 000 вместо 1 000 000 — P3
+
+- **Где:** `RoPE(head_size, max_seq_len, base=10_000)`; ни одна модель не передаёт `base`.
+- **Что:** у Mixtral 8x7B `rope_theta = 1e6` (HF `MixtralConfig`), чтобы покрыть контекст 32k. Для LLaMA-1, Mistral 7B v0.1 и Gemma 10 000 верно.
+- **Исправление:** читать `config.get("rope_theta", 10_000)` и передавать в `RoPE`; для Mixtral задать 1e6 в конфигах.
+
+#### 54. Softmax роутера в dtype входа — P3
+
+- **Где:** `MoE.forward`, softmax по top-k логитам роутера.
+- **Что:** HF считает `softmax(router_logits, dtype=torch.float)` и приводит веса обратно. Здесь softmax в dtype входа, в bf16 веса экспертов теряют точность. Проявится после исправления пункта 34, сейчас bf16 падает раньше.
+- **Исправление:** `F.softmax(topk_logits.float(), dim=-1).to(x.dtype)`.
+
+### Качество кода
+
+#### 39. Неэффективная сборка выхода MoE — P3
+
+- **Где:** `MoE.forward`.
+- **Что:** на каждого эксперта создаётся полный буфер `[batch, seq_len]` и выполняется вложенный цикл по `top_k`, токены выбираются масками сравнения. Работает, но делает лишнюю работу. (На torch < 1.2 сравнения дают uint8, и индексация uint8-маской там допустима, так что несовместимости, скорее всего, нет; запуском не проверено.)
+- **Исправление:** плоский вход `[N, emb]`, `(topk_indices == e).nonzero()` даёт пары (токен, позиция в top-k), веса — `topk_weights[token_idx, k_idx]`, выход — `output.index_add_(0, token_idx, w · expert(x[token_idx]))`. Так же устроен `MixtralExperts.forward` в HF. Этот вариант уже проверен во внешнем стенде и заодно закрывает пункт 34.
+
+#### 40. Документация и мусор — P3
+
+- В References докстрингов нет самой статьи Mixtral — «Mixtral of Experts», Jiang et al., 2024, arXiv:2401.04088; есть только пост в блоге ([mixtral.md](mixtral.md) статью цитирует).
+- Ссылка на GQA в `mixtral_decoder.py` и `mixtral.py` — `arXiv:2305.14236`, правильно `arXiv:2305.13245` (Ainslie et al.).
+- Докстринг `MoE` описывает роутер как `softmax(W_r x)`, затем top-K — то есть вероятности без перенормировки. Код делает наоборот: top-K по логитам, затем softmax (что и верно, см. введение раздела).
+- Неиспользуемые импорты: `Tensor`, `sqrt` в `mixtral.py`; `F` в `mixtral_decoder.py`. Параметр `mask` в `MixtralDecoder.forward` передаётся в `GroupedQueryAttention`, где игнорируется.
+- Неиспользуемые переменные в `generate`: `vocab_size`, `masked_logits` лишь дублирует `logits_scaled`.
+- Роутер создаётся с bias; в Mixtral `gate` — `Linear(dim, num_experts, bias=False)` (частный случай пункта 24).
+- Тесты: [`test_moe.py`](../llm/tests/core/test_moe.py) проверяет формы, градиенты и детерминизм, но не корректность против эталона; нет тестов на bf16 (пункт 34), на префилл кусками с кэшем (пункт 27) и на генерацию до границы `max_position_embeddings` (пункт 1). В [`test_mixtral.py`](../llm/tests/models/test_mixtral.py) только формы; генерация по одному токену с кэшем покрыта [`test_kv_cache.py`](../llm/tests/models/test_kv_cache.py).
+
+## Gemma
+
+Модель: [`models/gemma/gemma.py`](../llm/src/llm/models/gemma/gemma.py), блок: [`core/gemma_decoder.py`](../llm/src/llm/core/gemma_decoder.py), attention: [`core/multi_query_attention.py`](../llm/src/llm/core/multi_query_attention.py) с [`core/rope.py`](../llm/src/llm/core/rope.py), FFN: [`core/geglu.py`](../llm/src/llm/core/geglu.py). `MultiQueryAttention` — отдельный модуль, поэтому исправления в `MultiHeadAttention` и `GroupedQueryAttention` его не затрагивают.
+
+Кэшированная генерация по одному токену совпадает с полным forward (покрыто [`test_kv_cache.py`](../llm/tests/models/test_kv_cache.py)).
+
+Общие с предыдущими моделями пункты касаются Gemma так же и здесь не повторяются:
+- **1** — падение `generate` за `max_position_embeddings`. Воспроизведено с `max_position_embeddings=16`, промптом 10 и `max_new_tokens=10`: с кэшем `RuntimeError: shape '[1, 1, 1, 4]' is invalid for input of size 0` из `RoPE.forward`, без кэша `ValueError`. `Gemma.forward` пропускает проверку длины при кэше, а `MultiQueryAttention` сравнивает с лимитом только `seq_len`, без `start_pos`.
+- **3** — игнорируется `attention_mask`. `Gemma.forward` его не принимает, `generate` принимает: `attention_mask` из нулей даёт тот же результат, что и без маски. Параметр `mask` в `GemmaDecoder.forward` и `MultiQueryAttention.forward` тоже не используется.
+- **4**, **49** — нет валидации аргументов `generate` (`temperature=0.0` и `top_k=5, top_p=0.9` принимаются молча), top-p отбрасывает пограничный токен.
+- **8** — `use_cache=True` по умолчанию и нет `no_grad`. В `eval()` логиты имеют `requires_grad=True`, кэш возвращается по умолчанию.
+- **10**, **12**, **18** — интерфейс `BaseModel`, мёртвые `hasattr(torch, "bool")` и сравнения `== True` / `!= None`, дублирование `generate`.
+- **19** — `top_k=100` при `vocab_size=50` падает с `RuntimeError: selected index k out of range`.
+- **20** — проверка делимости. Воспроизведено: `embed_dim=34, num_q_heads=4` принимается, Q-проекция на 32 измерения. При нечётном `head_size` — `assert` в `RoPE.__init__` без упоминания `embed_dim` и `num_q_heads`.
+- **22** — `**kwargs` в `generate`: `max_lenght=5` проглатывается без ошибки.
+- **25** — RoPE-буферы в `state_dict` по копии на слой. Воспроизведено: при `num_layers=2` три ключа `*.cos_matrix`.
+- **28** — ключ `head_size` игнорируется. Воспроизведено: `"head_size": 16` при `embed_dim=32, num_q_heads=4` даёт `head_size=8`. См. также [неиспользуемые ключи конфига](gemma.md#неиспользуемые-ключи-конфига).
+- **32** — половинчатая совместимость с torch < 1.2 в top-k/top-p `generate` и в `_tril_mask`. Версия Gemma на float-масках с `== 0` прошла внешний стенд 2026-09-28.
+- **35** — докстринг `Gemma` обещает `save(path)/load(path, device)`, методов нет. Воспроизведено: `hasattr(Gemma, "save")` — `False`.
+
+### Баги
+
+#### 41. Нет causal-маски при кэше и `seq_len > 1` в `MultiQueryAttention` — P1
+
+- **Где:** `MultiQueryAttention.forward`, `if cache is None: scores = scores.masked_fill(...)`.
+- **Что:** то же, что пункты 2 и 27, но в третьем модуле attention. Токены куска, поданного вместе с кэшем, видят будущее внутри куска. `generate` подаёт по одному токену, поэтому там не проявляется.
+- **Воспроизведено:** префилл 4 + 6 токенов через кэш расходится с полным forward на 0.14–0.18 по логитам.
+- **Исправление:** всегда накладывать маску со сдвигом `self._tril_mask[start_pos:start_pos + seq_len, :start_pos + seq_len]` и проверять `start_pos + seq_len <= max_seq_len` (закрывает часть пункта 1). Проверено в версии для внешнего стенда: префилл кусками совпадает с полным forward.
+
+### Отклонения от Gemma
+
+Сравнение с Gemma 2B/7B ([Gemma Team, 2024](https://arxiv.org/abs/2403.08295); `GemmaConfig`/`GemmaModel` в HF).
+
+#### 42. Эмбеддинги не масштабируются на √d — P2
+
+- **Что:** в Gemma выход `embed_tokens` умножается на `sqrt(hidden_size)` перед первым блоком (в `gemma_pytorch` и старых версиях HF — `normalizer` в `GemmaModel.forward`, в текущем HF — `GemmaTextScaledWordEmbedding` с буфером `embed_scale`). Здесь эмбеддинги идут в декодер как есть.
+- **Последствия:** при tied embeddings (пункт 43) без масштабирования вход в первый блок на порядок меньше по норме, чем предполагает архитектура. Веса Gemma дают неверный результат даже при совпадении остальных слоёв.
+- **Исправление:** `out = tok_out * math.sqrt(embed_dim)` в `Gemma.forward` (в HF константа приводится к dtype эмбеддингов).
+
+#### 43. Нет weight tying, bias во всех `Linear` — P2
+
+- **Что:** в Gemma выходная проекция привязана к `embed_tokens` (`tie_word_embeddings=True`), и все проекции без bias (`attention_bias=False`). Здесь `_linear` — отдельный `nn.Linear` с bias, bias есть в Q/K/V, выходной проекции attention и трёх матрицах GeGLU.
+- **Воспроизведено:** `m._linear.bias is not None`, `m._decoders[0]._heads._q.bias is not None`, `m._linear.weight is not m._token_embeddings._embedding.weight`.
+- **Последствия:** у Gemma словарь 256 000 токенов, поэтому отдельная голова — это лишние ~524M параметров для 2B (`256000 × 2048`), то есть около пятой части модели (~21% от 2.5B).
+- **Исправление:** как в пунктах 5 и 24: `bias=False` под флагом конфига, `_linear.weight = _token_embeddings._embedding.weight`.
+
+#### 44. GeGLU с hidden = 4·d вместо 8·d — P2
+
+- **Где:** [`core/geglu.py`](../llm/src/llm/core/geglu.py), `nn.Linear(emb_size, 4 * emb_size)` для `_gate`, `_up`, `_down`.
+- **Что:** в Gemma `intermediate_size` = 16384 при `hidden_size` = 2048 (2B) и 24576 при 3072 (7B), то есть 8·d на каждую из матриц `gate_proj` и `up_proj`. (В табл. 1 статьи «feedforward hidden dims» 32768 / 49152 — это сумма gate + up.) Здесь 4·d — FFN вдвое уже, чем в статье. Сама активация — tanh-GELU — совпадает с `gelu_pytorch_tanh` в HF. В отличие от пункта 23 (LLaMA), здесь FFN не тяжелее, а легче оригинала.
+- **Исправление:** параметр `hidden_dim` в `GeGLU` с чтением из конфига, как предложено для `SwiGLU` в пункте 23.
+
+#### 45. Нельзя выразить Gemma 7B: MQA всегда, `head_size` = d / heads — P2
+
+- **Что:** MQA (одна K/V-голова) используется только в Gemma 2B. Gemma 7B — обычный MHA с 16 головами, и `head_dim = 256` не равен `hidden_size / num_heads` (16 × 256 = 4096 ≠ 3072). Здесь `MultiQueryAttention` всегда с одной K/V-головой, а `head_size` всегда `embed_dim // num_q_heads` (пункт 28).
+- **Исправление:** заменить `MultiQueryAttention` на `GroupedQueryAttention` с `num_kv_heads` из конфига (MQA — частный случай `num_kv_heads=1`) и читать `head_size` из конфига. `_layer` уже умеет проецировать `num_q_heads * head_size ≠ embed_dim` обратно в `embed_dim`. Тогда же уйдёт отдельный модуль MQA и пункты 41 и 47 закроются вместе с 27 и 31.
+
+#### 46. RMSNorm без `(1 + w)` и вычислений во float32 — P3
+
+- **Где:** [`core/rms_norm.py`](../llm/src/llm/core/rms_norm.py).
+- **Что:** в Gemma `GemmaRMSNorm` хранит вес, инициализированный нулями, и умножает на `(1 + weight)`, а нормализацию считает во float32 и приводит результат обратно. Здесь вес инициализирован единицами и умножается напрямую, вычисления в dtype входа. При обучении с нуля параметризации эквивалентны, но веса Gemma без поправки `+1` не загрузятся корректно, а в bf16 нормализация менее точна.
+- **Исправление:** для загрузки весов — прибавлять 1 при конвертации. Для bf16 — `x.float()` внутри `forward` и `.to(x.dtype)` на выходе (затрагивает LLaMA, Mistral, Mixtral).
+- **Замечание по загрузке весов HF в целом:** помимо пунктов 42–46 нужна перестановка строк `q_proj`/`k_proj` — HF Gemma использует `rotate_half`, здесь чередующиеся пары (как в пункте 24).
+
+#### 55. Dropout на эмбеддингах, в attention и GeGLU — P3
+
+- **Что:** в Gemma dropout нет (`attention_dropout=0.0` в HF, в `gemma_pytorch` его нет). Здесь dropout стоит после эмбеддингов (`Gemma.forward`), в `MultiQueryAttention` и в `GeGLU`.
+- **Исправление:** ставить `dropout=0.0` по умолчанию; то же для Mistral (пункт 51).
+- **Статус:** задокументировано в [gemma.md](gemma.md#отличия-от-gemma).
+
+### Качество кода
+
+#### 47. `_tril_mask` в `state_dict` — P2
+
+- **Где:** `MultiQueryAttention.__init__`, `register_buffer("_tril_mask", ...)`.
+- **Что:** то же, что пункты 17 и 31, но в `MultiQueryAttention`, поэтому их исправление его не закроет.
+- **Воспроизведено:** ключи `_decoders.{i}._heads._tril_mask` в `state_dict`.
+- **Исправление:** `persistent=False`.
+
+#### 48. Документация и мусор — P3
+
+- Докстринги `Gemma` и `GemmaDecoder` описывают несуществующие варианты: «Multi-Query либо Grouped heads», «FFN с GeGLU/SwiGLU», «RMSNorm или LayerNorm»; псевдокод в `GemmaDecoder` использует `LayerNorm`. В коде всегда MQA + GeGLU + RMSNorm.
+- Неверная ссылка на статью Gemma в докстрингах `Gemma`, `Gemma.generate` и `GemmaDecoder`: `arXiv:2403.07794`, правильно `arXiv:2403.08295`.
+- Неиспользуемые импорты: `math`, `sqrt`, `Tensor` в `gemma.py`; `F` в `gemma_decoder.py`. Неиспользуемая переменная `vocab_size` в `generate`, `masked_logits` лишь дублирует `logits_scaled`.
+- Комментарии в `MultiQueryAttention.forward`: сбитая нумерация шагов («Шаг 2», «3.», «5.», снова «3.», «4.») и неверные размерности (`# [B, T, hs]` там, где `[B, H, T, hs]`).
+- [`gemma_train.json`](../experiments/llm_only/configs/gemma_train.json) содержит ключи Mixtral (`num_kv_heads`, `num_experts`, `top_k_experts`, `window_size`), которые модель не читает. Задокументировано в [gemma.md](gemma.md#неиспользуемые-ключи-конфига), но проще убрать их из JSON.
+- Тесты: [`test_gemma.py`](../llm/tests/models/test_gemma.py) проверяет только формы. `test_forward_masked` в [`test_gemma_decoder.py`](../llm/tests/core/test_gemma_decoder.py) передаёт маску и проверяет лишь форму, создавая впечатление, что маска поддерживается (пункт 3). Нет тестов на префилл кусками с кэшем (пункт 41) и на генерацию до границы `max_position_embeddings` (пункт 1).
