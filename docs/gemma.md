@@ -49,7 +49,7 @@ flowchart TB
     classDef dim fill:#f5f5f5,stroke:#bbbbbb,color:#999999,stroke-dasharray:4 3;
 ```
 
-Как RoPE поворачивает Q и K — в разделе [Attention с RoPE](llama.md#attention-с-rope) документа LLaMA. ⚠️ В `MultiQueryAttention` RoPE вызывается **без `start_pos`**, поэтому при генерации с KV-кэшем новые Q и K поворачиваются как позиция 0 — см. [известные ограничения](README.md#известные-ограничения).
+Как RoPE поворачивает Q и K — в разделе [Attention с RoPE](llama.md#attention-с-rope) документа LLaMA.
 
 ### Multi-Query Attention vs GQA
 

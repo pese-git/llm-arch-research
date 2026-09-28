@@ -102,7 +102,7 @@ flowchart TB
     classDef dim fill:#f5f5f5,stroke:#bbbbbb,color:#999999,stroke-dasharray:4 3;
 ```
 
-В коде ([`core/rope.py`](../llm/src/llm/core/rope.py)) `RoPE.forward(x, start_pos)` берёт строки таблиц `cos/sin[start_pos : start_pos + seq_len]`. При генерации с KV-кэшем `start_pos` равен длине кэша, а сам кэш хранит K уже повёрнутым, поэтому старые ключи не пересчитываются. Позиций дальше `max_position_embeddings` в таблицах нет — отсюда падение генерации за этой границей (см. [известные ограничения](README.md#известные-ограничения)).
+В коде ([`core/rope.py`](../llm/src/llm/core/rope.py)) `RoPE.forward(x, start_pos)` берёт строки таблиц `cos/sin[start_pos : start_pos + seq_len]`. При генерации с KV-кэшем `start_pos` равен длине кэша (в Mistral/Mixtral, где кэш обрезается окном, — хранимой в кэше позиции `next_pos`), а сам кэш хранит K уже повёрнутым, поэтому старые ключи не пересчитываются. Позиций дальше `max_position_embeddings` в таблицах нет — отсюда падение генерации за этой границей (см. [известные ограничения](README.md#известные-ограничения)).
 
 Mistral, Mixtral и Gemma используют тот же класс `RoPE` и применяют его так же — к Q и K внутри своих вариантов attention.
 

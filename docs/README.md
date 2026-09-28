@@ -25,9 +25,6 @@
 
 Специфичные для архитектуры:
 
-- **GPT, GPT-2** — при генерации с KV-кэшем позиционный эмбеддинг всегда берётся для позиции 0, см. [gpt.md](gpt.md#генерация).
-- **Gemma** — при генерации с KV-кэшем RoPE поворачивает новые Q и K как позицию 0 (`start_pos` не передаётся), см. [gemma.md](gemma.md#multi-query-attention-vs-gqa).
-- **Mistral, Mixtral** — KV-кэш со скользящим окном расходится с генерацией без кэша, см. [mistral.md](mistral.md#sliding-window-attention).
 - **Mixtral** — MoE без load-balancing loss, см. [mixtral.md](mixtral.md#moe-изнутри).
 - **LLaMA** — нет GQA, вопреки докстрингу, см. [llama.md](llama.md#известное-расхождение-с-докстрингом).
 - **Gemma** — в конфиге есть ключи, которые не используются, см. [gemma.md](gemma.md#неиспользуемые-ключи-конфига).
