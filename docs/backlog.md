@@ -384,7 +384,7 @@
 - **Где:** `MoE.forward` возвращает только выход; логиты роутера наружу не отдаются, `Trainer` считает только cross-entropy.
 - **Что:** статья Mixtral вспомогательный loss не описывает, но HF-реализация (`load_balancing_loss_func` в `modeling_mixtral.py`), как и Switch Transformer и GShard, добавляет при обучении `num_experts · Σ fᵢ · Pᵢ` (доля токенов на эксперта × средняя вероятность роутера). Без него роутер склонен схлопываться на пару экспертов, остальные не обучаются, и MoE вырождается в узкий dense FFN.
 - **Исправление:** возвращать из `MoE` (или копить в атрибуте) `router_logits`, считать aux loss в модели с коэффициентом из конфига (`router_aux_loss_coef`, в HF `MixtralConfig` по умолчанию 0.001) и прибавлять в `Trainer`. Полезна и метрика загрузки экспертов в логах обучения.
-- **Статус:** задокументировано в [mixtral.md](mixtral.md) («⚠️ Нет load-balancing loss»), не исправлено.
+- **Статус:** задокументировано в [mixtral.md](mixtral.md#moe-изнутри) («⚠️ Нет load-balancing loss»), не исправлено.
 
 #### 38. Двойной dropout в MoE — P2
 
@@ -395,9 +395,10 @@
 
 #### 52. Sliding window attention, которого нет в Mixtral 8x7B — P2
 
-- **Где:** `Mixtral.__init__` передаёт `window_size=config["window_size"]` в `GroupedQueryAttention`; [mixtral.md](mixtral.md) описывает SWA как часть архитектуры.
-- **Что:** Mixtral 8x7B использует плотное внимание на весь контекст 32k («fully dense context length of 32k tokens» в статье; `sliding_window=None` в HF `MixtralConfig`). SWA — черта Mistral 7B v0.1, в Mixtral её нет. Здесь окно действует всегда, и документация это закрепляет.
-- **Исправление:** сделать `window_size` необязательным (`None` — без окна) и по умолчанию для Mixtral не задавать; поправить [mixtral.md](mixtral.md) и `mixtral_*.json`.
+- **Где:** `Mixtral.__init__` передаёт `window_size=config["window_size"]` в `GroupedQueryAttention`.
+- **Что:** Mixtral 8x7B использует плотное внимание на весь контекст 32k («fully dense context length of 32k tokens» в статье; `sliding_window=None` в HF `MixtralConfig`). SWA — черта Mistral 7B v0.1, в Mixtral её нет. Здесь окно действует всегда.
+- **Исправление:** сделать `window_size` необязательным (`None` — без окна) и по умолчанию для Mixtral не задавать; убрать ключ из `mixtral_train.json`.
+- **Статус:** задокументировано в [mixtral.md](mixtral.md#отличия-от-mixtral-8x7b).
 
 #### 53. База RoPE 10 000 вместо 1 000 000 — P3
 
@@ -495,8 +496,9 @@
 
 #### 55. Dropout на эмбеддингах, в attention и GeGLU — P3
 
-- **Что:** в Gemma dropout нет (`attention_dropout=0.0` в HF, в `gemma_pytorch` его нет). Здесь dropout стоит после эмбеддингов (`Gemma.forward`), в `MultiQueryAttention` и в `GeGLU`. Нигде не задокументировано.
-- **Исправление:** задокументировать в [gemma.md](gemma.md) или ставить `dropout=0.0` по умолчанию; то же для Mistral (пункт 51).
+- **Что:** в Gemma dropout нет (`attention_dropout=0.0` в HF, в `gemma_pytorch` его нет). Здесь dropout стоит после эмбеддингов (`Gemma.forward`), в `MultiQueryAttention` и в `GeGLU`.
+- **Исправление:** ставить `dropout=0.0` по умолчанию; то же для Mistral (пункт 51).
+- **Статус:** задокументировано в [gemma.md](gemma.md#отличия-от-gemma).
 
 ### Качество кода
 
@@ -513,5 +515,5 @@
 - Неверная ссылка на статью Gemma в докстрингах `Gemma`, `Gemma.generate` и `GemmaDecoder`: `arXiv:2403.07794`, правильно `arXiv:2403.08295`.
 - Неиспользуемые импорты: `math`, `sqrt`, `Tensor` в `gemma.py`; `F` в `gemma_decoder.py`. Неиспользуемая переменная `vocab_size` в `generate`, `masked_logits` лишь дублирует `logits_scaled`.
 - Комментарии в `MultiQueryAttention.forward`: сбитая нумерация шагов («Шаг 2», «3.», «5.», снова «3.», «4.») и неверные размерности (`# [B, T, hs]` там, где `[B, H, T, hs]`).
-- [`gemma_train.json`](../experiments/llm_only/configs/gemma_train.json) содержит ключи Mixtral (`num_kv_heads`, `num_experts`, `top_k_experts`, `window_size`), которые модель не читает. Задокументировано в [gemma.md](gemma.md#неиспользуемые-ключи-конфига), но проще убрать их из JSON. В `gemma.md` заодно ошибочно указан и `gemma_generate.json` — в нём этих ключей нет.
+- [`gemma_train.json`](../experiments/llm_only/configs/gemma_train.json) содержит ключи Mixtral (`num_kv_heads`, `num_experts`, `top_k_experts`, `window_size`), которые модель не читает. Задокументировано в [gemma.md](gemma.md#неиспользуемые-ключи-конфига), но проще убрать их из JSON.
 - Тесты: [`test_gemma.py`](../llm/tests/models/test_gemma.py) проверяет только формы. `test_forward_masked` в [`test_gemma_decoder.py`](../llm/tests/core/test_gemma_decoder.py) передаёт маску и проверяет лишь форму, создавая впечатление, что маска поддерживается (пункт 3). Нет тестов на префилл кусками с кэшем (пункт 41) и на генерацию до границы `max_position_embeddings` (пункт 1).

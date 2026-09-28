@@ -77,6 +77,22 @@ ffn_out   = GeGLU(norm2_out)
 result    = ffn_out + out
 ```
 
+## Отличия от Gemma
+
+Сравнение с Gemma 2B/7B (статья и `GemmaConfig`/`GemmaModel` в HF). Подробности, воспроизведение и варианты исправления — в [бэклоге](backlog.md#gemma) (номера пунктов в скобках).
+
+| | Gemma | Здесь |
+|---|---|---|
+| Масштаб эмбеддингов | умножаются на `√d` перед первым блоком | без масштабирования (42) |
+| Выходная проекция | привязана к эмбеддингам (`tie_word_embeddings`) | отдельный `Linear` (43) |
+| Bias | нет ни в одной проекции | во всех `Linear` (43) |
+| Скрытый слой GeGLU | 8·d на каждую из `gate`/`up` (16384 при d = 2048) | 4·d (44) |
+| Attention | 2B — MQA, 7B — MHA с 16 головами и `head_dim = 256` ≠ d / heads | всегда MQA, `head_size = embed_dim // num_q_heads` (45) |
+| RMSNorm | вес с нуля, множитель `(1 + w)`, вычисление во float32 | вес с единиц, множитель `w`, dtype входа (46) |
+| Dropout | нет | после эмбеддингов, в attention и в GeGLU (55) |
+
+Активация GeGLU — tanh-аппроксимация GELU — совпадает с оригиналом (`gelu_pytorch_tanh` в HF).
+
 ## Конфигурация
 
 Пример из [`experiments/llm_only/configs/gemma_train.json`](../experiments/llm_only/configs/gemma_train.json):
@@ -97,7 +113,7 @@ result    = ffn_out + out
 
 ## Неиспользуемые ключи конфига
 
-`Gemma.__init__` ([`models/gemma/gemma.py`](../llm/src/llm/models/gemma/gemma.py)) передаёт в `GemmaDecoder` только `num_q_heads`, `emb_size`, `head_size`, `max_seq_len`, `rope`, `dropout`. Ключи `head_size`, `num_kv_heads`, `num_experts`, `top_k_experts`, `window_size`, присутствующие в [`gemma_generate.json`](../experiments/llm_only/configs/gemma_generate.json)/[`gemma_train.json`](../experiments/llm_only/configs/gemma_train.json) (судя по всему, скопированные из конфига Mixtral), моделью не используются и ни на что не влияют. Это не баг в смысле краша — конструктор просто их игнорирует, — но конфиг вводит в заблуждение: MoE и настраиваемый GQA в текущей реализации Gemma отсутствуют, там всегда MQA с ровно одной K/V-головой.
+`Gemma.__init__` ([`models/gemma/gemma.py`](../llm/src/llm/models/gemma/gemma.py)) передаёт в `GemmaDecoder` только `num_q_heads`, `emb_size`, `head_size`, `max_seq_len`, `rope`, `dropout`. Ключи `head_size`, `num_kv_heads`, `num_experts`, `top_k_experts`, `window_size`, присутствующие в [`gemma_train.json`](../experiments/llm_only/configs/gemma_train.json) (судя по всему, скопированные из конфига Mixtral; в [`gemma_generate.json`](../experiments/llm_only/configs/gemma_generate.json) конфига модели нет — он ссылается на `config.json` чекпоинта), моделью не используются и ни на что не влияют. Это не баг в смысле краша — конструктор просто их игнорирует, — но конфиг вводит в заблуждение: MoE и настраиваемый GQA в текущей реализации Gemma отсутствуют, там всегда MQA с ровно одной K/V-головой.
 
 ## Генерация
 

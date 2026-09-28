@@ -7,7 +7,7 @@
 
 ## Обзор
 
-Mixtral 8x7B (Mistral AI, 2023, [arXiv:2401.04088](https://arxiv.org/abs/2401.04088)) — это [Mistral](mistral.md) с одним структурным изменением: плотный `SwiGLU`-FFN заменён на **Mixture-of-Experts** (MoE) — несколько параллельных SwiGLU-экспертов, из которых на каждый токен активируется только небольшое подмножество (top-k). Attention-часть (GQA + sliding window + RoPE) не меняется вообще — Mixtral в этом репозитории буквально переиспользует `GroupedQueryAttention`.
+Mixtral 8x7B (Mistral AI, 2023, [arXiv:2401.04088](https://arxiv.org/abs/2401.04088)) — это [Mistral](mistral.md) с одним структурным изменением: плотный `SwiGLU`-FFN заменён на **Mixture-of-Experts** (MoE) — несколько параллельных SwiGLU-экспертов, из которых на каждый токен активируется только небольшое подмножество (top-k). Attention в оригинале — GQA + RoPE с плотным вниманием на весь контекст 32k: sliding window из Mistral 7B в Mixtral **не используется** (`sliding_window=None` в HF `MixtralConfig`). В этом репозитории Mixtral переиспользует `GroupedQueryAttention` вместе со скользящим окном — это отклонение от оригинала (см. [ниже](#отличия-от-mixtral-8x7b)).
 
 ## Архитектура блока декодера
 
@@ -19,7 +19,7 @@ flowchart TB
     subgraph Dec["MixtralDecoder × num_layers · pre-RMSNorm"]
         direction TB
         X(["x"]):::io --> N1["RMSNorm"]:::gray
-        N1 --> Attn["Grouped Query Attention<br/>sliding window"]:::blue
+        N1 --> Attn["Grouped Query Attention<br/>sliding window (нет в оригинале)"]:::blue
         R["RoPE<br/>cos/sin от позиции · без параметров<br/>один модуль на все слои"]:::rope
         R -. "поворот Q и K" .-> Attn
         Attn --> A1(("+")):::add
@@ -96,7 +96,9 @@ flowchart TB
 3. Каждый эксперт — самостоятельный блок `SwiGLU`. Эксперт, которого не выбрал ни один токен в батче, полностью пропускается (`if not expert_mask.any(): continue`) — реальная разреженность вычислений, а не маскирование после полного прохода через всех экспертов.
 4. Результат — взвешенная сумма выходов выбранных экспертов на каждый токен.
 
-> ⚠️ **Нет load-balancing loss.** В оригинальном Mixtral роутер обучается со вспомогательным loss, который выравнивает загрузку экспертов (формулировка — из [Switch Transformers](https://arxiv.org/abs/2101.03961), разд. 2.2). Здесь его нет: `MoE.forward` возвращает только выход, и при обучении роутер может свестись к нескольким «любимым» экспертам.
+Та же схема, что в статье (`Softmax(TopK(x·W_g))`) и в HF (softmax → top-k → перенормировка): результат совпадает с наивным циклом по токенам.
+
+> ⚠️ **Нет load-balancing loss.** Статья Mixtral вспомогательный loss не описывает, но HF-реализация (`load_balancing_loss_func`, коэффициент `router_aux_loss_coef = 0.001`) добавляет при обучении loss, который выравнивает загрузку экспертов (формулировка — из [Switch Transformers](https://arxiv.org/abs/2101.03961), разд. 2.2). Здесь его нет: `MoE.forward` возвращает только выход, и при обучении роутер может свестись к нескольким «любимым» экспертам.
 
 ## Компоненты
 
@@ -113,12 +115,26 @@ flowchart TB
 `MixtralDecoder.forward` — та же pre-LN схема, что у `MistralDecoder`, с заменой FFN на MoE:
 ```
 norm1_out = RMSNorm1(x)
-attn_out  = GQA(norm1_out)           # с RoPE и sliding-window маской
+attn_out  = GQA(norm1_out)           # с RoPE и sliding-window маской (в оригинале окна нет)
 out       = attn_out + x
 norm2_out = RMSNorm2(out)
 ffn_out   = MoE(norm2_out)           # top-k из num_experts SwiGLU-блоков
 result    = ffn_out + out
 ```
+
+## Отличия от Mixtral 8x7B
+
+Реализация учебная и сознательно маленькая, но часть отличий от оригинала меняет поведение модели. Подробности, воспроизведение и варианты исправления — в [бэклоге](backlog.md#mixtral) (номера пунктов в скобках).
+
+| | Mixtral 8x7B | Здесь |
+|---|---|---|
+| Внимание | плотное на весь контекст 32k | скользящее окно `window_size` (52) |
+| База RoPE (`rope_theta`) | 1 000 000 | 10 000, из конфига не задаётся (53) |
+| Скрытый слой эксперта | `hidden_dim = 14336` при `dim = 4096` (3.5·d) | 4·d в каждой из трёх матриц SwiGLU (23, 30) |
+| Bias | нет ни в одной проекции, включая роутер | во всех `Linear`, включая роутер (24, 40) |
+| Load-balancing loss | в HF-реализации при обучении | нет (37) |
+| Dropout | нет | в attention, внутри каждого эксперта и на выходе MoE — выход эксперта прорежается дважды (38) |
+| Softmax роутера | во float32 (HF) | в dtype входа; в bf16/fp16 MoE сейчас падает (34, 54) |
 
 ## Конфигурация
 
@@ -135,8 +151,8 @@ result    = ffn_out + out
 | `max_position_embeddings` | 512 | максимальная длина последовательности |
 | `num_experts` | 8 | общее число экспертов MoE на слой |
 | `top_k_experts` | 2 | сколько экспертов активируется на токен |
-| `window_size` | 16 | ширина скользящего окна внимания |
-| `dropout` | 0.1 | dropout в attention, FFN и MoE |
+| `window_size` | 16 | ширина скользящего окна внимания (в Mixtral 8x7B окна нет, здесь ключ обязателен) |
+| `dropout` | 0.1 | dropout в attention, в каждом эксперте и на выходе MoE |
 
 ## Генерация
 
@@ -154,4 +170,4 @@ result    = ffn_out + out
 - Fedus, Zoph, Shazeer. *Switch Transformers: Scaling to Trillion Parameter Models with Simple and Efficient Sparsity*. 2021. [arXiv:2101.03961](https://arxiv.org/abs/2101.03961) — load-balancing loss для роутера
 - Jiang et al. *Mistral 7B*. 2023. [arXiv:2310.06825](https://arxiv.org/abs/2310.06825)
 - Ainslie et al. *GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints*. 2023. [arXiv:2305.13245](https://arxiv.org/abs/2305.13245)
-- Beltagy, Peters, Cohan. *Longformer: The Long-Document Transformer*. 2020. [arXiv:2004.05150](https://arxiv.org/abs/2004.05150) — sliding window attention
+- Beltagy, Peters, Cohan. *Longformer: The Long-Document Transformer*. 2020. [arXiv:2004.05150](https://arxiv.org/abs/2004.05150) — sliding window attention (в Mistral 7B; в Mixtral 8x7B не используется)
