@@ -16,42 +16,38 @@ class Llama(BaseModel):
 
     Назначение:
     -----------
-    - Модель реализует архитектуру decoder-only Transformer с современными "индустриальными" трюками (RMSNorm, SwiGLU, RoPE, GQA).
+    - Модель реализует архитектуру decoder-only Transformer с современными "индустриальными" трюками (RMSNorm, SwiGLU, RoPE).
     - Предназначена для генерации текста, чат-ботов, zero-/few-shot вывода, fine-tune в стиле RLHF, transfer learning и исследований в LLM.
 
     Архитектурные особенности:
     --------------------------
     - Токеновые эмбеддинги и позиционное кодирование с помощью Rotary Position Embedding (RoPE, https://arxiv.org/abs/2104.09864).
-    - Stack из num_layers современных декодеров с Grouped Query Attention (GQA: num_q_heads > num_kv_heads) для эффективной генерации.
+    - Stack из num_layers блоков CachedDecoder с обычным Multi-Head Attention (как в LLaMA-1; GQA появилась в LLaMA-2 и реализована здесь в Mistral).
     - FeedForward блоки с SwiGLU (см. https://arxiv.org/abs/2002.05202).
     - Нормализация RMSNorm перед каждым sub-layer (вот почему "Pre-RMSNorm").
     - Кэширование attention (KV cache) для быстрой autoregressive генерации.
-    - Нет bias в Linear слоях, нет Dropout внутри attention.
+    - Отличия от оригинала: Linear-слои (Q/K/V, выходная проекция, голова) создаются с bias, dropout применяется в attention и FFN.
 
     Аргументы конструктора:
     -----------------------
     config: dict с требуемыми ключами:
         vocab_size: int — размер словаря токенов
         embed_dim: int — размерность эмбеддингов
-        num_q_heads: int — количество query-голов в attention (обычно больше num_kv_heads)
-        num_kv_heads: int — количество key/value-голов
+        num_heads: int — количество attention-голов (head_size = embed_dim // num_heads)
         num_layers: int — число слоёв-декодеров
         max_position_embeddings: int — максимальная длина последовательности
-        window_size: int (optional) — размер sliding window для attention
-        dropout: float (обычно 0.0 или очень мал)
-        ...
+        dropout: float — вероятность dropout
  
     Пример использования:
     ---------------------
-        >>> llama = LLaMA({...})
+        >>> llama = Llama({...})
         >>> tokens = torch.tensor([[100, 56, 8]])
-        >>> logits = llama(tokens)
+        >>> logits, cache = llama(tokens)
         >>> out = llama.generate(tokens, max_new_tokens=10, do_sample=True, top_k=50)
 
     References:
     -----------
     - "LLaMA: Open and Efficient Foundation Language Models" (Touvron et al., 2023): https://arxiv.org/abs/2302.13971
-    - "Grouped-Query Attention": https://arxiv.org/abs/2307.09288
     - "RoFormer: Enhanced Transformer with Rotary Position Embedding": https://arxiv.org/abs/2104.09864
     - Discussion of efficient LLMs: https://huggingface.co/blog/mistral
 
@@ -65,7 +61,7 @@ class Llama(BaseModel):
             config (dict): Параметры архитектуры, см. docstring класса.
         Внутри:
         -------
-        - Создаёт Embedding-слой, Rotary Position Embeddings (RoPE), стек слоёв с GQA, RMSNorm, SwiGLU.
+        - Создаёт Embedding-слой, Rotary Position Embeddings (RoPE), стек слоёв CachedDecoder (MHA + RMSNorm + SwiGLU).
         - Финальный слой нормализации и проекции на vocabulary.
         """
         super().__init__(config)

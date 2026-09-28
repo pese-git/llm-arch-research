@@ -7,30 +7,47 @@
 
 ## Обзор
 
-GPT-2 (Radford et al., *"Language Models are Unsupervised Multitask Learners"*, OpenAI 2019) отличается от GPT-1 не набором механизмов (эмбеддинги, MHA, GELU-FFN — те же), а их **расстановкой**: нормализация переносится с "после residual" на "до sub-layer" (**pre-LN**). Pre-LN даёт более стабильные градиенты на глубоких стеках и позволяет обучать заметно более крупные модели (GPT-2 — от 117M до 1.5B параметров).
+GPT-2 (Radford et al., [*"Language Models are Unsupervised Multitask Learners"*](https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf), OpenAI 2019) отличается от GPT-1 не набором механизмов (эмбеддинги, MHA, GELU-FFN — те же), а их **расстановкой**: нормализация переносится с "после residual" на "до sub-layer" (**pre-LN**). Pre-LN даёт более стабильные градиенты на глубоких стеках и позволяет обучать заметно более крупные модели (GPT-2 — от 117M до 1.5B параметров).
 
 ## Архитектура блока декодера
 
 ```mermaid
-flowchart LR
-    Tokens(["Tokens"]) --> TokEmb["Token Emb"]:::blue
-    Tokens --> PosEmb["Position Emb<br/>(learned)"]:::purple
-    TokEmb --> Sum(("+"))
+%%{init: {"flowchart": {"rankSpacing": 28, "nodeSpacing": 28}}}%%
+flowchart TB
+    Ids(["token ids"]):::io --> TokEmb["Token Embedding"]:::blue
+    Ids --> PosEmb["Position Embedding<br/>(обучаемые)"]:::purple
+    TokEmb --> Sum(("+")):::add
     PosEmb --> Sum
-    Sum --> N1["Norm"]:::gray
-    N1 --> Attn["Masked Multi-Head<br/>Attention"]:::blue
-    Attn --> A1(("+"))
-    Sum -.->|residual| A1
-    A1 --> N2["Norm"]:::gray
-    N2 --> FFN["Feed Forward<br/>(GELU)"]:::purple
-    FFN --> A2(("+"))
-    A1 -.->|residual| A2
-    A2 --> Dc2["Decoder"]:::green --> Dots(["⋯"]) --> Dc5["Decoder"]:::green --> NF["Norm<br/>(финальный)"]:::gray --> Lin["Linear"]:::gray --> Soft["Softmax"]:::purple
+    Sum --> Drop["Dropout"]:::gray
+    subgraph Dec["Gpt2Decoder × num_layers · pre-LN"]
+        direction TB
+        X(["x"]):::io --> N1["LayerNorm"]:::grayHl
+        N1 --> Attn["Masked Multi-Head Attention"]:::blue
+        Attn --> A1(("+")):::add
+        X -. residual .-> A1
+        A1 --> N2["LayerNorm"]:::grayHl
+        N2 --> FFN["Feed Forward<br/>Linear → GELU → Linear"]:::purple
+        FFN --> A2(("+")):::add
+        A1 -. residual .-> A2
+    end
+    Drop --> Dec
+    Dec --> NF["LayerNorm<br/>(финальный)"]:::grayHl --> Lin
+    Lin["Linear → vocab_size"]:::gray --> Out(["logits"]):::io
+    Out -. "generate(): softmax → выбор токена" .-> Next(["следующий токен"]):::io
+    style Dec fill:transparent,stroke:#82b366,stroke-width:2px,color:#5b9a3c
 
+    classDef io fill:#ffffff,stroke:#999999,color:#1a1a1a;
+    classDef add fill:#ffffff,stroke:#666666,color:#1a1a1a;
     classDef blue fill:#dae8fc,stroke:#6c8ebf,color:#1a1a1a;
+    classDef blueHl fill:#dae8fc,stroke:#2f5f9e,stroke-width:3px,color:#1a1a1a;
     classDef purple fill:#e1d5e7,stroke:#9673a6,color:#1a1a1a;
-    classDef green fill:#d5e8d4,stroke:#82b366,color:#1a1a1a;
+    classDef purpleHl fill:#e1d5e7,stroke:#6a3d85,stroke-width:3px,color:#1a1a1a;
     classDef gray fill:#f5f5f5,stroke:#666666,color:#1a1a1a;
+    classDef grayHl fill:#f5f5f5,stroke:#333333,stroke-width:3px,color:#1a1a1a;
+    classDef gold fill:#fff2cc,stroke:#d6b656,color:#1a1a1a;
+    classDef rope fill:#d5f0ec,stroke:#3a9e8f,color:#1a1a1a;
+    classDef ropeHl fill:#d5f0ec,stroke:#1f6f63,stroke-width:3px,color:#1a1a1a;
+    classDef dim fill:#f5f5f5,stroke:#bbbbbb,color:#999999,stroke-dasharray:4 3;
 ```
 
 ## Компоненты
@@ -54,7 +71,7 @@ ffn_out   = FFN(norm2_out)
 result    = ffn_out + out
 ```
 
-В отличие от GPT-1, `GPT2.forward` добавляет финальный `nn.LayerNorm` **после** стека декодеров и **перед** проекцией на словарь ([`models/gpt/gpt2.py:120`](../llm/src/llm/models/gpt/gpt2.py)) — стандартная практика pre-LN трансформеров (без неё выход последнего блока не нормализован).
+В отличие от GPT-1, `GPT2.forward` добавляет финальный `nn.LayerNorm` **после** стека декодеров и **перед** проекцией на словарь ([`models/gpt/gpt2.py`](../llm/src/llm/models/gpt/gpt2.py)) — стандартная практика pre-LN трансформеров (без неё выход последнего блока не нормализован).
 
 `Gpt2Decoder` — самостоятельный класс, а не переиспользование параметризуемого `CachedDecoder` (которым, например, пользуются LLaMA и другие более новые архитектуры в этом репозитории): FFN и pre-LN расстановка захардкожены внутри него.
 
@@ -75,6 +92,8 @@ result    = ffn_out + out
 
 `GPT2.generate(...)` — та же унифицированная сигнатура, что у всех моделей репозитория (см. [gpt.md](gpt.md#генерация)).
 
+> ⚠️ `GPT2.forward` вычисляет `start_pos` из кэша так же, как `GPT`, и с той же ошибкой: при `use_cache=True` все новые токены получают позиционный эмбеддинг позиции 0, поэтому генерация с кэшем отличается от генерации без него (подробнее — в [gpt.md](gpt.md#генерация)).
+
 ## Что изменилось в LLaMA
 
 - обучаемые абсолютные позиционные эмбеддинги → **RoPE** (относительное, ротационное позиционное кодирование, встроено в attention);
@@ -83,3 +102,16 @@ result    = ffn_out + out
 - attention остаётся стандартным multi-head (см. оговорку в [llama.md](llama.md#известное-расхождение-с-докстрингом)) — GQA появится только в Mistral.
 
 Подробности — в [llama.md](llama.md).
+
+## Литература
+
+Основная статья:
+
+- Radford, Wu, Child, Luan, Amodei, Sutskever. *Language Models are Unsupervised Multitask Learners*. OpenAI, 2019. [PDF](https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf) (на arXiv не публиковалась)
+
+Компоненты:
+
+- Radford, Narasimhan, Salimans, Sutskever. *Improving Language Understanding by Generative Pre-Training*. OpenAI, 2018. [PDF](https://cdn.openai.com/research-covers/language-unsupervised/language_understanding_paper.pdf) (на arXiv не публиковалась)
+- Xiong et al. *On Layer Normalization in the Transformer Architecture*. 2020. [arXiv:2002.04745](https://arxiv.org/abs/2002.04745) — почему pre-LN обучается стабильнее post-LN
+- Hendrycks, Gimpel. *Gaussian Error Linear Units (GELUs)*. 2016. [arXiv:1606.08415](https://arxiv.org/abs/1606.08415)
+- Ba, Kiros, Hinton. *Layer Normalization*. 2016. [arXiv:1607.06450](https://arxiv.org/abs/1607.06450)

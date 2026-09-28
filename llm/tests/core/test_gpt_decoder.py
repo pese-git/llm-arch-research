@@ -239,3 +239,14 @@ class TestGptDecoder:
         assert not torch.allclose(
             decoder._norm1.weight, torch.zeros_like(decoder._norm1.weight)
         )
+
+    def test_feed_forward_uses_gelu(self, embed_dim, num_heads):
+        """Test that FFN uses GELU, as in the GPT-1 paper (section 4.1)."""
+        decoder = GptDecoder(
+            num_heads=num_heads,
+            emb_size=embed_dim,
+            head_size=embed_dim // num_heads,
+            max_seq_len=1024,
+        )
+
+        assert isinstance(decoder._ff._activation, torch.nn.GELU)

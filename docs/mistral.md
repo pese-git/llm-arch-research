@@ -12,32 +12,54 @@ Mistral 7B (Mistral AI, 2023, [arXiv:2310.06825](https://arxiv.org/abs/2310.0682
 ## Архитектура блока декодера
 
 ```mermaid
-flowchart LR
-    Tokens(["Tokens"]) --> TokEmb["Token Emb"]:::blue
-    TokEmb --> N1["RMSNorm"]:::gray
-    N1 --> Attn["Grouped Query Attention<br/>+ RoPE + Sliding Window"]:::blueHl
-    Attn --> A1(("+"))
-    TokEmb -.->|residual| A1
-    A1 --> N2["RMSNorm"]:::gray
-    N2 --> FFN["SwiGLU"]:::purple
-    FFN --> A2(("+"))
-    A1 -.->|residual| A2
-    A2 --> Dc2["Decoder"]:::green --> Dots(["⋯"]) --> Dc5["Decoder"]:::green --> NF["RMSNorm<br/>(финальный)"]:::gray --> Lin["Linear"]:::gray --> Soft["Softmax"]:::purple
+%%{init: {"flowchart": {"rankSpacing": 28, "nodeSpacing": 28}}}%%
+flowchart TB
+    Ids(["token ids"]):::io --> TokEmb["Token Embedding"]:::blue
+    TokEmb --> Drop["Dropout"]:::gray
+    subgraph Dec["MistralDecoder × num_layers · pre-RMSNorm"]
+        direction TB
+        X(["x"]):::io --> N1["RMSNorm"]:::gray
+        N1 --> Attn["Grouped Query Attention<br/>sliding window"]:::blueHl
+        R["RoPE<br/>cos/sin от позиции · без параметров<br/>один модуль на все слои"]:::rope
+        R -. "поворот Q и K" .-> Attn
+        Attn --> A1(("+")):::add
+        X -. residual .-> A1
+        A1 --> N2["RMSNorm"]:::gray
+        N2 --> FFN["SwiGLU"]:::purple
+        FFN --> A2(("+")):::add
+        A1 -. residual .-> A2
+    end
+    Drop --> Dec
+    Dec --> NF["RMSNorm<br/>(финальный)"]:::gray --> Lin
+    Lin["Linear → vocab_size"]:::gray --> Out(["logits"]):::io
+    Out -. "generate(): softmax → выбор токена" .-> Next(["следующий токен"]):::io
+    style Dec fill:transparent,stroke:#82b366,stroke-width:2px,color:#5b9a3c
 
+    classDef io fill:#ffffff,stroke:#999999,color:#1a1a1a;
+    classDef add fill:#ffffff,stroke:#666666,color:#1a1a1a;
     classDef blue fill:#dae8fc,stroke:#6c8ebf,color:#1a1a1a;
-    classDef blueHl fill:#dae8fc,stroke:#4a7ebf,stroke-width:3px,color:#1a1a1a;
+    classDef blueHl fill:#dae8fc,stroke:#2f5f9e,stroke-width:3px,color:#1a1a1a;
     classDef purple fill:#e1d5e7,stroke:#9673a6,color:#1a1a1a;
-    classDef green fill:#d5e8d4,stroke:#82b366,color:#1a1a1a;
+    classDef purpleHl fill:#e1d5e7,stroke:#6a3d85,stroke-width:3px,color:#1a1a1a;
     classDef gray fill:#f5f5f5,stroke:#666666,color:#1a1a1a;
+    classDef grayHl fill:#f5f5f5,stroke:#333333,stroke-width:3px,color:#1a1a1a;
+    classDef gold fill:#fff2cc,stroke:#d6b656,color:#1a1a1a;
+    classDef rope fill:#d5f0ec,stroke:#3a9e8f,color:#1a1a1a;
+    classDef ropeHl fill:#d5f0ec,stroke:#1f6f63,stroke-width:3px,color:#1a1a1a;
+    classDef dim fill:#f5f5f5,stroke:#bbbbbb,color:#999999,stroke-dasharray:4 3;
 ```
+
+Как RoPE поворачивает Q и K — в разделе [Attention с RoPE](llama.md#attention-с-rope) документа LLaMA.
 
 ### Grouped Query Attention
 
-Вместо одинакового числа голов для Q и K/V, GQA использует **больше** Q-голов, чем KV-голов: K/V вычисляются один раз на группу и переиспользуются (`repeat`) для нескольких Q-голов. Это сокращает размер KV-кэша и объём вычислений в K/V-проекциях, почти не теряя в качестве по сравнению с обычным MHA.
+Механизм предложен в [Ainslie et al., 2023](https://arxiv.org/abs/2305.13245). Вместо одинакового числа голов для Q и K/V, GQA использует **больше** Q-голов, чем KV-голов: K/V вычисляются один раз на группу и переиспользуются (`repeat`) для нескольких Q-голов. Это сокращает размер KV-кэша и объём вычислений в K/V-проекциях, почти не теряя в качестве по сравнению с обычным MHA.
 
 ### Sliding Window Attention
 
-Вместо полной causal-маски (токен видит вообще всё прошлое) используется маска с ограниченным окном `window_size`: токен видит только последние `window_size` позиций. Это ограничивает объём вычислений на длинных последовательностях ценой явного лимита на дальность зависимостей внутри одного слоя (через стек слоёв эффективное поле видимости растёт линейно с числом слоёв, как в dilated/local attention).
+Идея local attention со скользящим окном — из [Longformer](https://arxiv.org/abs/2004.05150). Вместо полной causal-маски (токен видит вообще всё прошлое) используется маска с ограниченным окном `window_size`: токен видит только последние `window_size` позиций. Это ограничивает объём вычислений на длинных последовательностях ценой явного лимита на дальность зависимостей внутри одного слоя (через стек слоёв эффективное поле видимости растёт линейно с числом слоёв, как в dilated/local attention).
+
+> ⚠️ **Известная ошибка KV-кэша.** Кэш в `GroupedQueryAttention` обрезается до последних `window_size` позиций, а позиция для RoPE берётся как длина кэша (`start_pos = k_cache.shape[2]`). Как только кэш заполняется, позиции перестают расти, и генерация с `use_cache=True` начинает расходиться с генерацией без кэша. Кроме того, маска без кэша пропускает `window_size + 1` позиций (`row - col <= window_size`), а кэш хранит `window_size`. См. [известные ограничения](README.md#известные-ограничения).
 
 ## Компоненты
 
@@ -71,13 +93,13 @@ result    = ffn_out + out
 | `embed_dim` | 256 | размерность эмбеддингов |
 | `num_q_heads` | 4 | число Query-голов |
 | `num_kv_heads` | 2 | число Key/Value-голов (≤ `num_q_heads`, обычно кратно) |
-| `head_size` | 64 | размерность одной attention-головы |
+| `head_size` | 64 | ❌ не читается: размер головы всегда `embed_dim // num_q_heads` |
 | `num_layers` | 4 | число блоков `MistralDecoder` |
 | `max_position_embeddings` | 512 | максимальная длина последовательности |
 | `window_size` | 16 | ширина скользящего окна внимания |
 | `dropout` | 0.1 | dropout в attention и FFN |
 
-В отличие от [Gemma](gemma.md#неиспользуемые-ключи-конфига), здесь все ключи конфига реально используются конструктором `Mistral.__init__`.
+Все ключи, кроме `head_size`, используются конструктором `Mistral.__init__`. `head_size` присутствует в конфиге, но модель его не читает и вычисляет размер головы как `embed_dim // num_q_heads` (в примере значения совпадают: 256 / 4 = 64). Чтобы изменить размер головы, меняйте `embed_dim` или `num_q_heads`.
 
 ## Генерация
 
@@ -89,3 +111,17 @@ result    = ffn_out + out
 - GQA, sliding window, RoPE и RMSNorm остаются без изменений — блок декодера почти идентичен по структуре, отличие только в FFN-части.
 
 Подробности — в [mixtral.md](mixtral.md).
+
+## Литература
+
+Основная статья:
+
+- Jiang et al. *Mistral 7B*. 2023. [arXiv:2310.06825](https://arxiv.org/abs/2310.06825)
+
+Компоненты:
+
+- Ainslie et al. *GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints*. 2023. [arXiv:2305.13245](https://arxiv.org/abs/2305.13245)
+- Beltagy, Peters, Cohan. *Longformer: The Long-Document Transformer*. 2020. [arXiv:2004.05150](https://arxiv.org/abs/2004.05150) — sliding window attention
+- Su et al. *RoFormer: Enhanced Transformer with Rotary Position Embedding*. 2021. [arXiv:2104.09864](https://arxiv.org/abs/2104.09864)
+- Zhang, Sennrich. *Root Mean Square Layer Normalization*. 2019. [arXiv:1910.07467](https://arxiv.org/abs/1910.07467)
+- Shazeer. *GLU Variants Improve Transformer*. 2020. [arXiv:2002.05202](https://arxiv.org/abs/2002.05202) — SwiGLU и GeGLU
