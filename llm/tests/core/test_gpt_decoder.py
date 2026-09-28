@@ -4,6 +4,7 @@ Tests for decoder block.
 
 import pytest
 import torch
+from llm.core.gelu import GELU
 from llm.core.gpt_decoder import GptDecoder
 
 
@@ -241,7 +242,7 @@ class TestGptDecoder:
         )
 
     def test_feed_forward_uses_gelu(self, embed_dim, num_heads):
-        """Test that FFN uses GELU, as in the GPT-1 paper (section 4.1)."""
+        """Test that FFN uses tanh-approximated GELU, as in the original GPT-1 code."""
         decoder = GptDecoder(
             num_heads=num_heads,
             emb_size=embed_dim,
@@ -249,4 +250,4 @@ class TestGptDecoder:
             max_seq_len=1024,
         )
 
-        assert isinstance(decoder._ff._activation, torch.nn.GELU)
+        assert isinstance(decoder._ff._activation, GELU)

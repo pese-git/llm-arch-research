@@ -82,10 +82,12 @@ class Gpt2Decoder(nn.Module):
             rope=rope,
             dropout=dropout,
         )
+        # tanh-аппроксимация GELU, как в оригинальном коде OpenAI GPT-2
+        # (openai/gpt-2, src/model.py; в HF GPT2Config — activation_function="gelu_new")
         self._ff = FeedForward(
             emb_size=emb_size,
             dropout=dropout,
-            activation="gelu",
+            activation="gelu_tanh",
         )
         self._norm1 = nn.LayerNorm(emb_size)
         self._norm2 = nn.LayerNorm(emb_size)

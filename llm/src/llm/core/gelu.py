@@ -15,8 +15,10 @@ class GELU(nn.Module):
     Математическая формула:
     -----------------------
         GELU(x) = 0.5 * x * (1 + tanh( sqrt(2/pi) * (x + 0.044715 * x^3) ))
+    - Это tanh-аппроксимация точной формулы GELU(x) = 0.5 * x * (1 + erf(x / sqrt(2))).
+    - Именно она используется в оригинальных OpenAI GPT и GPT-2 (в HF — "gelu_new").
     - Статья (Hendrycks & Gimpel, 2016): https://arxiv.org/abs/1606.08415
-    - В PyTorch с версии 1.4+ встроена как torch.nn.functional.gelu и torch.nn.GELU.
+    - Точный вариант в PyTorch — torch.nn.GELU() / torch.nn.functional.gelu.
 
     Как это работает:
     -----------------

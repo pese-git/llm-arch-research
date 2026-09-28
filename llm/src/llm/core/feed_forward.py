@@ -29,7 +29,7 @@ class FeedForward(nn.Module):
     -----------------------
     emb_size: int — размерность входа/выхода токена
     inner_dim: int (необязательно) — размер скрытого слоя (по умолчанию 4*emb_size)
-    activation: str — тип активации ('gelu', 'silu', 'relu', ...), см. варианты ниже
+    activation: str — тип активации ('relu', 'gelu', 'gelu_tanh'), см. варианты ниже
     dropout: float — dropout после каждой линейной проекции
 
     Пример использования:
@@ -63,8 +63,11 @@ class FeedForward(nn.Module):
             Размерность входного и выходного эмбеддинга модели.
         dropout: float, по умолчанию 0.1
             Dropout после линии и/или активации (уменьшает переобучение).
-        activation: str, по умолчанию 'gelu'
-            Какая нелинейность использовать ('gelu', 'silu', 'relu' и т.д.).
+        activation: str, по умолчанию 'relu'
+            Какая нелинейность использовать:
+            - 'relu'      — ReLU;
+            - 'gelu'      — точный GELU через erf (nn.GELU());
+            - 'gelu_tanh' — tanh-аппроксимация GELU, как в OpenAI GPT/GPT-2 (в HF — "gelu_new").
         inner_dim: int, опционально
             Размер скрытого слоя (по умолчанию 4 * emb_size, как в оригинальном Transformer).
 
@@ -75,12 +78,13 @@ class FeedForward(nn.Module):
         super().__init__()
         # Первый линейный слой (расширение размерности)
         self._layer1 = nn.Linear(emb_size, emb_size * 4)
-        # ReLU активация
         if activation == "relu":
             self._activation = nn.ReLU()
         elif activation == "gelu":
+            # Точный GELU: 0.5 * x * (1 + erf(x / sqrt(2)))
             self._activation = nn.GELU()
-        elif activation == "gelu_exact":
+        elif activation == "gelu_tanh":
+            # tanh-аппроксимация, как в OpenAI GPT/GPT-2 (в HF — "gelu_new")
             self._activation = GELU()
         else:
             raise ValueError(f"Unknown activation: {activation}")

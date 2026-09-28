@@ -57,7 +57,7 @@ flowchart TB
 | Токен-эмбеддинги | `TokenEmbeddings` | [`core/token_embeddings.py`](../llm/src/llm/core/token_embeddings.py) |
 | Позиционные эмбеддинги | `PositionalEmbeddings` (обучаемые, абсолютные — как в GPT-1) | [`core/positional_embeddings.py`](../llm/src/llm/core/positional_embeddings.py) |
 | Attention | `MultiHeadAttention` (тот же класс, что и в GPT-1) | [`core/multi_head_attention.py`](../llm/src/llm/core/multi_head_attention.py) |
-| FFN | GELU MLP, зашит внутри декодера (не параметризуется извне) | [`core/gpt2_decoder.py`](../llm/src/llm/core/gpt2_decoder.py) |
+| FFN | GELU MLP (tanh-аппроксимация GELU, `activation="gelu_tanh"` — как в оригинальном коде OpenAI; в HF — `gelu_new`), зашит внутри декодера (не параметризуется извне) | [`core/gpt2_decoder.py`](../llm/src/llm/core/gpt2_decoder.py) |
 | Блок декодера | `Gpt2Decoder` (**pre-LN**) | [`core/gpt2_decoder.py`](../llm/src/llm/core/gpt2_decoder.py) |
 | Модель целиком | `GPT2` | [`models/gpt/gpt2.py`](../llm/src/llm/models/gpt/gpt2.py) |
 
