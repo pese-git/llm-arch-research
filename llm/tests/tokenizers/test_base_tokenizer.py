@@ -71,7 +71,10 @@ class CharTokenizer(BaseTokenizer):
         self.add_special_tokens(kwargs.get("special_tokens", []))
 
     def encode(self, text: str, **kwargs) -> list:
-        return [self.vocab.get(char, self.unk_token_id) for char in text]
+        ids = [self.vocab.get(char, self.unk_token_id) for char in text]
+        if kwargs.get("add_special_tokens") and self.bos_token_id is not None:
+            ids = [self.bos_token_id] + ids
+        return ids
 
     def decode(self, tokens: list, **kwargs) -> str:
         return "".join(self.inverse_vocab.get(token, "") for token in tokens)
@@ -217,3 +220,24 @@ class TestSaveLoad:
         assert loaded.pad_token_id == tokenizer.pad_token_id
         assert loaded.eos_token_id == tokenizer.eos_token_id
         assert loaded.unk_token_id is None
+
+
+class TestContractDetails:
+    """Проверки, которые ловят ошибки в значениях по умолчанию и в tokenize."""
+
+    def test_initial_state(self):
+        tokenizer = ConcreteTokenizer()
+        assert tokenizer.inverse_vocab == {}
+        assert tokenizer.unk_token_id is None
+        assert tokenizer.bos_token_id is None
+
+    def test_tokenize_passes_kwargs_to_encode(self, char_tokenizer):
+        assert char_tokenizer.tokenize("аб", add_special_tokens=True) == ["<bos>", "а", "б"]
+
+    def test_tokenize_id_outside_vocab_is_unk(self):
+        """Если у токенизатора нет <unk>, неизвестный символ все равно отображается как unk_token."""
+        tokenizer = CharTokenizer()
+        tokenizer.train(["аб"])
+        assert tokenizer.unk_token_id is None
+
+        assert tokenizer.tokenize("аz") == ["а", "<unk>"]

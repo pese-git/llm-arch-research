@@ -315,3 +315,131 @@ class TestBPESpecialTokenHandling:
         path.write_text(json.dumps(config, ensure_ascii=False), encoding="utf-8")
 
         assert BPETokenizer.load(str(path)).merges == {("м", "и"): 0}
+
+
+class TestBPETrainingContract:
+    """Проверки, которые ловят ошибки в подсчете пар и размере словаря."""
+
+    def test_initial_state(self):
+        tokenizer = BPETokenizer()
+        assert tokenizer.merges == {}
+        assert tokenizer.vocab_list == []
+
+    def test_most_frequent_pair_merged_first(self):
+        # ("a", "b") встречается в трех разных словах (итого 3),
+        # ("x", "y") — в одном слове, но дважды (итого 2).
+        # Верный выбор — ("a", "b"): частоты складываются по всем словам.
+        tokenizer = BPETokenizer()
+        tokenizer.train(["ab", "cab", "dab", "xy", "xy"], vocab_size=7, special_tokens=[])
+
+        assert tokenizer.merges == {("a", "b"): 0}
+        assert tokenizer.vocab_list[-1] == "ab"
+
+    def test_tie_goes_to_first_seen_pair(self):
+        tokenizer = BPETokenizer()
+        tokenizer.train(["xy", "ab"], vocab_size=5, special_tokens=[])
+
+        assert tokenizer.merges == {("x", "y"): 0}
+
+    def test_vocab_size_is_exact(self):
+        """Словарь (без специальных токенов) ровно такого размера, как запрошено."""
+        tokenizer = BPETokenizer()
+        # 6 уникальных символов + 1 слияние
+        tokenizer.train(["ab", "cab", "dab", "xy", "xy"], vocab_size=7, special_tokens=[])
+
+        assert len(tokenizer.vocab_list) == 7
+        assert tokenizer.get_vocab_size() == 7
+
+    def test_default_special_tokens(self):
+        """Без special_tokens добавляются pad/unk/bos/eos в конец словаря."""
+        tokenizer = BPETokenizer()
+        tokenizer.train(["аб"], vocab_size=10)
+
+        vocab = tokenizer.get_vocab()
+        assert [vocab[t] for t in ["<pad>", "<unk>", "<bos>", "<eos>"]] == [3, 4, 5, 6]
+        assert tokenizer.pad_token_id == 3
+        assert tokenizer.eos_token_id == 6
+
+
+class TestBPEUnknownCharacters:
+    @pytest.fixture
+    def tokenizer(self):
+        tokenizer = BPETokenizer()
+        tokenizer.train(["аб аб"], vocab_size=100, special_tokens=SPECIAL_TOKENS)
+        return tokenizer
+
+    def test_unknown_character_maps_to_unk(self, tokenizer):
+        vocab = tokenizer.get_vocab()
+        ids = tokenizer.encode("аzб")
+
+        # неизвестный символ -> <unk>, а следующий за ним символ не теряется
+        assert ids == [vocab["а"], tokenizer.unk_token_id, vocab["б"]]
+
+    def test_consecutive_unknown_characters(self, tokenizer):
+        vocab = tokenizer.get_vocab()
+        unk = tokenizer.unk_token_id
+
+        assert tokenizer.encode("zzа") == [unk, unk, vocab["а"]]
+
+    def test_decode_unknown_id_as_unk_token(self, tokenizer):
+        vocab = tokenizer.get_vocab()
+        assert tokenizer.decode([vocab["а"], 999]) == "а<unk>"
+
+
+class TestBPESaveLoadSpecialTokens:
+    def test_special_tokens_restored(self, tmp_path):
+        tokenizer = BPETokenizer()
+        tokenizer.train(["мир мир"], vocab_size=100, special_tokens=SPECIAL_TOKENS)
+        path = tmp_path / "tokenizer.json"
+        tokenizer.save(str(path))
+
+        loaded = BPETokenizer.load(str(path))
+
+        for name in ["pad", "unk", "bos", "eos"]:
+            assert getattr(loaded, f"{name}_token") == getattr(tokenizer, f"{name}_token")
+            assert getattr(loaded, f"{name}_token_id") == getattr(tokenizer, f"{name}_token_id")
+            assert getattr(loaded, f"{name}_token_id") is not None
+        assert loaded.encode("мир", add_special_tokens=True) == tokenizer.encode(
+            "мир", add_special_tokens=True
+        )
+
+    def test_custom_special_tokens_restored(self, tmp_path):
+        tokenizer = BPETokenizer()
+        tokenizer.pad_token = "[PAD]"
+        tokenizer.unk_token = "[UNK]"
+        tokenizer.bos_token = "[BOS]"
+        tokenizer.eos_token = "[EOS]"
+        tokenizer.train(["мир"], vocab_size=100, special_tokens=["[PAD]", "[UNK]", "[BOS]", "[EOS]"])
+        path = tmp_path / "tokenizer.json"
+        tokenizer.save(str(path))
+
+        loaded = BPETokenizer.load(str(path))
+
+        assert (loaded.pad_token, loaded.unk_token, loaded.bos_token, loaded.eos_token) == (
+            "[PAD]", "[UNK]", "[BOS]", "[EOS]"
+        )
+        assert loaded.eos_token_id == tokenizer.eos_token_id
+
+    def test_saved_file_keeps_non_ascii(self, tmp_path):
+        tokenizer = BPETokenizer()
+        tokenizer.train(["мир"], vocab_size=100, special_tokens=SPECIAL_TOKENS)
+        path = tmp_path / "tokenizer.json"
+        tokenizer.save(str(path))
+
+        # ensure_ascii=False: кириллица пишется как есть, а не \uXXXX
+        assert "мир" in path.read_text(encoding="utf-8")
+
+    def test_load_file_without_merges(self, tmp_path):
+        """Файлы без поля merges (слияния раньше не сохранялись) загружаются."""
+        tokenizer = BPETokenizer()
+        tokenizer.train(["мир мир"], vocab_size=100, special_tokens=SPECIAL_TOKENS)
+        path = tmp_path / "tokenizer.json"
+        tokenizer.save(str(path))
+
+        config = json.loads(path.read_text(encoding="utf-8"))
+        del config["merges"]
+        path.write_text(json.dumps(config, ensure_ascii=False), encoding="utf-8")
+
+        loaded = BPETokenizer.load(str(path))
+        assert loaded.merges == {}
+        assert loaded.encode("мир") == tokenizer.encode("мир")
