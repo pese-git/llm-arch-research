@@ -16,7 +16,7 @@
 | `HFGPTAdapter` | `hf_adapter.py` | наследник `PreTrainedModel`, оборачивает `GPT`; `forward` возвращает `CausalLMOutputWithCrossAttentions` с `loss` при переданных `labels` |
 | `HFAdapterConfig` | `hf_config.py` | dataclass-конфиг; `from_llm_config()` переводит ключи `llm` в имена HF (`embed_dim` → `hidden_size` и т.д.) |
 | `HFPretrainedConfig` | `hf_config.py` | наследник `PretrainedConfig` (`model_type = "gpt"`) |
-| `HFTokenizerAdapter` | `hf_tokenizer.py` | HF-подобный интерфейс над `BaseTokenizer`: `encode`, `decode`, `pad`, `tokenize`, `save_pretrained`, `from_pretrained` |
+| `HFTokenizerAdapter` | `hf_tokenizer.py` | HF-подобный интерфейс над `BaseTokenizer`: `encode`, `decode`, `pad`, `tokenize`, `save_pretrained`, `from_pretrained`; `pad` совместим с коллаторами `transformers` (`labels` дополняются `-100`) |
 | `create_hf_tokenizer`, `convert_to_hf_format` | `hf_tokenizer.py` | обёртка токенизатора и его сохранение в HF-формате |
 | `HFUtils`, `TokenizerWrapper`, `create_hf_pipeline` | `hf_utils.py` | конвертация, `push_to_hub` / `load_from_hub`, сравнение с HF-моделью, создание `pipeline` |
 
