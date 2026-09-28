@@ -144,28 +144,10 @@ class GPT2(BaseModel):
                 f"Длина последовательности {x.size(1)} превышает максимальную {self.max_seq_len}"
             )
 
-        # Вычисление start_pos из кэша (если кэш передан)
-        if cache is not None:
-            seq_len = 1
-            # Безопасно извлекаем key_cache для вычисления start_pos
-            if (
-                isinstance(cache, (list, tuple))
-                and len(cache) > 0
-                and cache[0] is not None
-                and isinstance(cache[0], (list, tuple))
-                and len(cache[0]) > 0
-                and cache[0][0] is not None
-                and isinstance(cache[0][0], (tuple, list))
-                and len(cache[0][0]) > 0
-            ):
-                key_cache, _ = cache[0][0]
-                start_pos = key_cache.size(1)
-            else:
-                start_pos = 0
-        else:
-            # Без кэша работаем как раньше
-            start_pos = 0
-            seq_len = x.size(1)
+        # Позиция первого нового токена = длина уже закэшированной последовательности.
+        # Кэш — список по слоям из (K, V), K: [batch, num_heads, cached_len, head_size]
+        seq_len = x.size(1)
+        start_pos = cache[0][0].size(2) if cache is not None else 0
 
         # Эмбеддинги токенов и позиций
         tok_out = self._token_embeddings(x)  # [batch, seq_len, emb_size]

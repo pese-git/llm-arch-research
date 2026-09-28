@@ -71,6 +71,5 @@ loaded_tokenizer = HFTokenizerAdapter.from_pretrained("checkpoints/my-gpt-tokeni
 - **Только `GPT`.** `HFAdapter` всегда создаёт `llm.models.gpt.GPT`.
 - **`attention_mask` и `past_key_values` игнорируются** в `forward`; KV-кэш HF не поддерживается.
 - **`HFGPTAdapter.generate`** передаёт управление `GPT.generate`: учитываются `max_new_tokens`, `do_sample`, `temperature`, `top_k`, `top_p`, а `generation_config`, `logits_processor`, `stopping_criteria` и остановка по `eos_token_id` не применяются.
-- **`GPT.generate` с KV-кэшем (включён по умолчанию) генерирует неверно** — позиции новых токенов не сдвигаются, см. [docs/gpt.md](../docs/gpt.md#генерация). Передавайте `use_cache=False`.
 - **`HFAdapter.save_pretrained(model, dir, tokenizer=...)` не сохраняет токенизатор** — сохраняйте его отдельно через `hf_tokenizer.save_pretrained(...)`.
 - Значения по умолчанию в `HFAdapterConfig` (`pad/bos/eos_token_id = 50256`, `architectures = ["GPT2LMHeadModel"]`) рассчитаны на словарь GPT-2 и не соответствуют собственному BPE-токенизатору.
