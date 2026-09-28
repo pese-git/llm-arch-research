@@ -143,76 +143,121 @@ def test_tokenize(bpe_tokenizer, hf_tokenizer):
 
 
 class TestPad:
-    def test_lists_padded_to_longest(self, hf_tokenizer):
+    def test_returns_dict_padded_to_longest(self, hf_tokenizer):
         pad = hf_tokenizer.pad_token_id
         out = hf_tokenizer.pad([{"input_ids": [5, 6, 7]}, {"input_ids": [5]}])
-        assert out[0]["input_ids"] == [5, 6, 7]
-        assert out[1]["input_ids"] == [5, pad, pad]
+        assert isinstance(out, dict)
+        assert out["input_ids"] == [[5, 6, 7], [5, pad, pad]]
+
+    def test_attention_mask_by_default(self, hf_tokenizer):
+        out = hf_tokenizer.pad([{"input_ids": [5, 6, 7]}, {"input_ids": [5]}])
+        assert out["attention_mask"] == [[1, 1, 1], [1, 0, 0]]
+
+    def test_without_attention_mask(self, hf_tokenizer):
+        out = hf_tokenizer.pad(
+            [{"input_ids": [5, 6, 7]}, {"input_ids": [5]}], return_attention_mask=False
+        )
+        assert "attention_mask" not in out
 
     def test_existing_attention_mask_extended(self, hf_tokenizer):
         out = hf_tokenizer.pad(
             [
-                {"input_ids": [5, 6, 7], "attention_mask": [1, 1, 1]},
+                {"input_ids": [5, 6, 7], "attention_mask": [1, 1, 0]},
                 {"input_ids": [5], "attention_mask": [1]},
             ]
         )
-        assert out[1]["attention_mask"] == [1, 0, 0]
+        assert out["attention_mask"] == [[1, 1, 0], [1, 0, 0]]
 
-    def test_return_attention_mask_for_padded_item(self, hf_tokenizer):
-        out = hf_tokenizer.pad(
-            [{"input_ids": [5, 6, 7]}, {"input_ids": [5]}], return_attention_mask=True
-        )
-        assert out[1]["attention_mask"] == [1, 0, 0]
-
-    def test_return_attention_mask_for_every_item(self, hf_tokenizer):
-        out = hf_tokenizer.pad(
-            [{"input_ids": [5, 6, 7]}, {"input_ids": [5]}], return_attention_mask=True
-        )
-        assert out[0]["attention_mask"] == [1, 1, 1]
-
-    def test_tensors_padded(self, hf_tokenizer):
-        pad = hf_tokenizer.pad_token_id
+    def test_labels_padded_with_ignore_index(self, hf_tokenizer):
         out = hf_tokenizer.pad(
             [
-                {"input_ids": torch.tensor([5, 6, 7]), "attention_mask": torch.ones(3, dtype=torch.long)},
-                {"input_ids": torch.tensor([5]), "attention_mask": torch.ones(1, dtype=torch.long)},
+                {"input_ids": [5, 6, 7], "labels": [5, 6, 7]},
+                {"input_ids": [5], "labels": [5]},
             ]
         )
-        assert out[1]["input_ids"].tolist() == [5, pad, pad]
-        assert out[1]["attention_mask"].tolist() == [1, 0, 0]
+        assert out["labels"] == [[5, 6, 7], [5, -100, -100]]
 
-    def test_tensor_return_attention_mask(self, hf_tokenizer):
+    def test_other_keys_passed_through(self, hf_tokenizer):
+        out = hf_tokenizer.pad([{"input_ids": [5, 6], "id": 1}, {"input_ids": [5], "id": 2}])
+        assert out["id"] == [1, 2]
+
+    def test_dict_of_lists(self, hf_tokenizer):
+        pad = hf_tokenizer.pad_token_id
+        out = hf_tokenizer.pad({"input_ids": [[5, 6, 7], [5]]})
+        assert out["input_ids"] == [[5, 6, 7], [5, pad, pad]]
+
+    def test_single_example(self, hf_tokenizer):
+        out = hf_tokenizer.pad({"input_ids": [5, 6]})
+        assert out["input_ids"] == [[5, 6]]
+
+    def test_empty_batch(self, hf_tokenizer):
+        assert hf_tokenizer.pad([]) == {"input_ids": []}
+
+    def test_tensor_inputs(self, hf_tokenizer):
+        pad = hf_tokenizer.pad_token_id
         out = hf_tokenizer.pad(
             [{"input_ids": torch.tensor([5, 6, 7])}, {"input_ids": torch.tensor([5])}],
-            return_attention_mask=True,
+            return_tensors="pt",
         )
-        assert out[1]["attention_mask"].tolist() == [1, 0, 0]
+        assert out["input_ids"].tolist() == [[5, 6, 7], [5, pad, pad]]
+        assert out["attention_mask"].tolist() == [[1, 1, 1], [1, 0, 0]]
 
     def test_int_input_ids(self, hf_tokenizer):
         pad = hf_tokenizer.pad_token_id
-        out = hf_tokenizer.pad(
-            [{"input_ids": [5, 6]}, {"input_ids": 5, "attention_mask": 1}]
-        )
-        assert out[1]["input_ids"] == [5, pad]
-        assert out[1]["attention_mask"] == [1, 0]
+        out = hf_tokenizer.pad([{"input_ids": [5, 6]}, {"input_ids": 5}])
+        assert out["input_ids"] == [[5, 6], [5, pad]]
 
-    def test_max_length_caps_padding(self, hf_tokenizer):
+    def test_padding_max_length(self, hf_tokenizer):
         pad = hf_tokenizer.pad_token_id
         out = hf_tokenizer.pad(
-            [{"input_ids": [5, 6, 7, 8]}, {"input_ids": [5]}], max_length=2
+            [{"input_ids": [5, 6]}, {"input_ids": [5]}], padding="max_length", max_length=4
         )
-        assert out[1]["input_ids"] == [5, pad]
+        assert out["input_ids"] == [[5, 6, pad, pad], [5, pad, pad, pad]]
+
+    def test_padding_max_length_requires_max_length(self, hf_tokenizer):
+        with pytest.raises(ValueError, match="max_length"):
+            hf_tokenizer.pad([{"input_ids": [5]}], padding="max_length")
+
+    def test_no_padding(self, hf_tokenizer):
+        out = hf_tokenizer.pad([{"input_ids": [5, 6]}, {"input_ids": [5]}], padding=False)
+        assert out["input_ids"] == [[5, 6], [5]]
+        assert out["attention_mask"] == [[1, 1], [1]]
+
+    def test_pad_to_multiple_of(self, hf_tokenizer):
+        out = hf_tokenizer.pad(
+            [{"input_ids": [5, 6, 7]}, {"input_ids": [5]}], pad_to_multiple_of=4
+        )
+        assert [len(ids) for ids in out["input_ids"]] == [4, 4]
 
     def test_return_tensors_pt(self, hf_tokenizer):
         out = hf_tokenizer.pad(
-            [{"input_ids": [5, 6, 7]}, {"input_ids": [5]}],
-            return_attention_mask=True,
-            return_tensors="pt",
+            [{"input_ids": [5, 6, 7]}, {"input_ids": [5]}], return_tensors="pt"
         )
-        assert torch.is_tensor(out[0]["input_ids"])
-        assert torch.is_tensor(out[1]["input_ids"])
-        batch = torch.stack([item["input_ids"] for item in out])
-        assert batch.shape == (2, 3)
+        assert out["input_ids"].shape == (2, 3)
+        assert out["attention_mask"].shape == (2, 3)
+
+    def test_data_collator_for_language_modeling(self, hf_tokenizer):
+        """Адаптер работает как tokenizer в коллаторе transformers."""
+        from transformers import DataCollatorForLanguageModeling
+
+        collator = DataCollatorForLanguageModeling(
+            tokenizer=hf_tokenizer, mlm=False, pad_to_multiple_of=8
+        )
+        long_ids, short_ids = hf_tokenizer.encode("hello world"), hf_tokenizer.encode("hi")
+        batch = collator(
+            [
+                {"input_ids": long_ids, "labels": long_ids},
+                {"input_ids": short_ids, "labels": short_ids},
+            ]
+        )
+
+        assert batch["input_ids"].shape == (2, 8)
+        assert batch["input_ids"][1, len(short_ids):].eq(hf_tokenizer.pad_token_id).all()
+        assert batch["labels"][1, len(short_ids):].eq(-100).all()
+        assert batch["labels"][0, : len(long_ids)].tolist() == long_ids
+        assert batch["attention_mask"][1].tolist() == [1] * len(short_ids) + [0] * (
+            8 - len(short_ids)
+        )
 
 
 class TestSaveLoad:

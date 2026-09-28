@@ -4,6 +4,7 @@
 
 import json
 import os
+from collections.abc import Mapping
 from typing import Dict, List, Optional, Union
 
 import torch
@@ -211,6 +212,24 @@ class HFTokenizerAdapter:
         """
         return self.llm_tokenizer.tokenize(text)
 
+    # Ключи, которые дополняются при паддинге, и значения для дополнения.
+    # labels дополняются -100: это ignore_index в CrossEntropyLoss.
+    _PAD_VALUES = {
+        "attention_mask": 0,
+        "token_type_ids": 0,
+        "special_tokens_mask": 1,
+        "labels": -100,
+    }
+
+    @staticmethod
+    def _as_list(value):
+        """Приводит тензор, массив, число или последовательность к списку."""
+        if hasattr(value, "tolist"):
+            value = value.tolist()
+        if isinstance(value, int):
+            return [value]
+        return list(value)
+
     def pad(
         self,
         encoded_inputs,
@@ -222,112 +241,85 @@ class HFTokenizerAdapter:
         verbose=True,
     ):
         """
-        Pad a list of encoded inputs.
+        Дополняет батч закодированных примеров до общей длины.
+
+        Повторяет интерфейс PreTrainedTokenizer.pad, поэтому адаптер можно
+        передавать в коллаторы transformers (DataCollatorForLanguageModeling и др.).
 
         Args:
-            encoded_inputs: List of encoded inputs
-            padding: Padding strategy
-            max_length: Maximum length
-            pad_to_multiple_of: Pad to multiple of
-            return_attention_mask: Return attention mask
-            return_tensors: Return tensors
-            verbose: Verbose mode
+            encoded_inputs: Список словарей ({"input_ids": ..., ...}),
+                словарь списков или один пример
+            padding: True/"longest" — до самой длинной последовательности,
+                "max_length" — до max_length, False/"do_not_pad" — без паддинга
+            max_length: Длина для padding="max_length"
+            pad_to_multiple_of: Округлить длину вверх до кратной этому числу
+            return_attention_mask: Добавить attention_mask (по умолчанию True)
+            return_tensors: "pt" — вернуть тензоры
+            verbose: Не используется, оставлен для совместимости
 
         Returns:
-            Padded inputs
+            dict: Ключ -> список значений по примерам (или тензор при
+            return_tensors="pt"). input_ids дополняются pad_token_id,
+            attention_mask — 0, labels — -100.
         """
-        # Простая реализация padding для совместимости
-        if isinstance(encoded_inputs, (list, tuple)) and len(encoded_inputs) > 0:
-            # Находим максимальную длину
-            max_len = 0
-            for item in encoded_inputs:
-                input_ids = item["input_ids"]
-                # Обрабатываем разные типы данных
-                if isinstance(input_ids, int):
-                    seq_len = 1
-                elif hasattr(input_ids, "shape"):
-                    seq_len = (
-                        input_ids.shape[-1]
-                        if len(input_ids.shape) > 1
-                        else len(input_ids)
-                    )
-                else:
-                    seq_len = len(input_ids)
-                max_len = max(max_len, seq_len)
+        # Приводим вход к списку словарей
+        if isinstance(encoded_inputs, Mapping):
+            input_ids = self._as_list(encoded_inputs["input_ids"])
+            if input_ids and isinstance(input_ids[0], list):
+                keys = list(encoded_inputs)
+                columns = [self._as_list(encoded_inputs[key]) for key in keys]
+                examples = [dict(zip(keys, row)) for row in zip(*columns)]
+            else:
+                examples = [dict(encoded_inputs)]
+        else:
+            examples = [dict(example) for example in encoded_inputs]
 
-            if max_length is not None:
-                max_len = min(max_len, max_length)
+        if not examples:
+            return {"input_ids": []}
 
-            # Применяем padding
-            for item in encoded_inputs:
-                input_ids = item["input_ids"]
+        pad_values = {"input_ids": self.pad_token_id, **self._PAD_VALUES}
+        for example in examples:
+            for key in pad_values:
+                if key in example:
+                    example[key] = self._as_list(example[key])
 
-                # Получаем текущую длину
-                if isinstance(input_ids, int):
-                    current_len = 1
-                elif hasattr(input_ids, "shape"):
-                    current_len = (
-                        input_ids.shape[-1]
-                        if len(input_ids.shape) > 1
-                        else len(input_ids)
-                    )
-                else:
-                    current_len = len(input_ids)
+        # Определяем целевую длину
+        lengths = [len(example["input_ids"]) for example in examples]
+        if padding is True or padding == "longest":
+            target_len = max(lengths)
+        elif padding == "max_length":
+            if max_length is None:
+                raise ValueError("padding='max_length' требует max_length")
+            target_len = max_length
+        else:
+            target_len = None
 
-                padding_length = max(max_len - current_len, 0)
+        if target_len is not None and pad_to_multiple_of:
+            target_len = -(-target_len // pad_to_multiple_of) * pad_to_multiple_of
 
-                if padding_length > 0:
-                    # Дополняем pad_token_id
-                    # Обрабатываем разные типы данных
-                    if isinstance(input_ids, int):
-                        item["input_ids"] = [input_ids] + [
-                            self.pad_token_id
-                        ] * padding_length
-                    elif hasattr(input_ids, "shape"):
-                        padding_tensor = torch.full(
-                            (padding_length,), self.pad_token_id, dtype=input_ids.dtype
-                        )
-                        item["input_ids"] = torch.cat([input_ids, padding_tensor])
-                    else:
-                        item["input_ids"] = (
-                            input_ids + [self.pad_token_id] * padding_length
+        if return_attention_mask is None:
+            return_attention_mask = True
+
+        # Дополняем примеры и собираем словарь батча
+        batch = {}
+        for example, length in zip(examples, lengths):
+            if return_attention_mask and "attention_mask" not in example:
+                example["attention_mask"] = [1] * length
+
+            if target_len is not None:
+                for key, pad_value in pad_values.items():
+                    if key in example and len(example[key]) < target_len:
+                        example[key] = example[key] + [pad_value] * (
+                            target_len - len(example[key])
                         )
 
-                    # Дополняем уже существующую attention_mask
-                    if "attention_mask" in item:
-                        mask = item["attention_mask"]
-                        if isinstance(mask, int):
-                            item["attention_mask"] = [mask] + [0] * padding_length
-                        elif hasattr(mask, "shape"):
-                            padding_mask = torch.zeros(padding_length, dtype=mask.dtype)
-                            item["attention_mask"] = torch.cat([mask, padding_mask])
-                        else:
-                            item["attention_mask"] = mask + [0] * padding_length
+            for key, value in example.items():
+                batch.setdefault(key, []).append(value)
 
-                # Создаем attention_mask для каждого элемента, если она запрошена,
-                # в том числе для тех, которым паддинг не понадобился
-                if "attention_mask" not in item and return_attention_mask:
-                    if isinstance(input_ids, int):
-                        item["attention_mask"] = [1] + [0] * padding_length
-                    elif hasattr(input_ids, "shape"):
-                        attention_mask = torch.ones(current_len, dtype=torch.long)
-                        padding_mask = torch.zeros(padding_length, dtype=torch.long)
-                        item["attention_mask"] = torch.cat(
-                            [attention_mask, padding_mask]
-                        )
-                    else:
-                        item["attention_mask"] = [1] * current_len + [
-                            0
-                        ] * padding_length
-
-        # Конвертируем в тензоры если требуется
         if return_tensors == "pt":
-            for key in list(encoded_inputs[0].keys()):
-                if isinstance(encoded_inputs[0][key], list):
-                    for i in range(len(encoded_inputs)):
-                        encoded_inputs[i][key] = torch.tensor(encoded_inputs[i][key])
+            batch = {key: torch.tensor(values) for key, values in batch.items()}
 
-        return encoded_inputs
+        return batch
 
     def get_vocab(self) -> Dict[str, int]:
         """Возвращает словарь токенизатора."""

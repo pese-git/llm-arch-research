@@ -274,7 +274,8 @@ def main():
 
                 with torch.no_grad():
                     generated = hf_model.generate(
-                        input_ids=inputs["input_ids"],
+                        # Trainer мог перенести модель на GPU/MPS
+                        input_ids=inputs["input_ids"].to(hf_model.device),
                         max_new_tokens=20,
                         do_sample=True,
                         temperature=0.8,
