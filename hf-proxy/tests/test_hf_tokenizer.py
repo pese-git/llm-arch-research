@@ -394,8 +394,9 @@ class TestCustomSpecialTokens:
         assert (loaded.pad_token, loaded.unk_token, loaded.bos_token, loaded.eos_token) == tuple(
             CUSTOM_SPECIAL
         )
-        assert loaded.pad_token_id == custom_bpe.pad_token_id
-        assert loaded.eos_token_id == custom_bpe.eos_token_id
+        assert (loaded.pad_token_id, loaded.unk_token_id, loaded.bos_token_id, loaded.eos_token_id) == (
+            custom_bpe.pad_token_id, custom_bpe.unk_token_id, custom_bpe.bos_token_id, custom_bpe.eos_token_id
+        )
         assert loaded.encode("hello world") == HFTokenizerAdapter(custom_bpe).encode("hello world")
 
     def test_saved_file_names(self, custom_bpe, tmp_path):
@@ -452,18 +453,18 @@ class TestAdapterDefaults:
         with pytest.raises(FileNotFoundError):
             HFTokenizerAdapter.from_pretrained(str(tmp_path))
 
-    def test_from_pretrained_passes_through_kwargs(self, hf_tokenizer, tmp_path, monkeypatch):
-        hf_tokenizer.save_pretrained(str(tmp_path))
-        seen = {}
-        original_init = HFTokenizerAdapter.__init__
+    def test_from_pretrained_accepts_hf_kwargs(self, hf_tokenizer, bpe_tokenizer, tmp_path):
+        """Параметры HF вроде cache_dir/revision принимаются и игнорируются (раньше — TypeError)."""
+        hf_tokenizer.save_pretrained(str(tmp_path / "dir"))
+        file_path = tmp_path / "tokenizer.json"
+        bpe_tokenizer.save(str(file_path))
 
-        def spy(self, llm_tokenizer, **kwargs):
-            seen.update(kwargs)
-            original_init(self, llm_tokenizer)
+        for path in [tmp_path / "dir", file_path]:
+            loaded = HFTokenizerAdapter.from_pretrained(str(path), cache_dir="/tmp", revision="main")
+            assert loaded.encode("hello") == hf_tokenizer.encode("hello")
 
-        monkeypatch.setattr(HFTokenizerAdapter, "__init__", spy)
-        HFTokenizerAdapter.from_pretrained(str(tmp_path), extra=1)
-        assert seen == {"extra": 1}
+    def test_decode_empty(self, hf_tokenizer):
+        assert hf_tokenizer.decode([]) == ""
 
 
 class TestNoImplicitPaddingOrTruncation:
