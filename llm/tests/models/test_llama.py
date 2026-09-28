@@ -51,3 +51,11 @@ def test_generate_with_sampling_topp(model):
     x = torch.randint(0, 100, (1, 3))
     out = model.generate(x, max_new_tokens=2, do_sample=True, top_p=0.8)
     assert out.shape == (1, 5)
+
+def test_uses_rmsnorm(model):
+    """LLaMA нормализует RMSNorm, а не LayerNorm (слой по умолчанию в CachedDecoder)."""
+    from llm.core.rms_norm import RMSNorm
+
+    norms = [m for m in model.modules() if isinstance(m, (RMSNorm, torch.nn.LayerNorm))]
+    assert norms, "no normalization layers found"
+    assert all(isinstance(m, RMSNorm) for m in norms)

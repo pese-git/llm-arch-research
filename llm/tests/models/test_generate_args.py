@@ -132,3 +132,37 @@ def test_plain_sampling_differs_from_greedy(model, prompt):
         sampled = model.generate(prompt, max_new_tokens=6, do_sample=True)
 
     assert not torch.equal(sampled, greedy)
+
+
+def nucleus(probs, top_p):
+    """Множество токенов top-p для строки вероятностей (самый вероятный — всегда)."""
+    sorted_probs, sorted_indices = torch.sort(probs, descending=True)
+    keep = torch.cumsum(sorted_probs, dim=-1) <= top_p
+    keep[0] = True
+    return set(sorted_indices[keep].tolist())
+
+
+def test_top_p_samples_stay_in_nucleus(model, prompt):
+    """Каждый сэмпл при top_p лежит в ядре распределения своего промпта."""
+    top_p = 0.5
+    with torch.no_grad():
+        logits, _ = model(prompt, use_cache=False)
+    allowed = [nucleus(torch.softmax(row, dim=-1), top_p) for row in logits[:, -1]]
+    assert all(len(a) < BASE_CONFIG["vocab_size"] for a in allowed)
+
+    with torch.no_grad():
+        for seed in range(40):
+            torch.manual_seed(seed)
+            out = model.generate(prompt, max_new_tokens=1, do_sample=True, top_p=top_p)
+            for row, token in enumerate(out[:, -1].tolist()):
+                assert token in allowed[row], f"seed {seed}, row {row}"
+
+
+def test_default_temperature_is_one(model, prompt):
+    with torch.no_grad():
+        torch.manual_seed(3)
+        default = model.generate(prompt, max_new_tokens=6, do_sample=True)
+        torch.manual_seed(3)
+        explicit = model.generate(prompt, max_new_tokens=6, do_sample=True, temperature=1.0)
+
+    assert torch.equal(default, explicit)
