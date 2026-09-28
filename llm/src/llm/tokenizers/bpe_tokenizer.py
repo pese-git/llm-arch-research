@@ -4,8 +4,26 @@ BPE (Byte Pair Encoding) токенизатор.
 Реализация алгоритма BPE для токенизации текста.
 """
 
+import re
+from collections import Counter
 from typing import List, Dict, Tuple, Optional
 from .base_tokenizer import BaseTokenizer
+
+# Разбиение текста на слова перед BPE (как в GPT-2): пробел прикрепляется
+# к началу следующего слова, пунктуация идет отдельными кусками, остальные
+# пробельные символы — своими. Конкатенация кусков дает исходный текст.
+_PRETOKENIZE_PATTERN = re.compile(r" ?\w+| ?[^\s\w]+|\s+(?!\S)|\s+")
+
+
+def pretokenize(text: str) -> List[str]:
+    """
+    Разбивает текст на слова, внутри которых работает BPE.
+
+    Пример:
+        >>> pretokenize("Привет, мир!")
+        ['Привет', ',', ' мир', '!']
+    """
+    return _PRETOKENIZE_PATTERN.findall(text)
 
 
 class BPETokenizer(BaseTokenizer):
@@ -69,64 +87,60 @@ class BPETokenizer(BaseTokenizer):
         """
         Обучение BPE токенизатора на текстах.
 
+        Перед обучением каждый текст разбивается на слова (см. pretokenize):
+        пары сливаются только внутри слова, поэтому токены не пересекают
+        границы слов и текстов — как в GPT-2 и у Sennrich et al.
+
         Args:
             texts: Список текстов для обучения
-            vocab_size: Желаемый размер словаря
+            vocab_size: Желаемый размер словаря (без специальных токенов).
+                Обучение останавливается раньше, если каждое слово уже
+                стало одним токеном.
             **kwargs: Дополнительные параметры
                 - special_tokens: Список специальных токенов
         """
-        # Объединяем все тексты в одну строку для обучения
-        combined_text = " ".join(texts)
+        # 1. Разбиваем тексты на слова и считаем частоты слов
+        word_freq = Counter()
+        for text in texts:
+            word_freq.update(pretokenize(text))
 
-        # 1. Получаем уникальные токены (символы)
-        unique_tokens = sorted(set(combined_text))
-        tokens = unique_tokens.copy()
+        # 2. Начальный словарь — уникальные символы
+        tokens = sorted({char for word in word_freq for char in word})
+        known_tokens = set(tokens)
 
-        # 2. Разбиваем текст на токены-символы
-        sequence = list(combined_text)
+        # Каждое уникальное слово — последовательность токенов и его частота
+        words = [(list(word), freq) for word, freq in word_freq.items()]
+        self.merges = {}
 
         # 3. Объединяем токены до достижения нужного размера словаря
         while len(tokens) < vocab_size:
-            # Считаем частоты пар
-            pair_freq = {}
-            for i in range(len(sequence) - 1):
-                pair = (sequence[i], sequence[i + 1])
-                if pair not in pair_freq:
-                    pair_freq[pair] = 0
-                pair_freq[pair] += 1
+            # Считаем частоты пар внутри слов с учетом частоты слова
+            pair_freq: Dict[Tuple[str, str], int] = {}
+            for symbols, freq in words:
+                for pair in zip(symbols, symbols[1:]):
+                    pair_freq[pair] = pair_freq.get(pair, 0) + freq
 
             if not pair_freq:
-                break  # нет пар — выходим
+                break  # каждое слово уже стало одним токеном
 
-            # Находим самую частую пару (в случае равенства — та, что встретилась первой)
-            most_frequent_pair = max(
-                pair_freq.items(),
-                key=lambda x: (x[1], -self._pair_first_index(sequence, x[0])),
-            )[0]
-
-            # Создаем новый токен
+            # Самая частая пара; при равенстве max берет первую встреченную
+            most_frequent_pair = max(pair_freq, key=pair_freq.get)
             new_token = most_frequent_pair[0] + most_frequent_pair[1]
-            tokens.append(new_token)
+            self.merges[most_frequent_pair] = len(self.merges)
 
-            i = 0
-            new_sequence = []
+            # Одна и та же строка может получиться разными слияниями
+            # ("а"+"бв" и "аб"+"в"): в словарь добавляем ее один раз
+            if new_token not in known_tokens:
+                tokens.append(new_token)
+                known_tokens.add(new_token)
 
-            while i < len(sequence):
-                if (
-                    i < len(sequence) - 1
-                    and (sequence[i], sequence[i + 1]) == most_frequent_pair
-                ):
-                    new_sequence.append(new_token)
-                    i += 2  # пропускаем два символа — заменённую пару
-                else:
-                    new_sequence.append(sequence[i])
-                    i += 1
-            sequence = new_sequence
+            for symbols, _ in words:
+                symbols[:] = self._merge_pair(symbols, most_frequent_pair, new_token)
 
         # 4. Создаем словари
         self.vocab_list = tokens.copy()
-        self.vocab = dict(zip(tokens, range(vocab_size)))
-        self.inverse_vocab = dict(zip(range(vocab_size), tokens))
+        self.vocab = {token: i for i, token in enumerate(tokens)}
+        self.inverse_vocab = {i: token for i, token in enumerate(tokens)}
         self.vocab_size = len(self.vocab)
 
         # Добавляем специальные токены если указаны
@@ -136,12 +150,21 @@ class BPETokenizer(BaseTokenizer):
         )
         self.add_special_tokens(special_tokens)
 
-    def _pair_first_index(self, sequence, pair):
-        """Находит первый индекс пары в последовательности."""
-        for i in range(len(sequence) - 1):
-            if (sequence[i], sequence[i + 1]) == pair:
-                return i
-        return float("inf")  # если пара не найдена (в теории не должно случиться)
+    @staticmethod
+    def _merge_pair(
+        symbols: List[str], pair: Tuple[str, str], new_token: str
+    ) -> List[str]:
+        """Заменяет все вхождения пары в последовательности на новый токен."""
+        merged = []
+        i = 0
+        while i < len(symbols):
+            if i < len(symbols) - 1 and (symbols[i], symbols[i + 1]) == pair:
+                merged.append(new_token)
+                i += 2  # пропускаем два символа — заменённую пару
+            else:
+                merged.append(symbols[i])
+                i += 1
+        return merged
 
     def encode(self, text: str, **kwargs) -> List[int]:
         """
@@ -163,29 +186,28 @@ class BPETokenizer(BaseTokenizer):
         """
         add_special_tokens = kwargs.get("add_special_tokens", False)
 
-        # 1. Разбиваем текст на токены-символы
-        sequence = list(text)
-        # 2. Инициализация пустого списка токенов
+        # 1. Разбиваем текст на слова так же, как при обучении
         tokens = []
-        # 3. Установить i = 0
-        i = 0
-        while i < len(text):
-            # 3.1 Найти все токены в словаре, начинающиеся с text[i]
-            start_char = text[i]
-            result = [
-                token for token in self.vocab_list if token.startswith(start_char)
-            ]
-            # 3.2 Выбрать самый длинный подходящий токен
-            find_token = self._find_max_matching_token(text[i:], result)
-            if find_token is None:
-                # Обработка неизвестного символа
-                tokens.append(text[i])  # Добавляем сам символ как токен
-                i += 1
-            else:
-                # 3.3 Добавить токен в результат
-                tokens.append(find_token)
-                # 3.4 Увеличить i на длину токена
-                i += len(find_token)
+        for word in pretokenize(text):
+            # 2. Внутри слова жадно берем самые длинные токены
+            i = 0
+            while i < len(word):
+                # 2.1 Найти все токены в словаре, начинающиеся с word[i]
+                start_char = word[i]
+                result = [
+                    token for token in self.vocab_list if token.startswith(start_char)
+                ]
+                # 2.2 Выбрать самый длинный подходящий токен
+                find_token = self._find_max_matching_token(word[i:], result)
+                if find_token is None:
+                    # Обработка неизвестного символа
+                    tokens.append(word[i])  # Добавляем сам символ как токен
+                    i += 1
+                else:
+                    # 2.3 Добавить токен в результат
+                    tokens.append(find_token)
+                    # 2.4 Увеличить i на длину токена
+                    i += len(find_token)
 
         # 4. Заменить токены на их ID
         token_ids = self._tokens_to_ids(tokens)
@@ -281,8 +303,11 @@ class BPETokenizer(BaseTokenizer):
         """
         import json
 
-        # Преобразуем кортежи в строки для JSON сериализации
-        merges_serializable = {f"{k[0]},{k[1]}": v for k, v in self.merges.items()}
+        # Пары слияний в порядке ранга: список [левый, правый] переживает
+        # JSON без потерь, в отличие от ключей "a,b" (токен может содержать запятую)
+        merges_serializable = [
+            list(pair) for pair, _ in sorted(self.merges.items(), key=lambda x: x[1])
+        ]
 
         config = {
             "vocab": self.vocab,
@@ -325,12 +350,18 @@ class BPETokenizer(BaseTokenizer):
         tokenizer.eos_token = config["eos_token"]
         tokenizer.vocab_list = config["vocab_list"]
 
-        # Восстанавливаем кортежи из строк
+        # Восстанавливаем пары слияний
+        merges = config.get("merges", [])
         tokenizer.merges = {}
-        for k, v in config["merges"].items():
-            parts = k.split(",")
-            if len(parts) == 2:
-                tokenizer.merges[(parts[0], parts[1])] = v
+        if isinstance(merges, dict):
+            # Старый формат: {"a,b": rank}
+            for k, v in merges.items():
+                parts = k.split(",")
+                if len(parts) == 2:
+                    tokenizer.merges[(parts[0], parts[1])] = v
+        else:
+            for rank, (left, right) in enumerate(merges):
+                tokenizer.merges[(left, right)] = rank
 
         # Создаем обратный словарь
         tokenizer.inverse_vocab = {v: k for k, v in tokenizer.vocab.items()}

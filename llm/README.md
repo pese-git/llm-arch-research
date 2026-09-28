@@ -164,6 +164,8 @@ trainer = Trainer(model=model, train_dataset=dataset, lr=3e-4, batch_size=8, num
 trainer.train()
 ```
 
+`BPETokenizer` перед обучением и кодированием разбивает текст на слова, как GPT-2: пробел прикрепляется к началу следующего слова, пунктуация идёт отдельно (`pretokenize` в `bpe_tokenizer.py`). Слияния не выходят за границы слов, поэтому токен не длиннее слова. На маленьком корпусе обучение может остановиться раньше `vocab_size`, когда каждое слово уже стало одним токеном.
+
 `Trainer` — минимальный цикл: AdamW, линейный warmup/decay, gradient clipping 1.0, устройство `cuda` или `cpu`. Сохранение чекпоинтов, AMP и gradient accumulation в нём не реализованы.
 
 ## ⚠️ Известные ограничения

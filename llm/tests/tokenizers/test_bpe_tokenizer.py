@@ -5,7 +5,9 @@ Tests for BPE tokenizer.
 import pytest
 import tempfile
 import os
+import json
 from llm.tokenizers import BPETokenizer
+from llm.tokenizers.bpe_tokenizer import pretokenize
 
 
 class TestBPETokenizer:
@@ -167,3 +169,117 @@ class TestBPETokenizer:
         assert isinstance(tokens, list)
         assert len(tokens) > 0
         assert all(isinstance(token, str) for token in tokens)
+
+
+SPECIAL_TOKENS = ["<pad>", "<unk>", "<bos>", "<eos>"]
+
+
+class TestPretokenize:
+    @pytest.mark.parametrize(
+        "text",
+        ["Привет, мир!", "a  b\n\nc ", "  x", "3.14 — это π", "", "word"],
+    )
+    def test_lossless(self, text):
+        assert "".join(pretokenize(text)) == text
+
+    def test_space_attached_to_next_word(self):
+        assert pretokenize("Привет, мир!") == ["Привет", ",", " мир", "!"]
+
+
+class TestBPEWordBoundaries:
+    """Слияния BPE не должны выходить за границы слов и текстов."""
+
+    @pytest.fixture
+    def texts(self):
+        return [
+            "Нейронные сети учатся на данных.",
+            "Нейронные сети обрабатывают текст.",
+            "Трансформеры изменили обработку текста.",
+        ]
+
+    def test_tokens_do_not_span_words(self, texts):
+        tokenizer = BPETokenizer()
+        # Большой vocab_size: обучение идет до конца, пока слова не сольются
+        tokenizer.train(texts, vocab_size=10_000, special_tokens=SPECIAL_TOKENS)
+
+        for token in tokenizer.vocab_list:
+            assert len(pretokenize(token)) == 1, token
+
+    def test_stops_when_words_fully_merged(self, texts):
+        tokenizer = BPETokenizer()
+        tokenizer.train(texts, vocab_size=10_000, special_tokens=SPECIAL_TOKENS)
+
+        words = {word for text in texts for word in pretokenize(text)}
+        assert words <= set(tokenizer.vocab_list)
+        assert tokenizer.get_vocab_size() < 10_000
+
+    def test_repeated_word_becomes_single_token(self):
+        tokenizer = BPETokenizer()
+        tokenizer.train(["мир мир мир мир"], vocab_size=100, special_tokens=SPECIAL_TOKENS)
+
+        assert tokenizer.tokenize("мир мир") == ["мир", " мир"]
+
+    def test_texts_are_not_merged_together(self):
+        tokenizer = BPETokenizer()
+        tokenizer.train(["аб", "вг"] * 10, vocab_size=100, special_tokens=SPECIAL_TOKENS)
+
+        assert not any("б" in token and "в" in token for token in tokenizer.vocab_list)
+
+    def test_encode_decode_roundtrip(self, texts):
+        tokenizer = BPETokenizer()
+        tokenizer.train(texts, vocab_size=80, special_tokens=SPECIAL_TOKENS)
+
+        # Новая фраза из тех же символов: неизвестные символы стали бы <unk>
+        for text in texts + ["Нейронные данные обрабатывают текст."]:
+            assert tokenizer.decode(tokenizer.encode(text)) == text
+
+    def test_vocab_ids_are_unique_and_contiguous(self, texts):
+        tokenizer = BPETokenizer()
+        tokenizer.train(texts, vocab_size=10_000, special_tokens=SPECIAL_TOKENS)
+
+        ids = sorted(tokenizer.get_vocab().values())
+        assert ids == list(range(tokenizer.get_vocab_size()))
+        assert len(tokenizer.vocab_list) == len(set(tokenizer.vocab_list))
+
+    def test_training_is_deterministic(self, texts):
+        first, second = BPETokenizer(), BPETokenizer()
+        first.train(texts, vocab_size=60, special_tokens=SPECIAL_TOKENS)
+        second.train(texts, vocab_size=60, special_tokens=SPECIAL_TOKENS)
+
+        assert first.get_vocab() == second.get_vocab()
+        assert first.merges == second.merges
+
+
+class TestBPEMerges:
+    def test_merges_recorded_in_rank_order(self):
+        tokenizer = BPETokenizer()
+        tokenizer.train(["мир мир мир"], vocab_size=100, special_tokens=SPECIAL_TOKENS)
+
+        assert tokenizer.merges
+        assert sorted(tokenizer.merges.values()) == list(range(len(tokenizer.merges)))
+        for left, right in tokenizer.merges:
+            assert left + right in tokenizer.get_vocab()
+
+    def test_save_load_keeps_merges_with_commas(self, tmp_path):
+        tokenizer = BPETokenizer()
+        tokenizer.train(["a,, b,, c,, a,, b,,"], vocab_size=100, special_tokens=SPECIAL_TOKENS)
+        assert any("," in left + right for left, right in tokenizer.merges)
+
+        path = tmp_path / "tokenizer.json"
+        tokenizer.save(str(path))
+        loaded = BPETokenizer.load(str(path))
+
+        assert loaded.merges == tokenizer.merges
+
+    def test_load_legacy_merges_format(self, tmp_path):
+        tokenizer = BPETokenizer()
+        tokenizer.train(["мир мир"], vocab_size=100, special_tokens=SPECIAL_TOKENS)
+        path = tmp_path / "tokenizer.json"
+        tokenizer.save(str(path))
+
+        config = json.loads(path.read_text(encoding="utf-8"))
+        config["merges"] = {"м,и": 0, "ми,р": 1}
+        path.write_text(json.dumps(config, ensure_ascii=False), encoding="utf-8")
+
+        loaded = BPETokenizer.load(str(path))
+        assert loaded.merges == {("м", "и"): 0, ("ми", "р"): 1}
