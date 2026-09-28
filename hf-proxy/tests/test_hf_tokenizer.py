@@ -274,6 +274,32 @@ class TestSaveLoad:
         with open(tmp_path / "vocab.json", encoding="utf-8") as f:
             assert json.load(f) == hf_tokenizer.get_vocab()
 
+    def test_save_pretrained_without_vocab_list(self, tmp_path):
+        """Токенизатор без vocab_list (не BPE) сохраняется без этого поля."""
+        from llm.tokenizers import BaseTokenizer
+
+        class CharTokenizer(BaseTokenizer):
+            def train(self, texts, vocab_size=1000, **kwargs):
+                chars = sorted(set("".join(texts)))
+                self.vocab = {c: i for i, c in enumerate(chars)}
+                self.inverse_vocab = {i: c for c, i in self.vocab.items()}
+                self.vocab_size = len(self.vocab)
+                self.add_special_tokens(kwargs.get("special_tokens", []))
+
+            def encode(self, text, **kwargs):
+                return [self.vocab[c] for c in text]
+
+            def decode(self, tokens, **kwargs):
+                return "".join(self.inverse_vocab[t] for t in tokens)
+
+        llm_tokenizer = CharTokenizer()
+        llm_tokenizer.train(["аб"], special_tokens=["<pad>"])
+        HFTokenizerAdapter(llm_tokenizer).save_pretrained(str(tmp_path))
+
+        config = json.loads((tmp_path / "tokenizer_config.json").read_text(encoding="utf-8"))
+        assert "vocab_list" not in config
+        assert config["llm_tokenizer_type"] == "CharTokenizer"
+
     def test_convert_to_hf_format(self, bpe_tokenizer, tmp_path):
         adapter = convert_to_hf_format(bpe_tokenizer, str(tmp_path))
         assert isinstance(adapter, HFTokenizerAdapter)

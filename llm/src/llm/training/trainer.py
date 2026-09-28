@@ -212,3 +212,4 @@ class Trainer:
 
         avg_loss = total_loss / len(self.val_loader)
         print(f"Validation loss: {avg_loss:.4f}")
+        return avg_loss

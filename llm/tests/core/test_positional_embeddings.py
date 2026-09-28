@@ -141,3 +141,15 @@ class TestPositionalEmbeddings:
         output = embeddings(seq_len)
 
         assert output.shape == (seq_len, embed_dim)
+
+    @pytest.mark.parametrize("seq_len", [0, 11])
+    def test_invalid_sequence_length_raises(self, embed_dim, seq_len):
+        """Длина вне диапазона [1, max_seq_len] отклоняется."""
+        embeddings = PositionalEmbeddings(max_seq_len=10, emb_size=embed_dim)
+
+        with pytest.raises(IndexError, match="от 1 до 10"):
+            embeddings(seq_len)
+
+    def test_max_sequence_length_accepted(self, embed_dim):
+        embeddings = PositionalEmbeddings(max_seq_len=10, emb_size=embed_dim)
+        assert embeddings(10).shape == (10, embed_dim)
