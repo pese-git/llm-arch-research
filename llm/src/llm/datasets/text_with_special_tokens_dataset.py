@@ -64,34 +64,25 @@ class TextWithSpecialTokensDataset(TextDataset):
         self.add_eos = add_eos
 
         for text in texts:
-            # Кодируем с специальными токенами
-            input_ids = tokenizer.encode(
-                text, add_special_tokens=True, add_bos_token=add_bos, add_eos_token=add_eos
-            )
+            # Кодируем без специальных токенов: bos/eos добавляются ниже ровно
+            # по одному. Иначе токенизатор (например, BPETokenizer при
+            # add_special_tokens=True) добавил бы свои и они задвоились бы.
+            input_ids = tokenizer.encode(text, add_special_tokens=False)
 
-            # Учитываем специальные токены при обрезке/дополнении
-            effective_block_size = block_size
-            if add_bos:
-                effective_block_size -= 1
-            if add_eos:
-                effective_block_size -= 1
+            bos_token_id = getattr(tokenizer, "bos_token_id", None)
+            eos_token_id = getattr(tokenizer, "eos_token_id", None)
+            use_bos = add_bos and bos_token_id is not None
+            use_eos = add_eos and eos_token_id is not None
 
+            # Оставляем место под специальные токены при обрезке
+            effective_block_size = block_size - int(use_bos) - int(use_eos)
             if len(input_ids) > effective_block_size:
                 input_ids = input_ids[:effective_block_size]
 
-            # Добавляем специальные токены если нужно
-            if (
-                add_bos
-                and hasattr(tokenizer, "bos_token_id")
-                and tokenizer.bos_token_id is not None
-            ):
-                input_ids = [tokenizer.bos_token_id] + input_ids
-            if (
-                add_eos
-                and hasattr(tokenizer, "eos_token_id")
-                and tokenizer.eos_token_id is not None
-            ):
-                input_ids = input_ids + [tokenizer.eos_token_id]
+            if use_bos:
+                input_ids = [bos_token_id] + input_ids
+            if use_eos:
+                input_ids = input_ids + [eos_token_id]
 
             # Дополняем до полной длины
             pad_token_id = getattr(tokenizer, "pad_token_id", 0)
