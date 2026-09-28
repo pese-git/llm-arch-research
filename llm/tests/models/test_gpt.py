@@ -307,3 +307,24 @@ class TestGPT:
         """An unknown activation name is rejected."""
         with pytest.raises(ValueError):
             GPT({**gpt_config, "activation": "tanh"})
+
+    def test_max_seq_len_property(self, gpt_config):
+        """max_seq_len reflects max_position_embeddings from the config."""
+        model = GPT({**gpt_config, "max_position_embeddings": 16})
+        assert model.max_seq_len == 16
+
+    def test_forward_accepts_max_length(self, gpt_config):
+        """A sequence of exactly max_position_embeddings tokens is accepted."""
+        model = GPT({**gpt_config, "max_position_embeddings": 16})
+        x = torch.randint(0, gpt_config["vocab_size"], (1, 16))
+
+        logits, _ = model(x)
+        assert logits.shape == (1, 16, gpt_config["vocab_size"])
+
+    def test_forward_sequence_too_long(self, gpt_config):
+        """A sequence longer than max_position_embeddings is rejected."""
+        model = GPT({**gpt_config, "max_position_embeddings": 16})
+        x = torch.randint(0, gpt_config["vocab_size"], (1, 17))
+
+        with pytest.raises(ValueError, match="17.*16"):
+            model(x)
