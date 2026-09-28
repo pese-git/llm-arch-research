@@ -21,7 +21,6 @@ llm-arch-research/
 ├── pyproject.toml              # корневой workspace-конфиг
 ├── uv.lock
 ├── docs/                       # разбор архитектур (по файлу на модель)
-├── assets/drawio/              # drawio-исходники диаграмм GPT-1
 │
 ├── llm/                        # основная библиотека
 │   ├── src/llm/

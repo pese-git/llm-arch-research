@@ -95,5 +95,3 @@
 RoPE нарисован сбоку от декодера с пунктирной стрелкой в attention: он не прибавляется к основному потоку, как позиционные эмбеддинги GPT, а поворачивает Q и K внутри attention каждого слоя. Подробно — в [llama.md](llama.md#attention-с-rope).
 
 Подробные схемы Multi-Head Attention, одной головы attention и FFN — в [gpt.md](gpt.md#устройство-компонентов), головы attention с RoPE — в [llama.md](llama.md#attention-с-rope), схема маршрутизации MoE — в [mixtral.md](mixtral.md#moe-изнутри).
-
-drawio-исходники и PNG-экспорты схем GPT-1 в [`assets/`](../assets) устарели: в них FFN показан с ReLU (до исправления `GptDecoder` на GELU). Актуальные схемы — Mermaid в этих документах.

@@ -1,7 +1,7 @@
 # GPT-1
 
 > Реализация: [`llm/src/llm/models/gpt/gpt.py`](../llm/src/llm/models/gpt/gpt.py) · класс `GPT`
-> Ноутбук: [`notebooks/gpt.ipynb`](../notebooks/gpt.ipynb) · Диаграммы: [`assets/drawio/gpt1-*.drawio`](../assets/drawio)
+> Ноутбук: [`notebooks/gpt.ipynb`](../notebooks/gpt.ipynb)
 
 Место в линейке: **GPT-1** → [GPT-2](gpt2.md) → [LLaMA](llama.md) → [Mistral](mistral.md) → [Mixtral](mixtral.md) · [Gemma](gemma.md)
 
