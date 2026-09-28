@@ -78,7 +78,7 @@ class GptDecoder(nn.Module):
         Внутри:
         -------
         - Создаёт слой MultiHeadAttention (masked/casual)
-        - Создаёт двухслойный FeedForward (SwiGLU или GELU)
+        - Создаёт двухслойный FeedForward с активацией GELU
         - Применяет 2 слоя LayerNorm для стабилизации градиентов
         - Все блоки реализованы как PyTorch-модули
         """
@@ -90,7 +90,15 @@ class GptDecoder(nn.Module):
             max_seq_len=max_seq_len,
             dropout=dropout,
         )
-        self._ff = FeedForward(emb_size=emb_size, dropout=dropout)
+        # GPT-1 использует GELU, а не ReLU (по умолчанию в FeedForward):
+        # "For the activation function, we used the Gaussian Error Linear Unit (GELU)"
+        # — Radford et al., "Improving Language Understanding by Generative Pre-Training", 2018, разд. 4.1
+        # https://cdn.openai.com/research-covers/language-unsupervised/language_understanding_paper.pdf
+        self._ff = FeedForward(
+            emb_size=emb_size,
+            dropout=dropout,
+            activation="gelu",
+        )
         self._norm1 = nn.LayerNorm(emb_size)
         self._norm2 = nn.LayerNorm(emb_size)
 
