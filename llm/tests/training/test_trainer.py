@@ -1,3 +1,4 @@
+import pytest
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset
@@ -60,3 +61,41 @@ def test_trainer_loss_decreases():
     trainer.train()
     avg_losses = trainer.loss_history
     assert avg_losses[-1] <= avg_losses[0] or abs(avg_losses[-1] - avg_losses[0]) < 1e-3
+
+class TupleModel(nn.Module):
+    """Как модели llm: forward возвращает (logits, cache)."""
+
+    def __init__(self, vocab_size=16, seq_len=8):
+        super().__init__()
+        self.linear = nn.Linear(seq_len, vocab_size)
+
+    def forward(self, x):
+        logits = self.linear(x.float()).unsqueeze(1).expand(-1, x.shape[1], -1)
+        return logits, None
+
+
+def test_trainer_evaluate_returns_average_loss():
+    train_data = ToyLMDataset(num_samples=8)
+    val_data = ToyLMDataset(num_samples=8)
+    model = TinyModel()
+    trainer = Trainer(model, train_data, val_data, lr=1e-3, batch_size=4, num_epochs=1, warmup_steps=2)
+
+    loss = trainer.evaluate()
+
+    assert isinstance(loss, float) and loss > 0
+    assert not model.training  # evaluate переводит модель в eval()
+
+
+def test_trainer_evaluate_tuple_output():
+    """Валидация с моделью, которая, как модели llm, возвращает кортеж."""
+    torch.manual_seed(0)
+    train_data = ToyLMDataset(num_samples=8)
+    val_data = ToyLMDataset(num_samples=8)
+    tuple_model = TupleModel()
+    tensor_model = TinyModel()
+    tensor_model.load_state_dict(tuple_model.state_dict())
+
+    tuple_loss = Trainer(tuple_model, train_data, val_data, batch_size=4).evaluate()
+    tensor_loss = Trainer(tensor_model, train_data, val_data, batch_size=4).evaluate()
+
+    assert tuple_loss == pytest.approx(tensor_loss)

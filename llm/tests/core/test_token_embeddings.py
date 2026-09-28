@@ -109,3 +109,10 @@ class TestTokenEmbeddings:
         output = embeddings(inputs)
 
         assert output.shape == (batch_size, seq_len, embed_dim)
+
+    def test_size_properties(self, vocab_size, embed_dim):
+        """num_embeddings и embedding_dim отражают параметры конструктора."""
+        embeddings = TokenEmbeddings(vocab_size=vocab_size, emb_size=embed_dim)
+
+        assert embeddings.num_embeddings == vocab_size
+        assert embeddings.embedding_dim == embed_dim

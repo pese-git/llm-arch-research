@@ -283,3 +283,35 @@ class TestBPEMerges:
 
         loaded = BPETokenizer.load(str(path))
         assert loaded.merges == {("м", "и"): 0, ("ми", "р"): 1}
+
+
+class TestBPESpecialTokenHandling:
+    def test_encode_without_special_tokens_in_vocab(self):
+        """add_special_tokens=True ничего не добавляет, если bos/eos нет в словаре."""
+        tokenizer = BPETokenizer()
+        tokenizer.train(["мир мир"], vocab_size=100, special_tokens=[])
+        assert tokenizer.bos_token_id is None and tokenizer.eos_token_id is None
+
+        with_special = tokenizer.encode("мир", add_special_tokens=True)
+        assert with_special == tokenizer.encode("мир", add_special_tokens=False)
+
+    def test_decode_keeps_special_tokens_when_asked(self):
+        tokenizer = BPETokenizer()
+        tokenizer.train(["мир мир"], vocab_size=100, special_tokens=SPECIAL_TOKENS)
+        ids = tokenizer.encode("мир", add_special_tokens=True)
+
+        assert tokenizer.decode(ids) == "мир"
+        assert tokenizer.decode(ids, skip_special_tokens=False) == "<bos>мир<eos>"
+
+    def test_load_legacy_merges_skips_ambiguous_keys(self, tmp_path):
+        """В старом формате ключ "a,b" с запятой внутри токена неоднозначен и пропускается."""
+        tokenizer = BPETokenizer()
+        tokenizer.train(["мир мир"], vocab_size=100, special_tokens=SPECIAL_TOKENS)
+        path = tmp_path / "tokenizer.json"
+        tokenizer.save(str(path))
+
+        config = json.loads(path.read_text(encoding="utf-8"))
+        config["merges"] = {"м,и": 0, ",,,": 1}
+        path.write_text(json.dumps(config, ensure_ascii=False), encoding="utf-8")
+
+        assert BPETokenizer.load(str(path)).merges == {("м", "и"): 0}
