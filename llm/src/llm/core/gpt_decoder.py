@@ -58,6 +58,7 @@ class GptDecoder(nn.Module):
         head_size: int,
         max_seq_len: int,
         dropout: float = 0.1,
+        activation: str = "gelu",
     ):
         """
         Инициализация стандартного decoder-блока для Transformer.
@@ -74,11 +75,14 @@ class GptDecoder(nn.Module):
             Максимальная длина последовательности (важно для mask)
         dropout: float, default=0.1
             Dropout после внимания и FFN
+        activation: str, default="gelu"
+            Активация в FeedForward ("gelu", "relu", "gelu_exact").
+            GELU — как в оригинальной GPT-1; ReLU — упрощённый учебный вариант.
 
         Внутри:
         -------
         - Создаёт слой MultiHeadAttention (masked/casual)
-        - Создаёт двухслойный FeedForward с активацией GELU
+        - Создаёт двухслойный FeedForward с заданной активацией (по умолчанию GELU)
         - Применяет 2 слоя LayerNorm для стабилизации градиентов
         - Все блоки реализованы как PyTorch-модули
         """
@@ -90,14 +94,14 @@ class GptDecoder(nn.Module):
             max_seq_len=max_seq_len,
             dropout=dropout,
         )
-        # GPT-1 использует GELU, а не ReLU (по умолчанию в FeedForward):
+        # По умолчанию GELU, а не ReLU (дефолт FeedForward), т.к. GPT-1 использует GELU:
         # "For the activation function, we used the Gaussian Error Linear Unit (GELU)"
         # — Radford et al., "Improving Language Understanding by Generative Pre-Training", 2018, разд. 4.1
         # https://cdn.openai.com/research-covers/language-unsupervised/language_understanding_paper.pdf
         self._ff = FeedForward(
             emb_size=emb_size,
             dropout=dropout,
-            activation="gelu",
+            activation=activation,
         )
         self._norm1 = nn.LayerNorm(emb_size)
         self._norm2 = nn.LayerNorm(emb_size)

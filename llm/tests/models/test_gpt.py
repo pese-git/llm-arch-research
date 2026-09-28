@@ -280,3 +280,23 @@ class TestGPT:
         probs = torch.softmax(logits, dim=-1)
         assert torch.allclose(probs.sum(dim=-1), torch.ones_like(probs.sum(dim=-1)))
         assert (probs >= 0).all() and (probs <= 1).all()
+
+    def test_default_activation_is_gelu(self, gpt_config):
+        """By default FFN uses GELU, as in the GPT-1 paper."""
+        model = GPT(gpt_config)
+        for decoder in model._decoders:
+            assert isinstance(decoder._ff._activation, torch.nn.GELU)
+
+    def test_relu_activation_from_config(self, gpt_config, random_inputs):
+        """activation='relu' in config switches FFN to ReLU."""
+        model = GPT({**gpt_config, "activation": "relu"})
+        for decoder in model._decoders:
+            assert isinstance(decoder._ff._activation, torch.nn.ReLU)
+
+        logits, _ = model(random_inputs)
+        assert logits.shape == (*random_inputs.shape, gpt_config["vocab_size"])
+
+    def test_unknown_activation_raises(self, gpt_config):
+        """An unknown activation name is rejected."""
+        with pytest.raises(ValueError):
+            GPT({**gpt_config, "activation": "tanh"})
