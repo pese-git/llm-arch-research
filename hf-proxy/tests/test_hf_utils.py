@@ -195,11 +195,6 @@ class TestCompareWithHFModel:
         assert result["kl_divergence"] > 0
         assert result["cosine_similarity"] == pytest.approx(-1.0, abs=1e-5)
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="GPT.forward возвращает (logits, cache), а compare_with_hf_model "
-        "индексирует результат как тензор",
-    )
     def test_with_llm_gpt(self, gpt_model, reference):
         result = HFUtils.compare_with_hf_model(gpt_model)
         assert "kl_divergence" in result

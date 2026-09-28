@@ -151,11 +151,6 @@ class TestHFAdapter:
         state_dict = torch.load(save_dir / "pytorch_model.bin")
         assert state_dict.keys() == gpt_model.state_dict().keys()
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="save_pretrained проверяет hasattr(kwargs, 'tokenizer') вместо "
-        "'tokenizer' in kwargs — токенизатор никогда не сохраняется",
-    )
     def test_save_pretrained_saves_tokenizer(self, gpt_model, tmp_path):
         adapter = HFAdapter.from_llm_model(gpt_model)
         tokenizer = MagicMock()
@@ -174,13 +169,49 @@ class TestHFAdapter:
         with torch.no_grad():
             assert torch.allclose(loaded(input_ids).logits, adapter(input_ids).logits)
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="from_pretrained без конфига выводит только vocab_size/hidden_size, "
-        "а число слоёв и голов берёт по умолчанию (12)",
-    )
-    def test_from_pretrained_infers_config(self, gpt_model, tmp_path):
+    def test_from_pretrained_reads_saved_config(
+        self, gpt_model, llm_config, input_ids, tmp_path
+    ):
+        adapter = HFAdapter.from_llm_model(gpt_model)
+        HFAdapter.save_pretrained(adapter, str(tmp_path))
+
+        loaded = HFAdapter.from_pretrained(os.path.join(tmp_path, "pytorch_model.bin"))
+        assert loaded.config.num_hidden_layers == llm_config["num_layers"]
+        assert loaded.config.num_attention_heads == llm_config["num_heads"]
+        assert loaded.config.max_position_embeddings == llm_config["max_position_embeddings"]
+        loaded.eval()
+        with torch.no_grad():
+            assert torch.allclose(loaded(input_ids).logits, adapter(input_ids).logits)
+
+    def test_from_pretrained_infers_config_from_weights(self, tmp_path):
+        llm_config = {
+            "vocab_size": 40,
+            "embed_dim": 24,
+            "num_heads": 12,
+            "num_layers": 3,
+            "max_position_embeddings": 20,
+            "dropout": 0.0,
+        }
+        path = tmp_path / "model.bin"
+        torch.save(GPT(llm_config).state_dict(), path)
+
+        with pytest.warns(UserWarning, match="num_attention_heads"):
+            loaded = HFAdapter.from_pretrained(str(path))
+
+        assert loaded.config.vocab_size == 40
+        assert loaded.config.hidden_size == 24
+        assert loaded.config.num_hidden_layers == 3
+        assert loaded.config.max_position_embeddings == 20
+
+    def test_from_pretrained_without_config_bad_heads(self, gpt_model, tmp_path):
+        # embed_dim=16 не делится на 12 голов по умолчанию
         path = tmp_path / "model.bin"
         torch.save(gpt_model.state_dict(), path)
-        loaded = HFAdapter.from_pretrained(str(path))
-        assert loaded.config.num_hidden_layers == len(gpt_model._decoders)
+        with pytest.raises(ValueError, match="hf_config"):
+            HFAdapter.from_pretrained(str(path))
+
+    def test_from_pretrained_unknown_checkpoint(self, tmp_path):
+        path = tmp_path / "model.bin"
+        torch.save({"weight": torch.zeros(1)}, path)
+        with pytest.raises(ValueError, match="hf_config"):
+            HFAdapter.from_pretrained(str(path))

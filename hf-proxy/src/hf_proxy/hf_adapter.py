@@ -2,6 +2,10 @@
 Адаптер для интеграции моделей llm с HuggingFace Transformers.
 """
 
+import json
+import os
+import warnings
+
 import torch
 import torch.nn as nn
 from typing import Optional, Tuple, Union, List
@@ -50,7 +54,8 @@ class HFGPTAdapter(PreTrainedModel):
         if hasattr(config, "state_dict") and config.state_dict is not None:
             self.llm_model.load_state_dict(config.state_dict)
 
-    def _hf_to_llm_config(self, hf_config: HFPretrainedConfig) -> dict:
+    @staticmethod
+    def _hf_to_llm_config(hf_config: HFPretrainedConfig) -> dict:
         """
         Преобразует конфигурацию HF в формат llm.
 
@@ -236,39 +241,73 @@ class HFAdapter:
         # Загружаем состояние модели
         state_dict = torch.load(model_path, map_location="cpu")
 
-        # Определяем конфигурацию из состояния модели или используем переданную
-        if hf_config is None:
-            # Пытаемся определить конфигурацию из состояния модели
-            # Это упрощенный подход - в реальности нужно сохранять конфигурацию отдельно
-            vocab_size = state_dict.get(
-                "_token_embeddings._embedding.weight", torch.zeros(50257, 768)
-            ).shape[0]
-            embed_dim = state_dict.get(
-                "_token_embeddings._embedding.weight", torch.zeros(50257, 768)
-            ).shape[1]
-
-            hf_config = HFAdapterConfig(
-                vocab_size=vocab_size,
-                hidden_size=embed_dim,
-                # Остальные параметры можно установить по умолчанию
-            )
-
-        pretrained_config = HFPretrainedConfig(**hf_config.to_dict())
+        if hf_config is not None:
+            pretrained_config = HFPretrainedConfig(**hf_config.to_dict())
+        else:
+            pretrained_config = HFAdapter._infer_config(model_path, state_dict)
 
         # Создаем модель llm и загружаем веса
-        llm_config = {
-            "vocab_size": hf_config.vocab_size,
-            "embed_dim": hf_config.hidden_size,
-            "num_heads": hf_config.num_attention_heads,
-            "num_layers": hf_config.num_hidden_layers,
-            "max_position_embeddings": hf_config.max_position_embeddings,
-            "dropout": hf_config.hidden_dropout_prob,
-        }
-
-        llm_model = GPT(llm_config)
+        llm_model = GPT(HFGPTAdapter._hf_to_llm_config(pretrained_config))
         llm_model.load_state_dict(state_dict)
 
         return HFGPTAdapter(pretrained_config, llm_model)
+
+    @staticmethod
+    def _infer_config(model_path: str, state_dict: dict) -> HFPretrainedConfig:
+        """
+        Определяет конфигурацию для чекпоинта без явно переданного конфига.
+
+        Сначала ищет config.json рядом с чекпоинтом (его пишет save_pretrained).
+        Если файла нет, размеры восстанавливаются по весам. Число голов внимания
+        по весам не определить (Q/K/V — общие матрицы embed_dim x embed_dim),
+        поэтому для него берется значение по умолчанию.
+        """
+        config_path = os.path.join(os.path.dirname(model_path), "config.json")
+        if os.path.isfile(config_path):
+            with open(config_path, "r", encoding="utf-8") as f:
+                return HFPretrainedConfig(**json.load(f))
+
+        token_key = "_token_embeddings._embedding.weight"
+        if token_key not in state_dict:
+            raise ValueError(
+                f"Не удалось определить конфигурацию: в чекпоинте нет {token_key}. "
+                "Передайте hf_config явно."
+            )
+        vocab_size, embed_dim = state_dict[token_key].shape
+
+        defaults = HFAdapterConfig()
+        position_weight = state_dict.get("_position_embeddings.embedding.weight")
+        max_position_embeddings = (
+            position_weight.shape[0]
+            if position_weight is not None
+            else defaults.max_position_embeddings
+        )
+        layer_ids = {
+            int(key.split(".")[1]) for key in state_dict if key.startswith("_decoders.")
+        }
+        num_layers = max(layer_ids) + 1 if layer_ids else 0
+
+        num_heads = defaults.num_attention_heads
+        if embed_dim % num_heads != 0:
+            raise ValueError(
+                f"Число голов внимания нельзя определить по весам, а значение по "
+                f"умолчанию ({num_heads}) не делит embed_dim={embed_dim}. "
+                "Передайте hf_config явно или сохраните модель через save_pretrained."
+            )
+        warnings.warn(
+            f"config.json не найден рядом с {model_path}: используется "
+            f"num_attention_heads={num_heads} по умолчанию.",
+            UserWarning,
+        )
+
+        return HFPretrainedConfig(
+            vocab_size=vocab_size,
+            hidden_size=embed_dim,
+            num_hidden_layers=num_layers,
+            num_attention_heads=num_heads,
+            max_position_embeddings=max_position_embeddings,
+            intermediate_size=4 * embed_dim,
+        )
 
     @staticmethod
     def save_pretrained(model: HFGPTAdapter, save_directory: str, **kwargs):
@@ -280,9 +319,6 @@ class HFAdapter:
             save_directory: Директория для сохранения
             **kwargs: Дополнительные параметры
         """
-        import os
-        import json
-
         # Создаем директорию если не существует
         os.makedirs(save_directory, exist_ok=True)
 
@@ -296,5 +332,5 @@ class HFAdapter:
         torch.save(model.llm_model.state_dict(), model_path)
 
         # Сохраняем токенизатор если передан
-        if hasattr(kwargs, "tokenizer") and kwargs["tokenizer"] is not None:
+        if kwargs.get("tokenizer") is not None:
             kwargs["tokenizer"].save_pretrained(save_directory)

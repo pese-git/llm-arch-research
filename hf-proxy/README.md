@@ -53,16 +53,14 @@ generated = hf_model.generate(input_ids=input_ids, max_new_tokens=30, do_sample=
 ### Сохранение и загрузка
 
 ```python
-HFAdapter.save_pretrained(hf_model, "checkpoints/my-gpt")     # config.json + pytorch_model.bin
-hf_tokenizer.save_pretrained("checkpoints/my-gpt-tokenizer")
+# config.json + pytorch_model.bin (+ файлы токенизатора, если он передан)
+HFAdapter.save_pretrained(hf_model, "checkpoints/my-gpt", tokenizer=hf_tokenizer)
 
-from hf_proxy import HFAdapterConfig
-config = HFAdapterConfig.from_llm_config(model.config)
-loaded = HFAdapter.from_pretrained("checkpoints/my-gpt/pytorch_model.bin", hf_config=config)
-loaded_tokenizer = HFTokenizerAdapter.from_pretrained("checkpoints/my-gpt-tokenizer")
+loaded = HFAdapter.from_pretrained("checkpoints/my-gpt/pytorch_model.bin")
+loaded_tokenizer = HFTokenizerAdapter.from_pretrained("checkpoints/my-gpt")
 ```
 
-Передавайте `hf_config` в `HFAdapter.from_pretrained` явно: без него из весов восстанавливаются только `vocab_size` и `embed_dim`, а число слоёв, голов и длина контекста берутся по умолчанию (12 / 12 / 1024); если они не совпадают с сохранённой моделью, `load_state_dict` падает с `RuntimeError`.
+Без `hf_config` `HFAdapter.from_pretrained` читает `config.json`, лежащий рядом с чекпоинтом (его пишет `save_pretrained`). Если файла нет, `vocab_size`, `embed_dim`, число слоёв и длина контекста восстанавливаются по весам, а число голов внимания берётся по умолчанию (12) с предупреждением: по весам его не определить. Если 12 не делит `embed_dim`, бросается `ValueError` — тогда передайте `hf_config` явно.
 
 Готовые сценарии — в [experiments/hf_integration/](../experiments/README.md#-hf_integration-через-hf-proxy).
 
@@ -71,5 +69,4 @@ loaded_tokenizer = HFTokenizerAdapter.from_pretrained("checkpoints/my-gpt-tokeni
 - **Только `GPT`.** `HFAdapter` всегда создаёт `llm.models.gpt.GPT`.
 - **`attention_mask` и `past_key_values` игнорируются** в `forward`; KV-кэш HF не поддерживается.
 - **`HFGPTAdapter.generate`** передаёт управление `GPT.generate`: учитываются `max_new_tokens`, `do_sample`, `temperature`, `top_k`, `top_p`, а `generation_config`, `logits_processor`, `stopping_criteria` и остановка по `eos_token_id` не применяются.
-- **`HFAdapter.save_pretrained(model, dir, tokenizer=...)` не сохраняет токенизатор** — сохраняйте его отдельно через `hf_tokenizer.save_pretrained(...)`.
 - Значения по умолчанию в `HFAdapterConfig` (`pad/bos/eos_token_id = 50256`, `architectures = ["GPT2LMHeadModel"]`) рассчитаны на словарь GPT-2 и не соответствуют собственному BPE-токенизатору.

@@ -3,7 +3,10 @@
 """
 
 import json
+import os
 from typing import Dict, List, Optional, Union
+
+import torch
 from llm.tokenizers import BPETokenizer, BaseTokenizer
 
 
@@ -72,20 +75,29 @@ class HFTokenizerAdapter:
                 for t in text
             ]
 
-        # Применяем truncation
-        if truncation and max_length is not None and len(input_ids) > max_length:
-            input_ids = input_ids[:max_length]
+        # Применяем truncation к каждой последовательности батча
+        if truncation and max_length is not None:
+            input_ids = [ids[:max_length] for ids in input_ids]
 
-        # Применяем padding
-        if padding and max_length is not None and len(input_ids) < max_length:
-            input_ids = input_ids + [self.pad_token_id] * (max_length - len(input_ids))
+        # Применяем padding к каждой последовательности батча:
+        # "max_length" — до max_length, True/"longest" — до самой длинной
+        if padding == "max_length" and max_length is not None:
+            target_len = max_length
+        elif padding:
+            target_len = max(len(ids) for ids in input_ids)
+        else:
+            target_len = 0
+        input_ids = [
+            ids + [self.pad_token_id] * (target_len - len(ids))
+            if len(ids) < target_len
+            else ids
+            for ids in input_ids
+        ]
 
         # Конвертируем в тензоры если нужно
         # input_ids уже в формате батча ([[...]] или [[...], [...], ...]),
         # повторное оборачивание в список добавляет лишнюю размерность.
         if return_tensors == "pt":
-            import torch
-
             input_ids = torch.tensor(input_ids)
 
         return {"input_ids": input_ids}
@@ -136,8 +148,6 @@ class HFTokenizerAdapter:
 
         # Конвертируем в тензоры если нужно
         if return_tensors == "pt":
-            import torch
-
             return torch.tensor([token_ids])
         elif return_tensors == "np":
             import numpy as np
@@ -264,18 +274,16 @@ class HFTokenizerAdapter:
                 else:
                     current_len = len(input_ids)
 
-                if current_len < max_len:
-                    # Дополняем pad_token_id
-                    padding_length = max_len - current_len
+                padding_length = max(max_len - current_len, 0)
 
+                if padding_length > 0:
+                    # Дополняем pad_token_id
                     # Обрабатываем разные типы данных
                     if isinstance(input_ids, int):
                         item["input_ids"] = [input_ids] + [
                             self.pad_token_id
                         ] * padding_length
                     elif hasattr(input_ids, "shape"):
-                        import torch
-
                         padding_tensor = torch.full(
                             (padding_length,), self.pad_token_id, dtype=input_ids.dtype
                         )
@@ -285,7 +293,7 @@ class HFTokenizerAdapter:
                             input_ids + [self.pad_token_id] * padding_length
                         )
 
-                    # Добавляем attention_mask если требуется
+                    # Дополняем уже существующую attention_mask
                     if "attention_mask" in item:
                         mask = item["attention_mask"]
                         if isinstance(mask, int):
@@ -295,24 +303,25 @@ class HFTokenizerAdapter:
                             item["attention_mask"] = torch.cat([mask, padding_mask])
                         else:
                             item["attention_mask"] = mask + [0] * padding_length
-                    elif return_attention_mask:
-                        if isinstance(input_ids, int):
-                            item["attention_mask"] = [1] + [0] * padding_length
-                        elif hasattr(input_ids, "shape"):
-                            attention_mask = torch.ones(current_len, dtype=torch.long)
-                            padding_mask = torch.zeros(padding_length, dtype=torch.long)
-                            item["attention_mask"] = torch.cat(
-                                [attention_mask, padding_mask]
-                            )
-                        else:
-                            item["attention_mask"] = [1] * current_len + [
-                                0
-                            ] * padding_length
+
+                # Создаем attention_mask для каждого элемента, если она запрошена,
+                # в том числе для тех, которым паддинг не понадобился
+                if "attention_mask" not in item and return_attention_mask:
+                    if isinstance(input_ids, int):
+                        item["attention_mask"] = [1] + [0] * padding_length
+                    elif hasattr(input_ids, "shape"):
+                        attention_mask = torch.ones(current_len, dtype=torch.long)
+                        padding_mask = torch.zeros(padding_length, dtype=torch.long)
+                        item["attention_mask"] = torch.cat(
+                            [attention_mask, padding_mask]
+                        )
+                    else:
+                        item["attention_mask"] = [1] * current_len + [
+                            0
+                        ] * padding_length
 
         # Конвертируем в тензоры если требуется
         if return_tensors == "pt":
-            import torch
-
             for key in list(encoded_inputs[0].keys()):
                 if isinstance(encoded_inputs[0][key], list):
                     for i in range(len(encoded_inputs)):
@@ -336,8 +345,6 @@ class HFTokenizerAdapter:
             save_directory: Директория для сохранения
             **kwargs: Дополнительные параметры
         """
-        import os
-
         # Создаем директорию если не существует
         os.makedirs(save_directory, exist_ok=True)
 
@@ -355,6 +362,12 @@ class HFTokenizerAdapter:
             "bos_token_id": self.bos_token_id,
             "eos_token_id": self.eos_token_id,
         }
+
+        # BPETokenizer.encode ищет токены по vocab_list, без него после загрузки
+        # текст распадается на отдельные символы
+        vocab_list = getattr(self.llm_tokenizer, "vocab_list", None)
+        if vocab_list is not None:
+            tokenizer_config["vocab_list"] = vocab_list
 
         config_path = os.path.join(save_directory, "tokenizer_config.json")
         with open(config_path, "w", encoding="utf-8") as f:
@@ -379,8 +392,6 @@ class HFTokenizerAdapter:
         Returns:
             HFTokenizerAdapter: Загруженный адаптер
         """
-        import os
-
         # Проверяем, является ли путь директорией с файлами токенизатора
         if os.path.isdir(pretrained_model_name_or_path):
             # Загружаем из директории
@@ -423,6 +434,22 @@ class HFTokenizerAdapter:
                 llm_tokenizer.unk_token_id = config.get("unk_token_id", 1)
                 llm_tokenizer.bos_token_id = config.get("bos_token_id", 2)
                 llm_tokenizer.eos_token_id = config.get("eos_token_id", 3)
+
+                if "vocab_list" in config:
+                    llm_tokenizer.vocab_list = config["vocab_list"]
+                else:
+                    # Старый формат без vocab_list: восстанавливаем его из словаря
+                    special_tokens = {
+                        llm_tokenizer.pad_token,
+                        llm_tokenizer.unk_token,
+                        llm_tokenizer.bos_token,
+                        llm_tokenizer.eos_token,
+                    }
+                    llm_tokenizer.vocab_list = [
+                        token
+                        for token, _ in sorted(vocab.items(), key=lambda item: item[1])
+                        if token not in special_tokens
+                    ]
 
                 return cls(llm_tokenizer, **kwargs)
             else:

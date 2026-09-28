@@ -194,6 +194,9 @@ class HFUtils:
         with torch.no_grad():
             hf_logits = hf_model(**inputs).logits
             llm_logits = llm_model(inputs["input_ids"])
+            # Модели llm возвращают (logits, cache)
+            if isinstance(llm_logits, tuple):
+                llm_logits = llm_logits[0]
 
         # Сравниваем результаты
         hf_probs = torch.softmax(hf_logits[0, -1], dim=-1)

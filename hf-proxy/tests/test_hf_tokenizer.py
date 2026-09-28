@@ -50,22 +50,26 @@ class TestCall:
         assert isinstance(ids, torch.Tensor)
         assert ids.dim() == 2 and ids.size(0) == 1
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="truncation в __call__ обрезает батч (список последовательностей), "
-        "а не саму последовательность",
-    )
     def test_truncation(self, hf_tokenizer):
-        ids = hf_tokenizer("hello world", truncation=True, max_length=2)["input_ids"]
-        assert len(ids[0]) == 2
+        full = hf_tokenizer.encode("hello world")
+        ids = hf_tokenizer(["hello world", "hi"], truncation=True, max_length=2)["input_ids"]
+        assert ids[0] == full[:2]
+        assert len(ids) == 2
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="padding в __call__ дополняет батч pad_token_id, а не последовательность",
-    )
-    def test_padding(self, hf_tokenizer):
-        ids = hf_tokenizer("hello", padding=True, max_length=20)["input_ids"]
-        assert ids == [ids[0]] and len(ids[0]) == 20
+    def test_padding_to_max_length(self, hf_tokenizer):
+        full = hf_tokenizer.encode("hello")
+        ids = hf_tokenizer("hello", padding="max_length", max_length=20)["input_ids"]
+        assert ids == [full + [hf_tokenizer.pad_token_id] * (20 - len(full))]
+
+    def test_padding_to_longest(self, hf_tokenizer):
+        short, long = hf_tokenizer.encode("hello"), hf_tokenizer.encode("hello world")
+        ids = hf_tokenizer(["hello", "hello world"], padding=True, max_length=50)["input_ids"]
+        assert ids[0] == short + [hf_tokenizer.pad_token_id] * (len(long) - len(short))
+        assert ids[1] == long
+
+    def test_padded_batch_to_tensor(self, hf_tokenizer):
+        ids = hf_tokenizer(["hello", "hello world"], padding=True, return_tensors="pt")
+        assert ids["input_ids"].shape == (2, len(hf_tokenizer.encode("hello world")))
 
 
 class TestEncode:
@@ -160,11 +164,6 @@ class TestPad:
         )
         assert out[1]["attention_mask"] == [1, 0, 0]
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="pad(return_attention_mask=True) не создаёт маску для элементов, "
-        "которым паддинг не нужен",
-    )
     def test_return_attention_mask_for_every_item(self, hf_tokenizer):
         out = hf_tokenizer.pad(
             [{"input_ids": [5, 6, 7]}, {"input_ids": [5]}], return_attention_mask=True
@@ -247,13 +246,21 @@ class TestSaveLoad:
         ids = hf_tokenizer.encode("hello world")
         assert loaded.decode(ids) == "hello world"
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="save_pretrained не сохраняет vocab_list/merges BPE, поэтому после "
-        "from_pretrained encode разбивает текст на отдельные символы",
-    )
     def test_from_pretrained_directory_encode_matches(self, hf_tokenizer, tmp_path):
         hf_tokenizer.save_pretrained(str(tmp_path))
+        loaded = HFTokenizerAdapter.from_pretrained(str(tmp_path))
+        assert loaded.encode("hello world") == hf_tokenizer.encode("hello world")
+
+    def test_from_pretrained_legacy_directory_without_vocab_list(
+        self, hf_tokenizer, tmp_path
+    ):
+        """Сохранения старого формата (без vocab_list) тоже кодируются корректно."""
+        hf_tokenizer.save_pretrained(str(tmp_path))
+        config_path = tmp_path / "tokenizer_config.json"
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        del config["vocab_list"]
+        config_path.write_text(json.dumps(config), encoding="utf-8")
+
         loaded = HFTokenizerAdapter.from_pretrained(str(tmp_path))
         assert loaded.encode("hello world") == hf_tokenizer.encode("hello world")
 
