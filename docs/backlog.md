@@ -77,6 +77,7 @@
 
 - **Что:** в статье (разд. 4.1) и в `train.py` веса инициализируются N(0, 0.02). В репозитории используется инициализация PyTorch по умолчанию: std весов `Linear` ≈ 0.1, эмбеддингов ≈ 1.0.
 - **Исправление:** метод `_init_weights` (Linear/Embedding — `normal_(0, 0.02)`, bias — нули) и вызов `self.apply(...)` в `__init__`.
+- **Статус:** исправлено в ветке `feat/gpt-init`: `init_normal_` (`core/weight_init.py`) применяется в `GPT.__init__` — Linear и Embedding N(0, 0.02), bias нули; std задаётся ключом `initializer_range`. Начальный loss свежей модели — 6.96 при `ln V = 6.91` (было 7.07), разброс логитов 0.32 вместо 0.58. Чекпоинты и их выход не затрагиваются: загрузка перезаписывает инициализацию.
 
 ### Качество кода
 
@@ -153,6 +154,7 @@
 
 - **Что:** статья GPT-2 (разд. 2.3) масштабирует веса residual-слоёв на `1/√N`, где N — число residual-слоёв; в HF (`GPT2PreTrainedModel._init_weights`) это `0.02 / √(2·num_layers)` для `c_proj` в attention и MLP, остальные веса — N(0, 0.02). Значение 0.02 в статье не указано, оно из кода: в `gpt-2/src/model.py` 0.02 для весов и `wte`, но 0.01 для `wpe`, а масштабирования residual-проекций в коде нет. В репозитории инициализация PyTorch по умолчанию.
 - **Исправление:** как в пункте 7, плюс `normal_(0, 0.02 / math.sqrt(2 * num_layers))` для `MultiHeadAttention._layer` и `FeedForward._layer2`.
+- **Статус:** исправлено в ветке `feat/gpt-init`: как пункт 7, плюс `scale_residual_projections_` — `MultiHeadAttention._layer` и `FeedForward._layer2` каждого блока N(0, 0.02 / √(2·num_layers)), как в HF. `wpe` — 0.02, как в HF (в коде OpenAI 0.01).
 
 ### Качество кода
 

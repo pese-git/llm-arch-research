@@ -18,10 +18,13 @@ GPT-2 — масштабируемый автогерессивный языко
     >>> logits, _ = model(input_ids)
     >>> out = model.generate(input_ids, max_new_tokens=30, do_sample=False)
 """
+from functools import partial
+
 import torch
 from torch import nn
 from llm.core.base_model import BaseModel
 from llm.core.config_checks import resolve_head_size
+from llm.core.weight_init import DEFAULT_INITIALIZER_RANGE, init_normal_, scale_residual_projections_
 from llm.core.generation import (
     cache_start_pos,
     check_attention_mask,
@@ -125,6 +128,16 @@ class GPT2(BaseModel):
         )
         self._norm = nn.LayerNorm(config["embed_dim"])
         self._linear = nn.Linear(config["embed_dim"], config["vocab_size"])
+
+        # Инициализация как в GPT-2: N(0, 0.02), а проекции, которые пишут в residual-поток
+        # (выход attention и второй слой FFN), — N(0, 0.02 / √(2·num_layers)) (разд. 2.3 статьи)
+        std = config.get("initializer_range", DEFAULT_INITIALIZER_RANGE)
+        self.apply(partial(init_normal_, std=std))
+        scale_residual_projections_(
+            [projection for decoder in self._decoders for projection in (decoder._heads._layer, decoder._ff._layer2)],
+            num_layers=config["num_layers"],
+            std=std,
+        )
 
     def forward(
         self,

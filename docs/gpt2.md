@@ -87,6 +87,11 @@ result    = ffn_out + out
 | `num_layers` | 4 | число блоков `Gpt2Decoder` |
 | `max_position_embeddings` | 128 | максимальная длина последовательности |
 | `dropout` | 0.1 | dropout в attention и FFN |
+| `initializer_range` | (нет в примере) | необязательное стандартное отклонение начальных весов, по умолчанию `0.02` |
+
+### Инициализация весов
+
+Как в GPT-1 ([gpt.md](gpt.md#инициализация-весов)), веса `Linear` и `Embedding` — N(0, 0.02), bias — нули. Дополнительно выходные проекции, которые пишут в residual-поток, — выход attention и второй слой FFN, по две на блок, — инициализируются N(0, 0.02 / √(2·num_layers)). Статья GPT-2 (разд. 2.3) масштабирует веса residual-слоёв на 1/√N, чтобы дисперсия residual-потока не росла с глубиной; `N = 2·num_layers` — как в `GPT2PreTrainedModel._init_weights` в HuggingFace. В коде OpenAI `wpe` инициализируется с 0.01, здесь, как в HF, — 0.02.
 
 ## Генерация
 

@@ -21,10 +21,13 @@
         >>> out = model.generate(input_ids, max_new_tokens=30, do_sample=False)
     """
 
+from functools import partial
+
 import torch
 import torch.nn as nn
 from llm.core.base_model import BaseModel
 from llm.core.config_checks import resolve_head_size
+from llm.core.weight_init import DEFAULT_INITIALIZER_RANGE, init_normal_
 from llm.core.generation import (
     cache_start_pos,
     check_attention_mask,
@@ -137,6 +140,11 @@ class GPT(BaseModel):
             ]
         )
         self._linear = nn.Linear(config["embed_dim"], config["vocab_size"])
+
+        # Инициализация из статьи GPT-1 (разд. 4.1): Linear и Embedding — N(0, 0.02), bias — нули
+        self.apply(
+            partial(init_normal_, std=config.get("initializer_range", DEFAULT_INITIALIZER_RANGE))
+        )
 
     def forward(
         self, x: torch.Tensor, attention_mask=None, use_cache: bool = False, cache: list = None
