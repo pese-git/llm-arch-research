@@ -123,7 +123,8 @@ class RoPE(nn.Module):
         - Эти матрицы используются далее для быстрого наложения позиционного "вращения" токенов внутри attention.
         """
         super().__init__()
-        assert head_size % 2 == 0, "head_size должен быть четным"
+        if head_size % 2 != 0:
+            raise ValueError(f"head_size={head_size} должен быть чётным: RoPE поворачивает пары координат")
 
         # Вычисление частот: θ_i = base^(-2i/d) для i ∈ [0, d/2-1]
         freqs = 1.0 / (base ** (2 * torch.arange(head_size // 2).float() / head_size))

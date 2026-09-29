@@ -53,7 +53,7 @@ src/llm/
 
 ### Ключи конфига
 
-Конфиг модели — обычный `dict`. Размер головы во всех моделях вычисляется как `embed_dim // <число голов>`; ключ `head_size` в конфиге не читается.
+Конфиг модели — обычный `dict`. Размер головы — ключ `head_size`, а если его нет, `embed_dim // <число голов>` (тогда `embed_dim` должен делиться на число голов). Неверный конфиг — неделимые размеры, `num_q_heads`, не делящееся на `num_kv_heads`, нечётный `head_size` в моделях с RoPE, `top_k_experts` вне `1 … num_experts` — даёт `ValueError` в конструкторе.
 
 | Ключ | GPT, GPT-2, LLaMA | Mistral | Mixtral | Gemma |
 |---|---|---|---|---|
@@ -61,6 +61,7 @@ src/llm/
 | `num_heads` | ✅ | | | |
 | `num_q_heads` | | ✅ | ✅ | ✅ |
 | `num_kv_heads` | | ✅ | ✅ | |
+| `head_size` (необязательный) | ✅ | ✅ | ✅ | ✅ |
 | `window_size` | | ✅ | ✅ | |
 | `num_experts`, `top_k_experts` | | | ✅ | |
 

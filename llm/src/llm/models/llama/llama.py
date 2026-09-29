@@ -2,6 +2,7 @@ import torch
 from torch import nn, Tensor
 
 from llm.core.base_model import BaseModel
+from llm.core.config_checks import resolve_head_size
 from llm.core.generation import (
     cache_start_pos,
     check_attention_mask,
@@ -37,7 +38,7 @@ class Llama(BaseModel):
     config: dict с требуемыми ключами:
         vocab_size: int — размер словаря токенов
         embed_dim: int — размерность эмбеддингов
-        num_heads: int — количество attention-голов (head_size = embed_dim // num_heads)
+        num_heads: int — количество attention-голов (head_size = embed_dim // num_heads, если head_size не задан)
         num_layers: int — число слоёв-декодеров
         max_position_embeddings: int — максимальная длина последовательности
         dropout: float — вероятность dropout
@@ -70,13 +71,16 @@ class Llama(BaseModel):
         """
         super().__init__(config)
 
+        # Размер головы: head_size из конфига или embed_dim // num_heads (с проверками)
+        head_size = resolve_head_size(config, "num_heads", rope=True)
+
         # Инициализация слоев
         self._max_seq_len = config["max_position_embeddings"]
         self._token_embeddings = TokenEmbeddings(
             vocab_size=config["vocab_size"], emb_size=config["embed_dim"]
         )
         self._position_embeddings = RoPE(
-            head_size=config["embed_dim"] // config["num_heads"],
+            head_size=head_size,
             max_seq_len=config["max_position_embeddings"],
         )
 
@@ -87,7 +91,7 @@ class Llama(BaseModel):
                     norm_layer=RMSNorm,
                     num_heads=config["num_heads"],
                     emb_size=config["embed_dim"],
-                    head_size=config["embed_dim"] // config["num_heads"],
+                    head_size=head_size,
                     feed_forward_layer=SwiGLU(
                         emb_size=config["embed_dim"],
                         dropout=config["dropout"],

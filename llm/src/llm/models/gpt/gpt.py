@@ -25,6 +25,7 @@ import torch
 import torch.nn as nn
 from typing import Optional, Dict
 from llm.core.base_model import BaseModel
+from llm.core.config_checks import resolve_head_size
 from llm.core.generation import (
     cache_start_pos,
     check_attention_mask,
@@ -111,6 +112,9 @@ class GPT(BaseModel):
         """
         super().__init__(config)
 
+        # Размер головы: head_size из конфига или embed_dim // num_heads (с проверками)
+        head_size = resolve_head_size(config, "num_heads")
+
         # Инициализация слоев
         self._max_seq_len = config["max_position_embeddings"]
         self._token_embeddings = TokenEmbeddings(
@@ -120,13 +124,12 @@ class GPT(BaseModel):
             max_seq_len=config["max_position_embeddings"], emb_size=config["embed_dim"]
         )
         self._dropout = nn.Dropout(config["dropout"])
-        # head_size = emb_size // num_heads
         self._decoders = nn.ModuleList(
             [
                 GptDecoder(
                     num_heads=config["num_heads"],
                     emb_size=config["embed_dim"],
-                    head_size=config["embed_dim"] // config["num_heads"],
+                    head_size=head_size,
                     max_seq_len=config["max_position_embeddings"],
                     dropout=config["dropout"],
                     activation=config.get("activation", "gelu_tanh"),

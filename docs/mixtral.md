@@ -138,7 +138,7 @@ result    = ffn_out + out
 
 ## Конфигурация
 
-Пример из [`experiments/llm_only/configs/mixtral_train.json`](../experiments/llm_only/configs/mixtral_train.json) — все ключи, кроме `head_size`, используются `Mixtral.__init__`:
+Пример из [`experiments/llm_only/configs/mixtral_train.json`](../experiments/llm_only/configs/mixtral_train.json) — все ключи используются `Mixtral.__init__`; неверные сочетания (как у [Mistral](mistral.md#конфигурация), а также `top_k_experts` вне `1 … num_experts`) дают `ValueError` в конструкторе:
 
 | Параметр | Значение в примере | Смысл |
 |---|---|---|
@@ -146,7 +146,7 @@ result    = ffn_out + out
 | `embed_dim` | 256 | размерность эмбеддингов |
 | `num_q_heads` | 4 | число Query-голов |
 | `num_kv_heads` | 2 | число Key/Value-голов |
-| `head_size` | 64 | ❌ не читается: размер головы всегда `embed_dim // num_q_heads` |
+| `head_size` | 64 | необязательный размер головы; по умолчанию `embed_dim // num_q_heads` (тогда `embed_dim` обязан делиться на `num_q_heads`). Если задан, `num_q_heads · head_size` может не совпадать с `embed_dim`; для RoPE — чётный |
 | `num_layers` | 4 | число блоков `MixtralDecoder` |
 | `max_position_embeddings` | 512 | максимальная длина последовательности |
 | `num_experts` | 8 | общее число экспертов MoE на слой |

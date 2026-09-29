@@ -184,6 +184,7 @@
 - **Что:** при `embed_dim % num_heads != 0` размер головы молча усекается, и внимание работает в пространстве меньше `embed_dim`.
 - **Воспроизведено:** `embed_dim=30, num_heads=4` принимается, `head_size=7`, Q/K/V — 28 измерений.
 - **Исправление:** `assert`/`ValueError` в `__init__`. Связано с тем, что ключ `head_size` в конфигах не читается (см. [известные ограничения](README.md#известные-ограничения)).
+- **Статус:** исправлено в ветке `fix/config-validation` (вместе с 28, 29, 36): общая `resolve_head_size` (`core/config_checks.py`) в конструкторе всех шести моделей. Без явного `head_size` неделимый `embed_dim` даёт `ValueError` с объяснением; в моделях с RoPE нечётный `head_size` — тоже `ValueError` с упоминанием `embed_dim` и числа голов (в `RoPE.__init__` `assert` заменён на `ValueError`).
 
 #### 21. Документация и мусор — P3
 
@@ -204,7 +205,7 @@
 - **17** — `_tril_mask` в `state_dict` (исправлен).
 - **18** — дублирование `generate` (исправлен).
 - **19** — пограничные случаи `generate`: `top_k` больше словаря, остановка по `eos_token_id` (исправлен).
-- **20** — проверка делимости. Воспроизведено: `embed_dim=100, num_heads=6` принимается, Q/K/V — 96 измерений. При нечётном `head_size` (`embed_dim=30, num_heads=4`) падает `assert` в `RoPE.__init__` с сообщением «head_size должен быть четным» — без упоминания `embed_dim` и `num_heads`.
+- **20** — проверка делимости `embed_dim` на число голов (исправлен).
 
 ### Баги
 
@@ -288,7 +289,7 @@
 - **Что:** в [`mistral_train.json`](../experiments/llm_only/configs/mistral_train.json) задан `"head_size": 64`, и он совпадает с `256 // 4` случайно. Если изменить одно из значений, второе молча не подстроится.
 - **Воспроизведено:** конфиг с `"head_size": 16` при `embed_dim=32, num_q_heads=4` даёт `head_size=8`.
 - **Исправление:** читать `config.get("head_size", embed_dim // num_q_heads)` и передавать это значение и в `RoPE`, и в `MistralDecoder`. Если размер задан явно, `num_q_heads * head_size` может не равняться `embed_dim` — выходная проекция `_layer` это уже поддерживает.
-- **Статус:** упомянуто в [известных ограничениях](README.md#известные-ограничения) для всех моделей.
+- **Статус:** исправлено в ветке `fix/config-validation`: все шесть моделей читают `config.get("head_size")` и передают его и в attention, и в `RoPE`; без ключа — `embed_dim // <число голов>`. Если `head_size` задан, `num_heads · head_size` может отличаться от `embed_dim`.
 
 #### 29. Нет проверок `num_q_heads` и `num_kv_heads` — P2
 
@@ -298,6 +299,7 @@
   - `embed_dim % num_q_heads != 0` молча усекает размер голов (как пункт 20).
 - **Воспроизведено:** `num_q_heads=4, num_kv_heads=3` — `RuntimeError: shape '[1, 4, 10, 8]' is invalid for input of size 240` при `forward`. `embed_dim=32, num_q_heads=3` — Q-проекция на 30 измерений.
 - **Исправление:** `ValueError` в `__init__` с понятным сообщением для обоих условий.
+- **Статус:** исправлено в ветке `fix/config-validation`: `GroupedQueryAttention.__init__` отклоняет `num_kv_heads < 1` и `num_q_heads`, не делящееся на `num_kv_heads`; неделимый `embed_dim` отклоняет `resolve_head_size` (пункт 20).
 
 ### Отклонения от Mistral 7B
 
@@ -362,8 +364,9 @@
 - **27** — нет маски при кэше и `seq_len > 1` (исправлен). До исправления префилл 6 + 8 токенов через кэш расходился с полным forward на 0.27–0.35 по логитам при `window_size=5`.
 - **49** — top-p отбрасывает пограничный токен (исправлен).
 - **50**, **51** — `eps` RMSNorm не задаётся из конфига, dropout в attention (в Mixtral 8x7B его нет).
-- **28** — ключ `head_size` игнорируется. В [`mixtral_train.json`](../experiments/llm_only/configs/mixtral_train.json) `"head_size": 64` совпадает с `256 // 4` случайно.
-- **29**, **33** — проверки голов, мусор в `GroupedQueryAttention` (неиспользуемый `mask`).
+- **28** — ключ `head_size` игнорировался (исправлен).
+- **29** — проверки голов (исправлен).
+- **33** — мусор в `GroupedQueryAttention` (неиспользуемый `mask`).
 - **31**, **32** — `_tril_mask` в `state_dict`, совместимость с torch < 1.2 (исправлены).
 
 ### Баги
@@ -389,6 +392,7 @@
 - **Что:** при `top_k_experts=0` ни один эксперт не выбирается, FFN-ветка тождественно возвращает нули, модель молча превращается в attention-only. Отрицательное значение (`top_k_experts=-1`) конструктор тоже принимает.
 - **Воспроизведено:** `Mixtral` с `top_k_experts=0` строится и выполняет `forward` без ошибок, выход MoE ровно 0.
 - **Исправление:** `ValueError` при `top_k_experts < 1`.
+- **Статус:** исправлено в ветке `fix/config-validation`: `MoE.__init__` требует `1 ≤ top_k_experts ≤ num_experts` и `num_experts ≥ 1`.
 
 ### Отклонения от Mixtral 8x7B
 
@@ -455,10 +459,10 @@
 - **8** — `use_cache=True` по умолчанию и нет `no_grad` (исправлен).
 - **10**, **18** — интерфейс `BaseModel`, дублирование `generate` (исправлены).
 - **19** — пограничные случаи `generate`: `top_k` больше словаря, остановка по `eos_token_id` (исправлен).
-- **20** — проверка делимости. Воспроизведено: `embed_dim=34, num_q_heads=4` принимается, Q-проекция на 32 измерения. При нечётном `head_size` — `assert` в `RoPE.__init__` без упоминания `embed_dim` и `num_q_heads`.
+- **20** — проверка делимости `embed_dim` на число голов (исправлен).
 - **22** — `**kwargs` в `generate` (исправлен).
 - **25** — RoPE-буферы в `state_dict` по копии на слой (исправлен).
-- **28** — ключ `head_size` игнорируется. Воспроизведено: `"head_size": 16` при `embed_dim=32, num_q_heads=4` даёт `head_size=8`. См. также [неиспользуемые ключи конфига](gemma.md#неиспользуемые-ключи-конфига).
+- **28** — ключ `head_size` игнорировался (исправлен).
 - **32** — половинчатая совместимость с torch < 1.2 в top-k/top-p `generate` и в `_tril_mask`. Версия Gemma на float-масках с `== 0` прошла внешний стенд 2026-09-28.
 - **35** — докстринг `Gemma` обещает `save(path)/load(path, device)`, методов нет. Воспроизведено: `hasattr(Gemma, "save")` — `False`.
 
@@ -499,6 +503,7 @@
 
 - **Что:** MQA (одна K/V-голова) используется только в Gemma 2B. Gemma 7B — обычный MHA с 16 головами, и `head_dim = 256` не равен `hidden_size / num_heads` (16 × 256 = 4096 ≠ 3072). Здесь `MultiQueryAttention` всегда с одной K/V-головой, а `head_size` всегда `embed_dim // num_q_heads` (пункт 28).
 - **Исправление:** заменить `MultiQueryAttention` на `GroupedQueryAttention` с `num_kv_heads` из конфига (MQA — частный случай `num_kv_heads=1`) и читать `head_size` из конфига. `_layer` уже умеет проецировать `num_q_heads * head_size ≠ embed_dim` обратно в `embed_dim`. Тогда же уйдёт отдельный модуль MQA и пункты 41 и 47 закроются вместе с 27 и 31.
+- **Статус:** частично: `head_size` уже читается из конфига (пункт 28, ветка `fix/config-validation`), так что `head_dim = 256` при `embed_dim = 3072` выразим. Осталось число K/V-голов: `MultiQueryAttention` всегда с одной.
 
 #### 46. RMSNorm без `(1 + w)` и вычислений во float32 — P3
 

@@ -167,7 +167,8 @@ result         = Norm2(ffn_out + out)
 |---|---|---|
 | `vocab_size` | (из токенизатора) | размер словаря |
 | `embed_dim` | 256 | размерность эмбеддингов и скрытого состояния |
-| `num_heads` | 4 | число attention-голов (`head_size = embed_dim / num_heads`) |
+| `num_heads` | 4 | число attention-голов (`head_size = embed_dim / num_heads`; `embed_dim` должен делиться на `num_heads`, иначе `ValueError`) |
+| `head_size` | (нет в примере) | необязательный размер головы; по умолчанию `embed_dim // num_heads` (тогда `embed_dim` обязан делиться на `num_heads`). Если задан, `num_heads · head_size` может не совпадать с `embed_dim` |
 | `num_layers` | 4 | число блоков `GptDecoder` в стеке |
 | `max_position_embeddings` | 128 | максимальная длина последовательности (размер буфера позиционных эмбеддингов и causal-маски) |
 | `dropout` | 0.1 | dropout в attention и FFN |
