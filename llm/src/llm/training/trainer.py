@@ -169,8 +169,12 @@ class Trainer:
                 else:
                     logits = outputs
 
-                # Вычисляем loss автогрессивной LM-задачи
+                # Вычисляем loss автогрессивной LM-задачи и вспомогательный loss модели
+                # (например, load-balancing loss роутера MoE), если он есть
                 loss = self.compute_lm_loss(logits, labels)
+                aux_loss = self.model.auxiliary_loss() if hasattr(self.model, "auxiliary_loss") else None
+                if aux_loss is not None:
+                    loss = loss + aux_loss
                 loss.backward()
 
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)

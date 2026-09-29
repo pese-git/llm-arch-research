@@ -136,6 +136,16 @@ class BaseModel(nn.Module, ABC):
         model.load_state_dict(checkpoint["state_dict"])
         return model.to(device).eval()
 
+    def auxiliary_loss(self) -> Optional[torch.Tensor]:
+        """
+        Вспомогательный loss последнего прямого прохода, который нужно прибавить к loss
+        языковой модели при обучении, или None, если его нет.
+
+        По умолчанию None. Mixtral возвращает load-balancing loss роутера MoE, если в
+        конфиге задан router_aux_loss_coef > 0.
+        """
+        return None
+
     @property
     def max_seq_len(self) -> int:
         """Максимальная длина последовательности (max_position_embeddings)."""

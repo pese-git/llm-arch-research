@@ -64,6 +64,7 @@ src/llm/
 | `head_size` (необязательный) | ✅ | ✅ | ✅ | ✅ |
 | `rms_norm_eps` (необязательный, по умолчанию `1e-6`) | LLaMA | ✅ | ✅ | ✅ |
 | `rope_theta` (необязательный, по умолчанию `10000`) | LLaMA | ✅ | ✅ | ✅ |
+| `router_aux_loss_coef` (необязательный, по умолчанию `0`) | | | ✅ | |
 | `window_size` | | ✅ | ✅ | |
 | `num_experts`, `top_k_experts` | | | ✅ | |
 
@@ -183,7 +184,6 @@ trainer.train()
 ## ⚠️ Известные ограничения
 
 - **`attention_mask`: только правый паддинг** — на левый паддинг и паддинг в `generate` бросается `NotImplementedError`.
-- **`MoE` без load-balancing loss.**
 
 ## 🧪 Тестирование
 

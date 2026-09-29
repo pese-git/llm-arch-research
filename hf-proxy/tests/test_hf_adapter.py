@@ -230,3 +230,47 @@ class TestHFAdapter:
         torch.save({"weight": torch.zeros(1)}, path)
         with pytest.raises(ValueError, match="hf_config"):
             HFAdapter.from_pretrained(str(path))
+
+
+def test_load_balancing_loss_matches_transformers():
+    """llm.core.moe.load_balancing_loss совпадает с load_balancing_loss_func из HF Mixtral."""
+    from transformers.models.mixtral.modeling_mixtral import load_balancing_loss_func
+
+    from llm.core.moe import load_balancing_loss
+
+    torch.manual_seed(0)
+    logits = [torch.randn(3 * 7, 8) for _ in range(4)]
+    mask = torch.ones(3, 7, dtype=torch.long)
+    mask[1, 4:] = 0
+
+    assert torch.allclose(load_balancing_loss(logits, 8, 2), load_balancing_loss_func(tuple(logits), 8, 2))
+    assert torch.allclose(
+        load_balancing_loss(logits, 8, 2, token_mask=mask.reshape(-1)),
+        load_balancing_loss_func(tuple(logits), 8, 2, attention_mask=mask),
+    )
+
+
+def test_adapter_adds_auxiliary_loss_only_in_training(pretrained_config):
+    """Load-balancing loss MoE входит в loss адаптера при обучении, но не при оценке."""
+    from llm.models.mixtral import Mixtral
+
+    torch.manual_seed(0)
+    mixtral = Mixtral(
+        {
+            "vocab_size": pretrained_config.vocab_size, "embed_dim": 32, "num_layers": 1,
+            "max_position_embeddings": 16, "dropout": 0.0, "num_q_heads": 4, "num_kv_heads": 2,
+            "window_size": 4, "num_experts": 4, "top_k_experts": 2, "router_aux_loss_coef": 10.0,
+        }
+    )
+    adapter = HFGPTAdapter(pretrained_config, mixtral)
+    ids = torch.randint(0, pretrained_config.vocab_size, (2, 6))
+
+    adapter.eval()
+    with torch.no_grad():
+        lm_loss = adapter(ids, labels=ids).loss
+    adapter.train()
+    with torch.no_grad():
+        train_loss = adapter(ids, labels=ids).loss
+        aux = mixtral.auxiliary_loss()
+    assert torch.allclose(train_loss, lm_loss + aux)
+    assert aux > 0

@@ -175,6 +175,8 @@ class MoE(nn.Module):
 
         # 1. Логиты роутера и top-k экспертов для каждого токена
         router_logits = self._router(x_flat)  # [N, num_experts]
+        # Логиты последнего прохода — для load-balancing loss (load_balancing_loss ниже)
+        self.router_logits = router_logits
         topk_logits, topk_indices = torch.topk(
             router_logits, k=self._top_k_experts, dim=-1
         )  # [N, top_k]
@@ -205,3 +207,47 @@ class MoE(nn.Module):
         out = self._dropout(output.reshape(batch_size, seq_len, emb_size))
 
         return out
+
+
+def load_balancing_loss(
+    router_logits,
+    num_experts: int,
+    top_k: int,
+    token_mask: torch.Tensor = None,
+) -> torch.Tensor:
+    """
+    Вспомогательный loss равномерной загрузки экспертов (Switch Transformer, разд. 2.2;
+    load_balancing_loss_func в HF Mixtral).
+
+        loss = E · Σ_k Σ_i f_{k,i} · P_i
+
+    где f_{k,i} — доля токенов, у которых эксперт i стоит на k-й позиции top-k, а P_i —
+    средняя по токенам вероятность эксперта i по softmax роутера (по всем E экспертам).
+    При равномерной загрузке и равномерных вероятностях loss равен top_k. f не дифференцируем
+    (выбор top-k), градиент идёт через P_i: роутер учится снижать вероятность
+    перегруженных экспертов.
+
+    Args:
+        router_logits: логиты роутера всех слоёв MoE, список тензоров [N, E].
+        num_experts: E.
+        top_k: число экспертов на токен.
+        token_mask: [N] — 1 для настоящих токенов, 0 для паддинга; None — все токены.
+
+    Returns:
+        Скалярный тензор loss (float32).
+    """
+    logits = torch.cat(list(router_logits), dim=0).float()  # [L·N, E]
+    probs = F.softmax(logits, dim=-1)
+    _, selected = torch.topk(probs, top_k, dim=-1)  # [L·N, K]
+    expert_mask = F.one_hot(selected, num_experts).float()  # [L·N, K, E]
+
+    if token_mask is None:
+        tokens_per_expert = expert_mask.mean(dim=0)  # [K, E]
+        prob_per_expert = probs.mean(dim=0)  # [E]
+    else:
+        weights = token_mask.float().repeat(len(router_logits))  # [L·N]
+        total = weights.sum()
+        tokens_per_expert = (expert_mask * weights[:, None, None]).sum(dim=0) / total
+        prob_per_expert = (probs * weights[:, None]).sum(dim=0) / total
+
+    return num_experts * (tokens_per_expert * prob_per_expert.unsqueeze(0)).sum()
