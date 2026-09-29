@@ -30,13 +30,18 @@ def test_forward_shape(params):
     assert cache is not None
     assert isinstance(y, torch.Tensor)
 
-def test_forward_shape_with_mask(params):
-    batch, seq = 2, 10
-    x = torch.randn(batch, seq, params['emb_size'])
-    mask = torch.tril(torch.ones(seq, seq)).bool()
-    attn = GroupedQueryAttention(**params)
-    y, _ = attn(x, mask=mask)
-    assert y.shape == (batch, seq, params['emb_size'])
+def test_forward_is_causal(params):
+    """Выход позиций < t не зависит от входа на позициях ≥ t (causal + окно)."""
+    attn = GroupedQueryAttention(**{**params, "dropout": 0.0}).eval()
+    x = torch.randn(2, 10, params['emb_size'])
+    t = 5
+    changed = x.clone()
+    changed[:, t:] = torch.randn_like(changed[:, t:])
+    with torch.no_grad():
+        y, _ = attn(x)
+        y_changed, _ = attn(changed)
+    assert torch.allclose(y[:, :t], y_changed[:, :t], atol=1e-6)
+    assert not torch.allclose(y[:, t:], y_changed[:, t:])
 
 def test_kv_repetition(params):
     batch, seq = 1, 3

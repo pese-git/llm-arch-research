@@ -1,8 +1,5 @@
 import torch
-import math
 from torch import nn
-from torch import Tensor
-from math import sqrt
 from llm.core.base_model import BaseModel
 from llm.core.config_checks import resolve_head_size
 from llm.core.generation import (
@@ -24,12 +21,12 @@ class Gemma(BaseModel):
     -----------
     Модель Gemma реализует стек современных декодерных блоков (GemmaDecoder), поддерживает rotary-позиционирование, multi-query self-attention,
     эффективный режим генерации (KV-cache), dropout, compact residual connections, базируется на best-practice LLM-инженерии последних лет.
-    Поддерживает batched-тренировку и inference, генерацию с различными стратегиями выборки (greedy, top-k, top-p), автосохранение.
+    Поддерживает batched-тренировку и inference, генерацию с различными стратегиями выборки (greedy, top-k, top-p), сохранение и загрузку (save/load).
 
     Архитектурные особенности:
     --------------------------
-    - Stack из N слоёв GemmaDecoder (attention с Multi-Query либо Grouped heads, FFN с GeGLU/SwiGLU)
-    - RMSNorm или LayerNorm для стабилизации
+    - Stack из N слоёв GemmaDecoder (Multi-Query Attention, FFN с GeGLU)
+    - RMSNorm (pre-norm в каждом блоке и финальная)
     - Dropout для регуляризации
     - Rotary Position Embedding (RoPE) для позиционных кодов
     - Выходная проекция (linear → logits) к словарю токенов
@@ -66,7 +63,7 @@ class Gemma(BaseModel):
     Литература и ссылки:
     --------------------
     - Gemma: https://ai.google.dev/gemma (официальная страница)
-    - Разработка и архитектура: https://arxiv.org/abs/2403.07794
+    - Gemma Team, "Gemma: Open Models Based on Gemini Research and Technology" (2024): https://arxiv.org/abs/2403.08295
     - Rotary Embedding: https://arxiv.org/abs/2104.09864
     - Multi-Query Attention: https://arxiv.org/abs/1911.02150
     - Llama: https://arxiv.org/abs/2302.13971
@@ -132,10 +129,6 @@ class Gemma(BaseModel):
             head_size=head_size,
             max_seq_len=config["max_position_embeddings"]
         )
-        #self._position_embeddings = PositionalEmbeddings(
-        #    max_seq_len=max_seq_len, 
-        #    emb_size=emb_size
-        #)
         self._dropout = nn.Dropout(config["dropout"])
         self._decoders = nn.ModuleList([GemmaDecoder(
             num_q_heads=config["num_q_heads"],
@@ -201,7 +194,6 @@ class Gemma(BaseModel):
         
         # Эмбеддинги токенов и позиций
         tok_out = self._token_embeddings(x)  # [batch, seq_len, emb_size]
-       #pos_out = self._position_embeddings(x)  # [batch, seq_len, emb_size]
         
         # Комбинирование
         out = self._dropout(tok_out)  # [batch, seq_len, emb_size]

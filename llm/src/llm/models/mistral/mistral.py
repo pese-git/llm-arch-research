@@ -1,7 +1,5 @@
 import torch
 from torch import nn
-from torch import Tensor
-from math import sqrt
 from llm.core.base_model import BaseModel
 from llm.core.config_checks import resolve_head_size
 from llm.core.generation import (
@@ -51,12 +49,12 @@ class Mistral(BaseModel):
     ---------------------
         >>> model = Mistral({...})
         >>> tokens = torch.tensor([[100, 56, 8]])
-        >>> logits = model(tokens)
+        >>> logits, _ = model(tokens)
         >>> generated = model.generate(tokens, max_new_tokens=16, do_sample=True, top_k=50)
 
     References:
     -----------
-    - "Mistral: Fast and Efficient Dense and Mixture of Experts Transformer Models" (2023): https://arxiv.org/abs/2310.06825
+    - Jiang et al., "Mistral 7B" (2023): https://arxiv.org/abs/2310.06825
     - LLaMA v2 & Grouped-Query Attention: https://arxiv.org/abs/2307.09288
     - Оригинальное обсуждение архитектуры: https://huggingface.co/blog/mistral
 
@@ -77,10 +75,6 @@ class Mistral(BaseModel):
             head_size=head_size,
             max_seq_len=config["max_position_embeddings"]
         )
-        #self._position_embeddings = PositionalEmbeddings(
-        #    max_seq_len=max_seq_len, 
-        #    emb_size=emb_size
-        #)
         self._dropout = nn.Dropout(config["dropout"])
         self._decoders = nn.ModuleList([MistralDecoder(
             num_q_heads=config["num_q_heads"],
@@ -131,7 +125,6 @@ class Mistral(BaseModel):
         
         # Эмбеддинги токенов и позиций
         tok_out = self._token_embeddings(x)  # [batch, seq_len, emb_size]
-       #pos_out = self._position_embeddings(x)  # [batch, seq_len, emb_size]
         
         # Комбинирование
         out = self._dropout(tok_out)  # [batch, seq_len, emb_size]

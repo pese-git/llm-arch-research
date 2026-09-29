@@ -4,7 +4,6 @@ import torch
 from torch import nn
 from .feed_forward import FeedForward
 from .multi_head_attention import MultiHeadAttention
-from .rope import RoPE
 
 
 class Gpt2Decoder(nn.Module):
@@ -20,7 +19,7 @@ class Gpt2Decoder(nn.Module):
 
     Архитектурные особенности:
     --------------------------
-    - Использует классическую multi-head attention (с causal mask — запрещает видеть “будущее”).
+    - Использует классическую multi-head attention со встроенной causal-маской (паддинг проверяется в forward модели).
     - Предусматривает передачу и накопление KV-cache для каждого слоя (hidden state attention).
     - Поддерживает передачу внимания через стек attention-блоков.
     - Применяется layernorm и feed-forward block (GELU).
@@ -55,7 +54,6 @@ class Gpt2Decoder(nn.Module):
         head_size: int,
         max_seq_len: int,
         dropout: float = 0.1,
-        rope: RoPE = None,
     ):
         """
         Конструктор Gpt2Decoder.
@@ -67,7 +65,7 @@ class Gpt2Decoder(nn.Module):
         emb_size : int
             Размерность входного вектора x.
         head_size : int
-            Размерность каждой attention head; emb_size = num_heads * head_size должно быть True!
+            Размерность каждой attention head (обычно emb_size // num_heads).
         max_seq_len : int
             Максимальная поддерживаемая длина последовательности (выделяет буфер для causal-маски).
         dropout : float, default=0.1
@@ -79,7 +77,6 @@ class Gpt2Decoder(nn.Module):
             emb_size=emb_size,
             head_size=head_size,
             max_seq_len=max_seq_len,
-            rope=rope,
             dropout=dropout,
         )
         # tanh-аппроксимация GELU, как в оригинальном коде OpenAI GPT-2
@@ -95,7 +92,6 @@ class Gpt2Decoder(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        mask: torch.Tensor = None,
         use_cache: bool = True,
         cache: list = None,
     ):
@@ -128,7 +124,7 @@ class Gpt2Decoder(nn.Module):
         norm1_out = self._norm1(x)
         # Передаём все cache/use_cache дальше в attention
         attention, kv_caches = self._heads(
-            norm1_out, mask=mask, use_cache=use_cache, cache=cache
+            norm1_out, use_cache=use_cache, cache=cache
         )
         out = attention + x
         norm2_out = self._norm2(out)

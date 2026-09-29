@@ -1,8 +1,5 @@
-
-
 from torch import nn
 import torch
-import torch.nn.functional as F
 from llm.core.rope import RoPE
 from llm.core.group_query_attention import GroupedQueryAttention
 from llm.core.moe import MoE
@@ -10,7 +7,7 @@ from llm.core.rms_norm import RMSNorm
 
 class MixtralDecoder(nn.Module):
     """
-    MixtralDecoder — декодерный блок для Mixtral/MoE-трансформеров (см. Mixtral 8x7B, Mistral v0.2 и др.).
+    MixtralDecoder — декодерный блок Mixtral: GQA + Mixture-of-Experts вместо плотного FFN.
 
     Назначение:
     -----------
@@ -48,7 +45,7 @@ class MixtralDecoder(nn.Module):
     emb_size : int
         Скрытый размер эмбеддинга.
     head_size : int
-        Размерность одной головы (emb_size // num_q_heads).
+        Размерность одной головы (обычно emb_size // num_q_heads).
     max_seq_len : int
         Максимальная поддерживаемая длина последовательности.
     num_experts : int
@@ -56,7 +53,8 @@ class MixtralDecoder(nn.Module):
     top_k_experts : int
         Сколько одновременно экспертов активируется для одного токена.
     window_size : int
-        Размер окна внимания (используется для efficient attention).
+        Размер скользящего окна внимания. В Mixtral 8x7B окна нет (плотное внимание на 32k),
+        здесь оно унаследовано от Mistral — см. docs/mixtral.md.
     rope : RoPE
         Реализация позиционного кодирования RoPE.
     dropout : float
@@ -64,17 +62,20 @@ class MixtralDecoder(nn.Module):
 
     Пример использования:
     ---------------------
-        >>> decoder = MixtralDecoder(... параметры ...)
-        >>> x = torch.randn(batch, seq, emb_size)
-        >>> out, cache = decoder(x, mask=None, use_cache=True)
-        >>> out.shape
+        >>> decoder = MixtralDecoder(
+        ...     num_q_heads=8, num_kv_heads=2, emb_size=256, head_size=32, max_seq_len=1024,
+        ...     num_experts=4, top_k_experts=2, window_size=128, rope=RoPE(32, 1024))
+        >>> x = torch.randn(2, 16, 256)
+        >>> out, cache = decoder(x, use_cache=True)
+        >>> out.shape  # torch.Size([2, 16, 256])
 
     Литература и ссылки:
     --------------------
-    - Mixtral 8x7B: https://mistral.ai/news/mixtral-of-experts/
+    - Jiang et al., "Mixtral of Experts", 2024: https://arxiv.org/abs/2401.04088
+    - Mixtral 8x7B (блог): https://mistral.ai/news/mixtral-of-experts/
     - Shazeer et al., “Outrageously Large Neural Networks: The Sparsely-Gated Mixture-of-Experts Layer”, 2017. https://arxiv.org/abs/1701.06538
     - Mistral paper: https://arxiv.org/abs/2310.06825
-    - GQA: https://arxiv.org/abs/2305.14236
+    - GQA (Ainslie et al., 2023): https://arxiv.org/abs/2305.13245
     - RMSNorm: https://arxiv.org/abs/1910.07467
 
     """
@@ -157,13 +158,13 @@ class MixtralDecoder(nn.Module):
         self._norm1 = RMSNorm(emb_size)
         self._norm2 = RMSNorm(emb_size)
 
-    def forward(self, x: torch.Tensor, mask: torch.Tensor = None, use_cache: bool = True, cache: list = None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, use_cache: bool = True, cache: tuple = None) -> tuple:
         """
         Прямой проход (forward) через декодерный блок MixtralDecoder.
 
         Данный метод реализует последовательную обработку входных скрытых состояний (x) через:
         - нормализацию (RMSNorm),
-        - attention-модуль (Grouped Query Attention) с опциональным применением маски и кэша ключей/значений для ускорения инференса,
+        - attention-модуль (Grouped Query Attention) со встроенной маской causal + окно и кэшем ключей/значений,
         - остаточное сложение (residual connection),
         - повторную нормализацию,
         - feed-forward блок на основе Mixture-of-Experts (MoE),
@@ -173,8 +174,6 @@ class MixtralDecoder(nn.Module):
         ----------
         x : torch.Tensor
             Входной скрытый тензор формы [batch_size, seq_len, emb_size] — результат эмбеддинга токенов либо предыдущего слоя.
-        mask : torch.Tensor, optional
-            (Необязательно) Маска внимания для ограничения области self-attention (например, для автоперемешивания или causal-LLM-моделей).
         use_cache : bool, по умолчанию True
             Если True — сохраняет кэш ключей/значений attention для ускорения авторегрессии (инференса).
         cache : list, optional
@@ -188,20 +187,20 @@ class MixtralDecoder(nn.Module):
 
         Пример:
         -------
-            >>> out, cache = decoder(x, mask=att_mask, use_cache=True, cache=old_cache)
+            >>> out, cache = decoder(x, use_cache=True, cache=old_cache)
             >>> out.shape  # [batch_size, seq_len, emb_size]
 
         Примечания:
         -----------
-        - Для autoregressive-генерации (GPT-like режимов) следует передавать mask и использовать use_cache=True.
+        - Паддинг (attention_mask) проверяется в forward модели; блок применяет только встроенную маску.
         - Реализация поддерживает произвольные батчи и длины последовательностей, в пределах max_seq_len слоя.
         - Модуль MixtralDecoder обычно используется в виде стека (несколько подряд) внутри крупной LLM.
 
         """
         norm1_out = self._norm1(x)
-        attention, kv_caches = self._heads(norm1_out, mask, use_cache=use_cache, cache=cache)
+        attention, kv_caches = self._heads(norm1_out, use_cache=use_cache, cache=cache)
         out = attention + x
-        
+
         norm2_out = self._norm2(out)
         ffn_out = self._ff(norm2_out)
 

@@ -21,11 +21,18 @@ def test_forward_shape(mqa_rope):
     assert out.shape == (2, 10, 16)
     assert isinstance(cache, tuple) and len(cache) == 2
 
-def test_forward_masked(mqa_rope):
+def test_forward_is_causal(mqa_rope):
+    """Выход позиций < t не зависит от входа на позициях ≥ t: встроенная causal-маска."""
+    module = mqa_rope.eval()
     x = torch.randn(2, 8, 16)
-    mask = torch.ones(2, 8, 8, dtype=torch.bool)
-    out, cache = mqa_rope(x, mask=mask)
-    assert out.shape == (2, 8, 16)
+    t = 4
+    changed = x.clone()
+    changed[:, t:] = torch.randn_like(changed[:, t:])
+    with torch.no_grad():
+        out, _ = module(x)
+        out_changed, _ = module(changed)
+    assert torch.allclose(out[:, :t], out_changed[:, :t], atol=1e-5)
+    assert not torch.allclose(out[:, t:], out_changed[:, t:])
 
 def test_forward_cache(mqa_rope):
     x = torch.randn(1, 4, 16)

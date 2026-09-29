@@ -23,7 +23,6 @@
 
 import torch
 import torch.nn as nn
-from typing import Optional, Dict
 from llm.core.base_model import BaseModel
 from llm.core.config_checks import resolve_head_size
 from llm.core.generation import (
@@ -82,7 +81,7 @@ class GPT(BaseModel):
     References:
     -----------
     - Radford et al., "Improving Language Understanding by Generative Pre-Training" (GPT-1, 2018)
-      https://cdn.openai.com/research-covers/languageunsupervised/language_understanding_paper.pdf
+      https://cdn.openai.com/research-covers/language-unsupervised/language_understanding_paper.pdf
     - Original BPE Tokenizer code: https://github.com/openai/gpt-2/blob/master/src/encoder.py
     - Формула masked self-attention: Vaswani et al., "Attention is All You Need", 2017
       https://arxiv.org/abs/1706.03762

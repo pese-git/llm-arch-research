@@ -50,7 +50,6 @@ RoPE — это способ "вписать" информацию о позиц
 
 import torch
 from torch import nn
-from typing import Optional
 
 
 class RoPE(nn.Module):
@@ -202,6 +201,6 @@ class RoPE(nn.Module):
 
         # Объединяем обратно в исходную размерность
         x_rotated = torch.stack([x_rotated_even, x_rotated_odd], dim=-1)
-        x_rotated = x_rotated.flatten(-2)  # [batch_size, seq_len, head_size]
+        x_rotated = x_rotated.flatten(-2)  # [batch, num_heads, seq_len, head_size]
 
         return x_rotated

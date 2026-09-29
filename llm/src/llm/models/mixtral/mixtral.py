@@ -1,7 +1,5 @@
 import torch
 from torch import nn
-from torch import Tensor
-from math import sqrt
 from llm.core.base_model import BaseModel
 from llm.core.config_checks import resolve_head_size
 from llm.core.generation import (
@@ -70,11 +68,12 @@ class Mixtral(BaseModel):
 
     Литература:
     -----------
-    - Mixtral 8x7B: https://mistral.ai/news/mixtral-of-experts/
+    - Jiang et al., "Mixtral of Experts" (2024): https://arxiv.org/abs/2401.04088
+    - Mixtral 8x7B (блог): https://mistral.ai/news/mixtral-of-experts/
     - Switch Transformer: https://arxiv.org/abs/2101.03961
     - GShard: https://arxiv.org/abs/2006.16668
     - RoPE: https://arxiv.org/abs/2104.09864
-    - Grouped Query Attention: https://arxiv.org/abs/2305.14236
+    - Grouped Query Attention (Ainslie et al., 2023): https://arxiv.org/abs/2305.13245
     - RMSNorm: https://arxiv.org/abs/1910.07467
     """
     def __init__(self, config):
@@ -142,10 +141,6 @@ class Mixtral(BaseModel):
             head_size=head_size,
             max_seq_len=config["max_position_embeddings"]
         )
-        #self._position_embeddings = PositionalEmbeddings(
-        #    max_seq_len=max_seq_len, 
-        #    emb_size=emb_size
-        #)
         self._dropout = nn.Dropout(config["dropout"])
         self._decoders = nn.ModuleList([MixtralDecoder(
             num_q_heads=config["num_q_heads"],
@@ -214,7 +209,6 @@ class Mixtral(BaseModel):
         
         # Эмбеддинги токенов и позиций
         tok_out = self._token_embeddings(x)  # [batch, seq_len, emb_size]
-       #pos_out = self._position_embeddings(x)  # [batch, seq_len, emb_size]
         
         # Комбинирование
         out = self._dropout(tok_out)  # [batch, seq_len, emb_size]

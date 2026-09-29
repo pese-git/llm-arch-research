@@ -18,7 +18,6 @@ SwiGLU(x) = Swish(xW_g + b_g) ⊙ (xW_u + b_u) * W_d + b_d
 
 import torch
 from torch import nn
-from typing import Optional
 from .silu import SiLU
 
 

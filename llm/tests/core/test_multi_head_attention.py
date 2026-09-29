@@ -37,39 +37,22 @@ class TestMultiHeadAttention:
         assert output.shape == random_embeddings.shape
         assert isinstance(output, torch.Tensor)
 
-    def test_forward_with_mask(self, embed_dim, num_heads, random_embeddings):
-        """Test forward pass with attention mask."""
-        head_size = embed_dim // num_heads
-        attention = MultiHeadAttention(
-            num_heads, embed_dim, head_size, max_seq_len=1024
-        )
-
-        # Create a simple mask
-        seq_len = random_embeddings.shape[1]
-        mask = torch.tril(torch.ones(seq_len, seq_len))  # Causal mask
-
-        # Forward pass with mask
-        output, _ = attention(random_embeddings, mask=mask)
-
-        # Check output shape
-        assert output.shape == random_embeddings.shape
-
     def test_causal_mask(self, embed_dim, num_heads, random_embeddings):
-        """Test that causal mask prevents attending to future positions."""
+        """Outputs at earlier positions do not depend on later tokens."""
         head_size = embed_dim // num_heads
         attention = MultiHeadAttention(
-            num_heads, embed_dim, head_size, max_seq_len=1024
-        )
+            num_heads, embed_dim, head_size, max_seq_len=1024, dropout=0.0
+        ).eval()
 
-        # Create causal mask
-        seq_len = random_embeddings.shape[1]
-        causal_mask = torch.tril(torch.ones(seq_len, seq_len))
+        t = random_embeddings.shape[1] // 2
+        changed = random_embeddings.clone()
+        changed[:, t:] = torch.randn_like(changed[:, t:])
+        with torch.no_grad():
+            output, _ = attention(random_embeddings)
+            output_changed, _ = attention(changed)
 
-        # Forward pass with causal mask
-        output, _ = attention(random_embeddings, mask=causal_mask)
-
-        # Check output shape
-        assert output.shape == random_embeddings.shape
+        assert torch.allclose(output[:, :t], output_changed[:, :t], atol=1e-6)
+        assert not torch.allclose(output[:, t:], output_changed[:, t:])
 
     def test_attention_weights_normalization(
         self, embed_dim, num_heads, random_embeddings

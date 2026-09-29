@@ -71,3 +71,23 @@ def test_half_precision_matches_float32(dtype):
     y = moe.to(dtype)(x.to(dtype))
     assert y.dtype == dtype
     assert torch.allclose(y.float(), expected, atol=5e-2)
+
+def test_matches_naive_per_token_reference():
+    # Эталон: для каждого токена softmax по top-k логитам роутера и взвешенная сумма
+    # выходов выбранных экспертов (Mixtral: Softmax(TopK(x·W_g)))
+    torch.manual_seed(0)
+    moe = MoE(emb_size=16, num_experts=4, top_k_experts=2, dropout=0.0).eval()
+    x = torch.randn(2, 5, 16)
+
+    expected = torch.zeros_like(x)
+    with torch.no_grad():
+        for b in range(x.size(0)):
+            for t in range(x.size(1)):
+                token = x[b, t]
+                top_logits, top_ids = torch.topk(moe._router(token), k=2)
+                weights = torch.softmax(top_logits, dim=-1)
+                for w, e in zip(weights, top_ids.tolist()):
+                    expected[b, t] += w * moe._experts[e](token.view(1, 1, -1)).view(-1)
+        actual = moe(x)
+
+    assert torch.allclose(actual, expected, atol=1e-6)

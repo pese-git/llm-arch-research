@@ -6,48 +6,41 @@ from .multi_head_attention import MultiHeadAttention
 
 class GptDecoder(nn.Module):
     """
-    Decoder — базовый transformer decoder block (pre-LN), классический строительный блок современных языковых моделей.
+    GptDecoder — блок декодера GPT-1 с post-LN: нормализация стоит после residual-сложения.
 
     Назначение:
     -----------
-    - Инкапсулирует архитектуру: norm → multi-head self-attention → residual → norm → feed-forward → residual
-    - Подходит как для LLM/GPT, так и для любых autoregressive sequence моделей.
-    - Использует masked self-attention: каждый токен видит только предыдущие (никакого \"заглядывания в будущее\").
-    - Стабильность обеспечивается через residual connections и LayerNorm после каждого sub-layer.
-
-    Почему это важно?
-    -----------------
-    - Все современные языковые модели состоят из подобных блоков, соединённых в стек.
-    - Алгоритм residual+norm позволяет проще обучать очень глубокие сети.
-    - Разделение на attention+FFN дает и локальные, и глобальные взаимодействия между токенами.
+    - Инкапсулирует архитектуру: masked self-attention → residual → LayerNorm → feed-forward → residual → LayerNorm.
+    - Использует masked self-attention: каждый токен видит только предыдущие (никакого "заглядывания в будущее").
+    - Post-LN — как в оригинальном Transformer и GPT-1; начиная с GPT-2 нормализацию переносят
+      перед подблоком (pre-LN, см. Gpt2Decoder), что устойчивее на глубоких стеках.
 
     Формула работы (псевдокод):
     ---------------------------
-        y1 = norm1(x)
-        attn_out = Attention(y1)
-        x2 = x + attn_out        # residual
-        y2 = norm2(x2)
-        ffn_out = FFN(y2)
-        out = x2 + ffn_out       # residual
+        attn_out = Attention(x)
+        x2 = LayerNorm1(x + attn_out)       # residual, затем норма
+        ffn_out = FFN(x2)
+        out = LayerNorm2(x2 + ffn_out)      # residual, затем норма
 
     Архитектурные особенности:
     --------------------------
-    - Поддержка внимания с маской (causal mask или произвольная attention mask)
-    - Residual connections для каждого блока (attention, FFN)
-    - Pre-LN (norm перед каждым подблоком)
-    - Зависит от переданных блоков self_attention и feed_forward, а не их реализации
+    - Только встроенная causal-маска; паддинг проверяется в forward модели (check_attention_mask)
+    - Residual connections для каждого подблока (attention, FFN)
+    - Post-LN (норма после каждого residual-сложения)
+    - KV-кэш для генерации по одному токену
 
     References:
     -----------
-    - Vaswani et al., \"Attention is All You Need\" (2017): https://arxiv.org/abs/1706.03762
+    - Radford et al., "Improving Language Understanding by Generative Pre-Training" (GPT-1, 2018):
+      https://cdn.openai.com/research-covers/language-unsupervised/language_understanding_paper.pdf
+    - Vaswani et al., "Attention is All You Need" (2017): https://arxiv.org/abs/1706.03762
     - Illustrated Transformer: https://jalammar.github.io/illustrated-transformer/
-    - Transformer Circuits (дружественное описание): https://transformer-circuits.pub/2021/framework/index.html
 
     Пример:
     -------
-        >>> decoder = Decoder(num_heads=8, emb_size=512, head_size=64, max_seq_len=1024)
+        >>> decoder = GptDecoder(num_heads=8, emb_size=512, head_size=64, max_seq_len=1024)
         >>> x = torch.randn(1, 10, 512)
-        >>> out = decoder(x)
+        >>> out, _ = decoder(x)
         >>> print(out.shape)  # torch.Size([1, 10, 512])
     """
 
@@ -70,7 +63,7 @@ class GptDecoder(nn.Module):
         emb_size: int
             Размерность эмбеддингов (и входа и выхода)
         head_size: int
-            Размерность одной attention-головы (emb_size = num_heads * head_size)
+            Размерность одной attention-головы (обычно emb_size // num_heads)
         max_seq_len: int
             Максимальная длина последовательности (важно для mask)
         dropout: float, default=0.1
@@ -109,43 +102,42 @@ class GptDecoder(nn.Module):
         self._norm2 = nn.LayerNorm(emb_size)
 
     def forward(
-        self, 
-        x: torch.Tensor, 
-        use_cache: bool = False, 
-        cache: list = None, 
-        attention_mask=None
+        self,
+        x: torch.Tensor,
+        use_cache: bool = False,
+        cache: list = None,
     ) -> tuple:
         """
-        Один прямой проход через Transformer decoder block.
+        Один прямой проход через блок декодера.
 
         Аргументы:
         ----------
         x : torch.Tensor
             Входной тензор [batch_size, seq_len, emb_size]
-        mask : torch.Tensor, optional
-            Attention/causal mask (по умолчанию None, тогда будет casual mask по длине seq_len)
+        use_cache : bool, по умолчанию False
+            Вернуть KV-кэш attention.
+        cache : tuple, optional
+            KV-кэш этого слоя с предыдущих шагов.
 
         Возвращает:
         -----------
-        out : torch.Tensor
-            Выходной тензор той же формы, что и x
+        (out, cache) : tuple
+            out — тензор той же формы, что и x; cache — новый KV-кэш или None при use_cache=False.
 
         Алгоритм:
         ---------
-        - Применяем attention к нормализованному входу (layernorm)
-        - Добавляем residual-связь (attention + исходный вход)
-        - Применяем FFN к нормализованному результату (layernorm)
-        - Добавляем residual-связь (ffn + предыдущий выход)
+        - attention по входу, residual-связь, LayerNorm
+        - FFN, residual-связь, LayerNorm
         """
 
         # Self-Attention блок
-        attention, kv_caches = self._heads(x, attention_mask, use_cache=use_cache, cache=cache)
+        attention, kv_caches = self._heads(x, use_cache=use_cache, cache=cache)
         out = self._norm1(attention + x)
 
         # FeedForward блок
         ffn_out = self._ff(out)
-        result =  self._norm2(ffn_out + out)
-        
+        result = self._norm2(ffn_out + out)
+
         if use_cache:
             return (result, kv_caches)
         else:

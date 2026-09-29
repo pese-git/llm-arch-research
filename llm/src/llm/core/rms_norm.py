@@ -19,7 +19,6 @@ RMSNorm(x) = (x / RMS(x)) * w
 
 import torch
 from torch import nn
-from typing import Optional
 
 
 class RMSNorm(nn.Module):

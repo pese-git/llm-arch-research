@@ -21,11 +21,18 @@ def test_forward_shape(gemma_decoder):
     assert out.shape == (2, 12, 16)
     assert isinstance(cache, tuple) or cache is None
 
-def test_forward_masked(gemma_decoder):
-    x = torch.randn(1, 8, 16)
-    mask = torch.ones(1, 8, 8, dtype=torch.bool)
-    out, _ = gemma_decoder(x, mask=mask)
-    assert out.shape == x.shape
+def test_forward_is_causal(gemma_decoder):
+    """Выход позиций < t не зависит от входа на позициях ≥ t: встроенная causal-маска."""
+    module = gemma_decoder.eval()
+    x = torch.randn(2, 8, 16)
+    t = 4
+    changed = x.clone()
+    changed[:, t:] = torch.randn_like(changed[:, t:])
+    with torch.no_grad():
+        out, _ = module(x)
+        out_changed, _ = module(changed)
+    assert torch.allclose(out[:, :t], out_changed[:, :t], atol=1e-5)
+    assert not torch.allclose(out[:, t:], out_changed[:, t:])
 
 def test_forward_with_cache_flag(gemma_decoder):
     x = torch.randn(2, 7, 16)
