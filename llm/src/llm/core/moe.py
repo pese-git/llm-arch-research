@@ -176,8 +176,11 @@ class MoE(nn.Module):
             router_logits, k=self._top_k_experts, dim=-1
         )  # [N, top_k]
 
-        # 2. Веса выбранных экспертов: softmax только по top-k логитам
-        topk_weights = F.softmax(topk_logits, dim=-1)  # [N, top_k]
+        # 2. Веса выбранных экспертов: softmax только по top-k логитам. Явно во float32 с
+        # приведением к dtype входа — как в HF и эталонном коде Mistral. Встроенный softmax
+        # PyTorch и так накапливает во float32, поэтому на CPU/MPS результат не меняется,
+        # но точность весов не зависит от реализации softmax на конкретном backend
+        topk_weights = F.softmax(topk_logits.float(), dim=-1).to(x.dtype)  # [N, top_k]
 
         # 3. Каждый эксперт обрабатывает только свои токены, результат с весом
         # добавляется в строки этих токенов

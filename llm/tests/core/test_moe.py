@@ -91,3 +91,22 @@ def test_matches_naive_per_token_reference():
         actual = moe(x)
 
     assert torch.allclose(actual, expected, atol=1e-6)
+
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16], ids=str)
+def test_router_softmax_in_float32(dtype, monkeypatch):
+    # Веса роутера считаются во float32 и приводятся к dtype входа (как в HF и эталоне Mistral)
+    import llm.core.moe as moe_module
+
+    softmax_input_dtypes = []
+    original_softmax = moe_module.F.softmax
+
+    def spy(tensor, *args, **kwargs):
+        softmax_input_dtypes.append(tensor.dtype)
+        return original_softmax(tensor, *args, **kwargs)
+
+    monkeypatch.setattr(moe_module.F, "softmax", spy)
+    moe = MoE(emb_size=16, num_experts=4, top_k_experts=2, dropout=0.0).to(dtype)
+    y = moe(torch.randn(2, 5, 16, dtype=dtype))
+
+    assert softmax_input_dtypes == [torch.float32]
+    assert y.dtype == dtype
