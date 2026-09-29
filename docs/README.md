@@ -20,7 +20,7 @@
 | Маска | Откуда | Где | Что запрещает |
 |---|---|---|---|
 | **Causal** | строится внутри attention (`_tril_mask`) | все модели | смотреть в будущее: `j > i` |
-| **Скользящее окно** | строится внутри `GroupedQueryAttention` | Mistral, Mixtral | то же и слишком далёкое прошлое: `i − j > window_size` |
+| **Скользящее окно** | строится внутри `GroupedQueryAttention`, если задан `window_size` | Mistral, Mixtral | то же и слишком далёкое прошлое: `i − j > window_size` |
 | **`attention_mask`** | передаётся снаружи, `[batch, seq_len]`, 1 — токен, 0 — паддинг | параметр `forward` и `generate` всех моделей | смотреть на pad-токены |
 
 ### Causal-маска и скользящее окно
@@ -63,7 +63,7 @@ input_ids            attention_mask
 
 Специфичные для архитектуры:
 
-- **Mistral, Mixtral** — окно sliding window шириной `window_size + 1` позиций (как в тексте статьи и prefill эталонного кода), а в HuggingFace — `window_size`; см. [mistral.md](mistral.md#ширина-окна-w--1).
+- **Mistral, Mixtral** — окно sliding window шириной `window_size + 1` позиций (как в тексте статьи и prefill эталонного кода), а в HuggingFace — `window_size`; при загрузке весов HF — `window_size = sliding_window − 1`, см. [mistral.md](mistral.md#ширина-окна-w--1).
 
 Полный список технического долга с приоритетами и способами исправления — в [backlog.md](backlog.md).
 

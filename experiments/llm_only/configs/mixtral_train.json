@@ -13,7 +13,6 @@
       "max_position_embeddings": 512,
       "num_experts": 8,
       "top_k_experts": 2,
-      "window_size": 16,
       "dropout": 0.1
     },
     "model_weights": "checkpoints/mixtral-bpe/model.pt",

@@ -65,7 +65,7 @@ uv run python experiments/llm_only/run_llm_experiment.py --model llama --action 
 }
 ```
 
-Какие ключи `model_config` нужны каждой модели — см. [llm/README.md](../llm/README.md#ключи-конфига). Лишние ключи игнорируются: например, `head_size` в конфигах Mistral/Mixtral/Gemma и `num_kv_heads`/`num_experts`/`top_k_experts`/`window_size` в конфиге Gemma ни на что не влияют.
+Какие ключи `model_config` нужны каждой модели — см. [llm/README.md](../llm/README.md#ключи-конфига). Лишние ключи игнорируются: например, `num_kv_heads`/`num_experts`/`top_k_experts`/`window_size` в конфиге Gemma ни на что не влияют. `window_size` в Mistral и Mixtral необязателен: без него окна нет (как в Mixtral 8x7B, поэтому в `mixtral_train.json` его нет).
 
 Все конфиги используют общий токенизатор `checkpoints/bpe_tokenizer.json`: если он уже есть, `bpe_vocab_size` и `bpe_special_tokens` не применяются.
 

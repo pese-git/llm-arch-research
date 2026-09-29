@@ -1,5 +1,7 @@
 """
-Перенос весов LLaMA из формата HuggingFace (`LlamaForCausalLM`).
+Перенос весов LLaMA, Mistral и Mixtral из формата HuggingFace
+(`LlamaForCausalLM`, `MistralForCausalLM`, `MixtralForCausalLM`): имена слоёв у них общие,
+у Mixtral вместо `mlp` — `block_sparse_moe` с роутером `gate` и экспертами `w1`/`w2`/`w3`.
 
 Отличия формата:
 - у HF и у Meta одинаковые матрицы, но разный порядок строк `q_proj` и `k_proj`. RoPE здесь,
@@ -8,9 +10,10 @@
   здесь — обратная перестановка;
 - имена слоёв: `model.layers.N.self_attn.q_proj` → `_decoders.N._heads._q` и т. д.
 
-Подходят модели с обычным multi-head attention (num_key_value_heads == num_attention_heads),
-без rope_scaling. Конфиг должен совпадать с HF: "intermediate_size" — как у модели,
-"bias": False (если в HF нет attention_bias и mlp_bias), rms_norm_eps и rope_theta — как в HF.
+Подходят модели без rope_scaling. Конфиг должен совпадать с HF: "intermediate_size" — как у
+модели, "bias": False (если в HF нет attention_bias и mlp_bias), rms_norm_eps и rope_theta — как
+в HF. Для Mistral/Mixtral окно здесь на одну позицию шире, чем в HF (docs/mistral.md, «Ширина
+окна: W + 1»): sliding_window=W в HF — "window_size": W − 1 здесь; sliding_window=None — без ключа.
 
 Пример:
     >>> from transformers import LlamaForCausalLM
@@ -33,7 +36,10 @@ _LAYER_KEYS = {
     "mlp.down_proj": "_ff._down",
     "input_layernorm": "_norm1",
     "post_attention_layernorm": "_norm2",
+    "block_sparse_moe.gate": "_ff._router",  # Mixtral
 }
+# Эксперт Mixtral: w1 — gate, w3 — up, w2 — down (out = w2(silu(w1 x) · w3 x))
+_EXPERT_KEYS = {"w1": "_gate", "w2": "_down", "w3": "_up"}
 
 
 def _hf_to_meta_rows(value: torch.Tensor, num_heads: int) -> torch.Tensor:
@@ -51,12 +57,13 @@ def _hf_to_meta_rows(value: torch.Tensor, num_heads: int) -> torch.Tensor:
     )
 
 
-def convert_hf_state_dict(hf_state_dict: dict, num_heads: int) -> dict:
+def convert_hf_state_dict(hf_state_dict: dict, num_heads: int, num_kv_heads: int = None) -> dict:
     """
-    Преобразует state_dict `LlamaForCausalLM` в state_dict `Llama`.
+    Преобразует state_dict `LlamaForCausalLM` / `MistralForCausalLM` / `MixtralForCausalLM`
+    в state_dict `Llama` / `Mistral` / `Mixtral`.
 
-    num_heads — число attention-голов (config.num_attention_heads): нужно для перестановки
-    строк Q и K. Если в чекпоинте нет `lm_head.weight` (эмбеддинги привязаны), голова
+    num_heads — число query-голов (config.num_attention_heads), num_kv_heads — число K/V-голов
+    (config.num_key_value_heads, по умолчанию num_heads): нужны для перестановки строк Q и K. Если в чекпоинте нет `lm_head.weight` (эмбеддинги привязаны), голова
     получает копию эмбеддингов: здесь у LLaMA weight tying нет, но на выходе это то же самое.
     Буферы `rotary_emb.inv_freq` из старых чекпоинтов пропускаются.
     """
@@ -72,14 +79,23 @@ def convert_hf_state_dict(hf_state_dict: dict, num_heads: int) -> dict:
             continue
         else:
             match = re.fullmatch(r"model\.layers\.(\d+)\.(.+)\.(weight|bias)", key)
-            if match is None or match.group(2) not in _LAYER_KEYS:
+            if match is None:
                 raise KeyError(f"Неизвестный ключ HF-чекпоинта: {key}")
             layer, name, kind = match.groups()
-            if name in ("self_attn.q_proj", "self_attn.k_proj"):
+            expert = re.fullmatch(r"block_sparse_moe\.experts\.(\d+)\.(w[123])", name)
+            if expert is not None:
+                target = f"_ff._experts.{expert.group(1)}.{_EXPERT_KEYS[expert.group(2)]}"
+            elif name in _LAYER_KEYS:
+                target = _LAYER_KEYS[name]
+            else:
+                raise KeyError(f"Неизвестный ключ HF-чекпоинта: {key}")
+            if name == "self_attn.q_proj":
                 value = _hf_to_meta_rows(value, num_heads)
+            elif name == "self_attn.k_proj":
+                value = _hf_to_meta_rows(value, num_kv_heads or num_heads)
             # у RMSNorm здесь параметр называется _w
             kind = "_w" if name.endswith("layernorm") else kind
-            result[f"_decoders.{layer}.{_LAYER_KEYS[name]}.{kind}"] = value
+            result[f"_decoders.{layer}.{target}.{kind}"] = value
 
     if "_linear.weight" not in result:
         result["_linear.weight"] = result["_token_embeddings._embedding.weight"].clone()

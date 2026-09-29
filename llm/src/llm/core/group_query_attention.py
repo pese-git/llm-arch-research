@@ -67,9 +67,10 @@ class GroupedQueryAttention(nn.Module):
         emb_size: int,
         head_size: int,
         max_seq_len: int,
-        window_size: int,
+        window_size: int = None,
         rope: RoPE = None,
         dropout: float = 0.1,
+        bias: bool = True,
     ):
         """
         Инициализация слоя Grouped Query Attention (GQA).
@@ -92,11 +93,14 @@ class GroupedQueryAttention(nn.Module):
             num_q_heads * head_size может отличаться от emb_size: выходная проекция возвращает результат в emb_size.
         max_seq_len : int
             Максимальная поддерживаемая длина входной последовательности; определяет размер триангулярной (causal/sliding window) маски.
-        window_size : int
-            Размер "скользящего окна" истории — сколько токенов учитывается при слепом внимании (как у Mistral).
+        window_size : int или None, по умолчанию None
+            Размер "скользящего окна" истории: токен видит window_size предыдущих позиций и себя (как у Mistral 7B v0.1).
             Чем меньше значение, тем локальнее работает внимание (и меньше память/время).
+            None — окна нет, обычное causal-внимание на весь контекст (Mixtral, Mistral v0.2+), кэш не обрезается.
         rope : RoPE, опционально
             Если задан — применяется Rotary Positional Encoding к Q и K для относительного позиционного кодирования.
+        bias : bool, по умолчанию True
+            Есть ли bias у W_Q, W_K, W_V и W_O (в Mistral и Mixtral его нет).
         dropout : float, по умолчанию 0.1
             Dropout после линейной проекции attention (обычно 0.1, помогает борьбе с переобучением).
 
@@ -128,17 +132,19 @@ class GroupedQueryAttention(nn.Module):
         self._rope = rope
         self._window_size = window_size
 
-        self._q = nn.Linear(emb_size, self._num_heads * head_size)
-        self._k = nn.Linear(emb_size, num_kv_heads * head_size)
-        self._v = nn.Linear(emb_size, num_kv_heads * head_size)
+        self._q = nn.Linear(emb_size, self._num_heads * head_size, bias=bias)
+        self._k = nn.Linear(emb_size, num_kv_heads * head_size, bias=bias)
+        self._v = nn.Linear(emb_size, num_kv_heads * head_size, bias=bias)
 
-        # Создание causal маски
-        mask = self._create_sliding_window_mask(max_seq_len, self._window_size)
+        # Маска causal + скользящее окно; без окна — обычная causal-маска (окно шире любой последовательности)
+        mask = self._create_sliding_window_mask(
+            max_seq_len, max_seq_len if window_size is None else window_size
+        )
         # persistent=False: маска вычисляется из max_seq_len и window_size и не нужна в
         # чекпоинте — иначе она хранилась бы в каждом слое и привязывала бы к ним чекпоинт
         self.register_buffer("_tril_mask", mask.bool(), persistent=False)
         
-        self._layer = nn.Linear(head_size * self._num_heads, emb_size)
+        self._layer = nn.Linear(head_size * self._num_heads, emb_size, bias=bias)
         self._dropout = nn.Dropout(dropout)
 
     def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs):
@@ -254,10 +260,11 @@ class GroupedQueryAttention(nn.Module):
         output = self._dropout(self._layer(concatenated_attention))  # [B, T, emb_size]
 
         if use_cache:
-            # В кэш — последние window_size позиций K и V (до дублирования голов)
-            k_to_cache = k[:, :, -self._window_size:, :]
-            v_to_cache = v[:, :, -self._window_size:, :]
-            kv_cache = (k_to_cache, v_to_cache, start_pos + seq_len)
+            # В кэш — последние window_size позиций K и V (до дублирования голов); без окна — все
+            if self._window_size is not None:
+                k = k[:, :, -self._window_size:, :]
+                v = v[:, :, -self._window_size:, :]
+            kv_cache = (k, v, start_pos + seq_len)
             return output, kv_cache
         else:
             return output, None

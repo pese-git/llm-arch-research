@@ -41,7 +41,10 @@ class Mistral(BaseModel):
         num_kv_heads: int — количество key/value attention-голов
         num_layers: int — число слоёв-декодеров
         max_position_embeddings: int — максимальная длина последовательности
-        window_size: int — размер sliding window attention
+        window_size: int, необязательный — размер sliding window attention (Mistral 7B v0.1 — 4096;
+            окно здесь на позицию шире, чем в HF). Без ключа окна нет (Mistral v0.2+)
+        intermediate_size: int, необязательный — скрытый размер SwiGLU, по умолчанию 4·embed_dim (Mistral 7B — 14336)
+        bias: bool, необязательный — bias во всех Linear, по умолчанию True (в Mistral 7B — False)
         dropout: float — dropout (обычно очень мал или 0)
         ...
     
@@ -66,6 +69,10 @@ class Mistral(BaseModel):
         head_size = resolve_head_size(config, "num_q_heads", rope=True)
         # eps всех RMSNorm: 1e-6 по умолчанию (LLaMA, Gemma), у Mistral 7B — 1e-5
         norm_eps = config.get("rms_norm_eps", 1e-6)
+        # Необязательные: скрытый размер SwiGLU (по умолчанию 4·embed_dim) и bias во всех Linear
+        # (по умолчанию есть) — прежнее поведение; в оригинале 3.5·embed_dim и без bias
+        intermediate_size = config.get("intermediate_size")
+        bias = config.get("bias", True)
         
         self._max_seq_len = config["max_position_embeddings"]
         # Инициализация слоев
@@ -86,13 +93,16 @@ class Mistral(BaseModel):
             emb_size=config["embed_dim"],
             head_size=head_size,
             max_seq_len=config["max_position_embeddings"],
-            window_size=config["window_size"],
+            # None — без скользящего окна (Mixtral 8x7B, Mistral v0.2+)
+            window_size=config.get("window_size"),
             rope=self._position_embeddings,
             dropout=config["dropout"],
-            norm_eps=norm_eps
+            norm_eps=norm_eps,
+            intermediate_size=intermediate_size,
+            bias=bias,
         ) for _ in range(config["num_layers"])])
         self._norm = RMSNorm(config["embed_dim"], eps=norm_eps)
-        self._linear = nn.Linear(config["embed_dim"], config["vocab_size"])
+        self._linear = nn.Linear(config["embed_dim"], config["vocab_size"], bias=bias)
 
     def forward(
         self,

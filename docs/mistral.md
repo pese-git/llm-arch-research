@@ -74,7 +74,7 @@ flowchart TB
 | Эталонный код Mistral AI, генерация с кэшем (буфер из W ячеек) | W |
 | HuggingFace Transformers (`sliding_window_overlay`: `kv_idx > q_idx − sliding_window`) | W |
 
-Реализация следует тексту статьи и prefill в эталонном коде, причём одинаково с кэшем и без. **От HuggingFace она отличается на одну позицию**: при загрузке реальных весов Mistral или сравнении с `transformers` логиты не совпадут, пока окно не будет приведено к W. Для `window_size = 4096` (Mistral 7B) разница несущественна, для учебных конфигов с `window_size = 16` — около 6 %.
+Реализация следует тексту статьи и prefill в эталонном коде, причём одинаково с кэшем и без. **От HuggingFace она отличается на одну позицию**: при загрузке весов Mistral из HF окно нужно задать на единицу меньше, `window_size = sliding_window − 1` (см. [Загрузка весов HuggingFace](#загрузка-весов-huggingface)); с тем же числом логиты не совпадут — это проверяет тест. Для `window_size = 4096` (Mistral 7B) разница несущественна, для учебных конфигов с `window_size = 16` — около 6 %.
 
 ## Компоненты
 
@@ -113,10 +113,12 @@ result    = ffn_out + out
 | `max_position_embeddings` | 512 | максимальная длина последовательности |
 | `rms_norm_eps` | (нет в примере) | необязательный `eps` всех RMSNorm, по умолчанию `1e-6`; у Mistral 7B — `1e-5` |
 | `rope_theta` | (нет в примере) | необязательная база частот RoPE, по умолчанию `10000` — как в Mistral 7B v0.1; что она задаёт — в [llama.md](llama.md#скорости-вращения-и-база-rope_theta) |
-| `window_size` | 16 | ширина скользящего окна внимания |
+| `window_size` | 16 | необязательная ширина скользящего окна внимания (окно — `window_size + 1` позиций, см. [выше](#ширина-окна-w--1)); без ключа окна нет — обычное causal-внимание, как в Mistral 7B v0.2+ |
+| `intermediate_size` | (нет в примере) | необязательный скрытый размер SwiGLU, по умолчанию `4 · embed_dim`; у Mistral 7B — `14336` (3.5·d) |
+| `bias` | (нет в примере) | необязательный: bias во всех `Linear` (Q/K/V, выход attention, три матрицы SwiGLU, голова), по умолчанию `true`; в Mistral 7B — `false` |
 | `dropout` | 0.1 | dropout после эмбеддингов и на выходах attention и FFN; в Mistral 7B dropout нет — для соответствия оригиналу `0` |
 
-Все ключи используются конструктором `Mistral.__init__`. Неверные сочетания отклоняются с `ValueError` уже в конструкторе: `embed_dim`, не делящийся на `num_q_heads` без явного `head_size`, `num_q_heads`, не делящееся на `num_kv_heads`, нечётный `head_size`.
+Все ключи используются конструктором `Mistral.__init__`. `intermediate_size` и `bias` меняют форму весов: по умолчанию сохранена прежняя структура, чтобы загружались старые чекпоинты. Неверные сочетания отклоняются с `ValueError` уже в конструкторе: `embed_dim`, не делящийся на `num_q_heads` без явного `head_size`, `num_q_heads`, не делящееся на `num_kv_heads`, нечётный `head_size`.
 
 ## Отличия от Mistral 7B
 
@@ -124,12 +126,38 @@ result    = ffn_out + out
 
 | | Mistral 7B | Здесь |
 |---|---|---|
-| Скрытый слой SwiGLU | `hidden_dim = 14336` при `dim = 4096` (3.5·d) | 4·d в каждой из трёх матриц (30) |
-| Bias | нет ни в одной проекции | во всех `Linear` (24) |
+| Скрытый слой SwiGLU | `hidden_dim = 14336` при `dim = 4096` (3.5·d) | 4·d по умолчанию; `intermediate_size: 14336` — как в оригинале (30) |
+| Bias | нет ни в одной проекции | во всех `Linear` по умолчанию; `bias: false` — как в оригинале (24) |
 | Dropout | нет | после эмбеддингов, на выходах attention и SwiGLU (51); `dropout: 0` убирает его полностью |
 | Ширина окна | `W + 1` позиций в тексте статьи и prefill эталона, `W` в HF | `W + 1` (см. [выше](#ширина-окна-w--1)) |
 | `eps` RMSNorm | `1e-5` | `1e-6` по умолчанию, задаётся ключом `rms_norm_eps` |
 | KV-кэш | кольцевой буфер (запись по `pos % W`) | `torch.cat` и обрезка срезом; результат тот же |
+
+Скользящее окно есть только в Mistral 7B v0.1 (`sliding_window: 4096`); в v0.2 и v0.3 его убрали (`sliding_window: null` в конфиге HF). Здесь это ключ `window_size`: без него окна нет.
+
+### Загрузка весов HuggingFace
+
+С ключами `intermediate_size` и `"bias": false` загружаются веса `MistralForCausalLM` — той же функцией `convert_hf_state_dict`, что у [LLaMA](llama.md#загрузка-весов-huggingface) (реэкспорт в `llm.models.mistral`); строки `q_proj` переставляются по `num_attention_heads`, `k_proj` — по `num_key_value_heads`.
+
+```python
+from transformers import MistralForCausalLM
+from llm.models.mistral import Mistral, convert_hf_state_dict
+
+hf = MistralForCausalLM.from_pretrained(...)
+c = hf.config
+config = {"vocab_size": c.vocab_size, "embed_dim": c.hidden_size, "num_q_heads": c.num_attention_heads,
+          "num_kv_heads": c.num_key_value_heads, "head_size": c.head_dim or c.hidden_size // c.num_attention_heads,
+          "num_layers": c.num_hidden_layers, "max_position_embeddings": c.max_position_embeddings,
+          "dropout": 0.0, "rms_norm_eps": c.rms_norm_eps, "rope_theta": c.rope_theta,
+          "intermediate_size": c.intermediate_size, "bias": False}
+if c.sliding_window is not None:
+    config["window_size"] = c.sliding_window - 1  # окно здесь на позицию шире, см. «Ширина окна: W + 1»
+model = Mistral(config)
+model.load_state_dict(convert_hf_state_dict(hf.state_dict(), num_heads=c.num_attention_heads,
+                                            num_kv_heads=c.num_key_value_heads))
+```
+
+Сверено со случайными `MistralForCausalLM` из `transformers` (со скользящим окном и без него, с `head_dim`, не равным `hidden_size / num_attention_heads`): логиты совпадают до ~1e-5, greedy-генерация с KV-кэшем дольше окна — токен в токен (`llm/tests/models/test_mistral_mixtral_hf_parity.py`). Настоящие веса (Mistral 7B — около 14 ГБ) для проверки слишком велики.
 
 ## Генерация
 
