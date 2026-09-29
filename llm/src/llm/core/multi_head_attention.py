@@ -34,7 +34,6 @@ class MultiHeadAttention(nn.Module):
     Что принимается на вход:
     ------------------------
     - x: shape [batch, seq_len, embed_dim] — обычный batched-embed тензор.
-    - mask (опционально): shape [seq_len, seq_len] — маска для автогерерации или causal attention.
 
     Какие параметры важны:
     ----------------------
@@ -142,7 +141,6 @@ class MultiHeadAttention(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        mask: torch.Tensor = None,
         use_cache: bool = True,
         cache: list = None,
     ):
@@ -162,9 +160,6 @@ class MultiHeadAttention(nn.Module):
         x : torch.Tensor
             Входной тензор формы [batch, seq_len, emb_size].
             Это ваши входные эмбеддинги (обычно после token + positional embedding).
-        mask : torch.Tensor, опционально
-            Матрица формы [seq_len, seq_len], задающая “разрешения” — кто может смотреть на кого (например, causal mask).
-            Если не указана — используется внутренняя маска (например, для autoregressive генерации).
         use_cache : bool, по умолчанию True
             Нужно ли использовать кэш для KV attention (важно для ускорения генерации по одному токену).
         cache : list, опционально
@@ -178,7 +173,8 @@ class MultiHeadAttention(nn.Module):
         Важно:
         -------
         - Shape входа всегда [batch, seq_len, emb_size], выход тот же.
-        - При seq_len > max_seq_len выбросит ошибку (безопасно для контроля переполнения буферов).
+        - Маска только внутренняя (causal); паддинг проверяется в forward модели (check_attention_mask).
+        - При длине кэша + seq_len > max_seq_len выбросит ValueError.
         - При использовании use_cache=True кешируется только последние токены (актуально для LLM).
 
         Пример:

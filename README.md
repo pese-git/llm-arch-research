@@ -249,6 +249,29 @@ flowchart TB
 
 Подробности по каждой архитектуре — в [docs/README.md](docs/README.md#известные-ограничения).
 
+## 💥 Несовместимые изменения
+
+Изменения, после которых старый код, конфиги или чекпоинты могут вести себя иначе. Форма весов и состав слоёв ни в одной модели не менялись: чекпоинты, сохранённые до этих изменений, загружаются.
+
+### Результат модели
+
+- **GPT-1 и GPT-2: GELU по умолчанию — tanh-аппроксимация** ([#11](https://github.com/pese-git/llm-arch-research/pull/11)), как в оригинальном коде OpenAI. Старые чекпоинты загружаются, но логиты отличаются примерно на 1e-4. Точный GELU для GPT-1 — `"activation": "gelu"` в конфиге. Значение `"activation": "gelu_exact"` удалено (`ValueError`), вместо него — `"gelu_tanh"`.
+- **Top-p** ([#31](https://github.com/pese-git/llm-arch-research/pull/31)) теперь включает в ядро токен, на котором сумма вероятностей переходит порог (как в HuggingFace). При тех же весах и seed выборка с `top_p` может отличаться; greedy, температура и top-k не изменились.
+
+### Чекпоинты и конфиги
+
+- **Маски attention и таблицы RoPE не сохраняются в `state_dict`** ([#32](https://github.com/pese-git/llm-arch-research/pull/32)). Старые чекпоинты новым кодом загружаются, в том числе со `strict=True`. Обратное не работает: чекпоинт нового формата старый код со `strict=True` не загрузит (нет ключей `_tril_mask`, `cos_matrix`, `sin_matrix`); со `strict=False` загрузится, недостающие буферы старый код построит сам.
+- **`head_size` читается из конфига** ([#33](https://github.com/pese-git/llm-arch-research/pull/33)). Раньше ключ игнорировался и размер головы всегда был `embed_dim // <число голов>`. Если в конфиге `head_size` с этим не совпадает, модель соберётся с другими размерами и старый чекпоинт не подойдёт — уберите ключ или исправьте значение.
+- **Неверный конфиг — `ValueError` в конструкторе** ([#33](https://github.com/pese-git/llm-arch-research/pull/33)): `embed_dim`, не делящийся на число голов (без явного `head_size`); `num_q_heads`, не делящееся на `num_kv_heads`; нечётный `head_size` в моделях с RoPE (раньше `AssertionError`); `top_k_experts` вне `1 … num_experts`. Раньше такие конфиги принимались и работали неверно или падали в `forward`.
+
+### API
+
+- **`forward` по умолчанию не возвращает кэш** ([#31](https://github.com/pese-git/llm-arch-research/pull/31)): `model(x)` → `(logits, None)`. Кэш — `model(x, use_cache=True)`.
+- **`generate` не принимает лишних аргументов** ([#31](https://github.com/pese-git/llm-arch-research/pull/31)): неизвестный именованный аргумент (например, опечатка `max_lenght`) — `TypeError`, а не молчаливое игнорирование. Появились `eos_token_id` и `pad_token_id`.
+- **`attention_mask`** ([#29](https://github.com/pese-git/llm-arch-research/pull/29)): раньше игнорировалась. Правый паддинг в `forward` работает; левый паддинг и любые нули в `generate` — `NotImplementedError` (см. [docs/README.md](docs/README.md#маски)).
+- **Длина с учётом кэша** ([#29](https://github.com/pese-git/llm-arch-research/pull/29)): `forward` с кэшем, у которого кэш + новые токены длиннее `max_position_embeddings`, — `ValueError`. `generate` в этом случае продолжает по последним `max_position_embeddings` токенам.
+- **Параметр `mask` удалён** из `forward` модулей attention (`MultiHeadAttention`, `GroupedQueryAttention`, `MultiQueryAttention`) и декодеров, параметр `rope` — из `Gpt2Decoder` ([#35](https://github.com/pese-git/llm-arch-research/pull/35)). Они принимались и не использовались; передача теперь — `TypeError`.
+
 ## 🛠️ Технологический стек
 
 - **Python 3.10+**, **uv** (workspace)

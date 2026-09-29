@@ -19,7 +19,7 @@ GPT-2 — масштабируемый автогерессивный языко
     >>> out = model.generate(input_ids, max_new_tokens=30, do_sample=False)
 """
 import torch
-from torch import nn, Tensor
+from torch import nn
 from llm.core.base_model import BaseModel
 from llm.core.config_checks import resolve_head_size
 from llm.core.generation import (
@@ -30,7 +30,6 @@ from llm.core.generation import (
 from llm.core.token_embeddings import TokenEmbeddings
 from llm.core.positional_embeddings import PositionalEmbeddings
 from llm.core.gpt2_decoder import Gpt2Decoder
-from llm.core.feed_forward import FeedForward
 
 
 class GPT2(BaseModel):
@@ -46,7 +45,7 @@ class GPT2(BaseModel):
     Архитектурные особенности:
     --------------------------
     - Token и positional embeddings (learnable, как в GPT-2 оригинале).
-    - Stack из N блоков Decoder (MultiHeadAttention с causal mask, Residual, Pre-LayerNorm, GELU FFN).
+    - Stack из N блоков Gpt2Decoder (MultiHeadAttention с causal mask, Residual, Pre-LayerNorm, GELU FFN).
     - KV attention-кэш (ускоряет autoregressive generation, критически важно для LLM).
     - Использует GELU как функцию активации.
     - Поддержка dropout на каждом этапе.
@@ -71,7 +70,7 @@ class GPT2(BaseModel):
     Пример использования:
     ---------------------
         >>> gpt2 = GPT2({...})
-        >>> logits = gpt2(input_ids)
+        >>> logits, _ = gpt2(input_ids)
         >>> output = gpt2.generate(input_ids, max_new_tokens=20, do_sample=True)
 
     References:

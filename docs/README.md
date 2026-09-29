@@ -6,7 +6,7 @@
 |---|---|---|
 | [GPT-1](gpt.md) | OpenAI, 2018 | абсолютные позиционные эмбеддинги, стандартный MHA, **post-LN** |
 | [GPT-2](gpt2.md) | OpenAI, 2019 | то же + переход на **pre-LN**, финальная нормализация |
-| [LLaMA](llama.md) | Meta, 2023 | RoPE, RMSNorm, SwiGLU (⚠️ без GQA, вопреки докстрингу) |
+| [LLaMA](llama.md) | Meta, 2023 | RoPE, RMSNorm, SwiGLU, обычный MHA (без GQA) |
 | [Mistral](mistral.md) | Mistral AI, 2023 | + Grouped Query Attention, Sliding Window Attention |
 | [Mixtral](mixtral.md) | Mistral AI, 2023 | Mistral + Mixture-of-Experts вместо плотного FFN |
 | [Gemma](gemma.md) | Google DeepMind, 2024 | RoPE, RMSNorm, Multi-Query Attention, GeGLU |
@@ -65,8 +65,6 @@ input_ids            attention_mask
 
 - **Mistral, Mixtral** — окно sliding window шириной `window_size + 1` позиций (как в тексте статьи и prefill эталонного кода), а в HuggingFace — `window_size`; см. [mistral.md](mistral.md#ширина-окна-w--1).
 - **Mixtral** — MoE без load-balancing loss, см. [mixtral.md](mixtral.md#moe-изнутри).
-- **LLaMA** — нет GQA, вопреки докстрингу, см. [llama.md](llama.md#известное-расхождение-с-докстрингом).
-- **Gemma** — в конфиге есть ключи, которые не используются, см. [gemma.md](gemma.md#неиспользуемые-ключи-конфига).
 
 Полный список технического долга с приоритетами и способами исправления — в [backlog.md](backlog.md).
 

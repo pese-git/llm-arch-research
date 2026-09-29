@@ -1,5 +1,5 @@
 import torch
-from torch import nn, Tensor
+from torch import nn
 
 from llm.core.base_model import BaseModel
 from llm.core.config_checks import resolve_head_size
@@ -133,24 +133,8 @@ class Llama(BaseModel):
         check_sequence_length(x.size(1), cache_start_pos(cache), self._max_seq_len)
         check_attention_mask(attention_mask, x, cache)
 
-        # Вычисление start_pos из кэша (если кэш передан)
-        # if cache is not None:
-        #    # При кэше обрабатываем только один токен (последний)
-        #    seq_len = 1
-        #    # Вычисляем start_pos из самого нижнего уровня кэша
-        #    if cache and cache[0] and cache[0][0]:
-        #        key_cache, _ = cache[0][0]  # Первый декодер, первая голова
-        #        start_pos = key_cache.size(1)  # cache_len
-        #    else:
-        #        start_pos = 0
-        # else:
-        #    # Без кэша работаем как раньше
-        #    start_pos = 0
-        #    seq_len = x.size(1)
-
-        # Эмбеддинги токенов и позиций
+        # Эмбеддинги токенов; позиции кодируются RoPE внутри attention
         tok_out = self._token_embeddings(x)  # [batch, seq_len, emb_size]
-        # pos_out = self._position_embeddings(x)  # [batch, seq_len, emb_size]
 
         # Комбинирование
         out = self._dropout(tok_out)  # [batch, seq_len, emb_size]

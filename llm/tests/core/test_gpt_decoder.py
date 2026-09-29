@@ -47,26 +47,25 @@ class TestGptDecoder:
         assert output.shape == random_embeddings.shape
         assert isinstance(output, torch.Tensor)
 
-    def test_forward_with_causal_mask(self, embed_dim, num_heads, random_embeddings):
-        """Test forward pass with causal mask."""
-        head_size = embed_dim // num_heads
-        max_seq_len = 1024
+    def test_forward_is_causal(self, embed_dim, num_heads, random_embeddings):
+        """Outputs at earlier positions do not depend on later tokens."""
         decoder = GptDecoder(
             num_heads=num_heads,
             emb_size=embed_dim,
-            head_size=head_size,
-            max_seq_len=max_seq_len,
-        )
+            head_size=embed_dim // num_heads,
+            max_seq_len=1024,
+            dropout=0.0,
+        ).eval()
 
-        batch_size, seq_len = random_embeddings.shape[:2]
-        # Create causal mask
-        mask = torch.tril(torch.ones(seq_len, seq_len))
+        t = random_embeddings.shape[1] // 2
+        changed = random_embeddings.clone()
+        changed[:, t:] = torch.randn_like(changed[:, t:])
+        with torch.no_grad():
+            output, _ = decoder(random_embeddings)
+            output_changed, _ = decoder(changed)
 
-        # Forward pass with causal mask
-        output, _ = decoder(random_embeddings, attention_mask=mask)
-
-        # Check output shape
-        assert output.shape == random_embeddings.shape
+        assert torch.allclose(output[:, :t], output_changed[:, :t], atol=1e-5)
+        assert not torch.allclose(output[:, t:], output_changed[:, t:])
 
     def test_residual_connections(self, embed_dim, num_heads, random_embeddings):
         """Test that residual connections are properly applied."""

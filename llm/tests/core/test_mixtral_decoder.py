@@ -33,11 +33,18 @@ def test_forward_shape(basic_decoder):
     assert out.shape == (2, 10, 16)
     assert cache is None or isinstance(cache, (tuple, list))
 
-def test_forward_masked(basic_decoder):
-    x = torch.randn(3, 7, 16)
-    mask = torch.ones(3, 7, 7, dtype=torch.bool)
-    out, cache = basic_decoder(x, mask=mask)
-    assert out.shape == (3, 7, 16)
+def test_forward_is_causal(basic_decoder):
+    """Выход позиций < t не зависит от входа на позициях ≥ t: встроенная causal-маска."""
+    module = basic_decoder.eval()
+    x = torch.randn(2, 8, 16)
+    t = 4
+    changed = x.clone()
+    changed[:, t:] = torch.randn_like(changed[:, t:])
+    with torch.no_grad():
+        out, _ = module(x)
+        out_changed, _ = module(changed)
+    assert torch.allclose(out[:, :t], out_changed[:, :t], atol=1e-5)
+    assert not torch.allclose(out[:, t:], out_changed[:, t:])
 
 def test_forward_with_cache_flag(basic_decoder):
     x = torch.randn(2, 8, 16)

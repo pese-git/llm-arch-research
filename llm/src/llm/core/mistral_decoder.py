@@ -9,26 +9,30 @@ from llm.core.group_query_attention import GroupedQueryAttention
 
 class MistralDecoder(nn.Module):
     """
-    MistralDecoder — стек декодирующих блоков, реализующий архитектуру Mistral-style Transformer.
+    MistralDecoder — один блок декодера Mistral (модель собирает из них стек в Mistral.__init__).
 
     Назначение:
     -----------
-    Этот класс описывает один или несколько блоков декодера, включающих Grouped Query Attention (GQA),
-    sliding window attention и SwiGLU feed-forward, как реализовано в моделях Mistral и Llama 2.
+    Блок включает Grouped Query Attention (GQA) со sliding window, RoPE и SwiGLU feed-forward
+    в pre-norm схеме с RMSNorm, как в Mistral 7B.
 
     Ключевые особенности архитектуры:
     ---------------------------------
     - Использует GQA: для каждого токена вычисляется attention c раздельным числом Q и KV голов (сильно ускоряет LLM).
     - Sliding Window Attention: внимание ограничено окном из window_size элементов (ускоряет обработку длинных текстов).
     - Rotary Positional Embedding (RoPE): позиционная информация интегрируется вращением Q/K.
-    - RMSNorm перед и после внимания и FFN (устойчивое обучение).
+    - Pre-norm: RMSNorm перед attention и перед FFN, residual-связь вокруг каждого подблока.
     - SwiGLU в качестве нелинейности вместо стандартного GELU (больше capacity в модели).
+
+    Формула работы (псевдокод):
+    ---------------------------
+        out = x + GQA(RMSNorm1(x))
+        result = out + SwiGLU(RMSNorm2(out))
 
     Аргументы конструктора:
     -----------------------
-    num_layers : int — сколько блоков-декодеров в стеке
-    параметры GQA: num_q_heads, num_kv_heads, emb_size, head_size, max_seq_len, window_size, rope, dropout
-    - все они идут в каждый слой (блок) декодера
+    num_q_heads, num_kv_heads, emb_size, head_size, max_seq_len, window_size, rope, dropout —
+    передаются в GroupedQueryAttention; emb_size и dropout — также в SwiGLU.
 
     Пример использования:
     ---------------------
@@ -57,20 +61,18 @@ class MistralDecoder(nn.Module):
         dropout: float = 0.1
     ):
         """
-        Инициализация стека декодеров MistralDecoder.
+        Инициализация блока MistralDecoder.
 
         Аргументы:
         ----------
-        num_layers : int
-            Сколько слоёв (декодеров/GQA-блоков) собрать в стек.
         num_q_heads : int
-            Количество Query-heads в attention (их больше, экономит память).
+            Количество Query-heads в attention; должно делиться на num_kv_heads.
         num_kv_heads : int
             Количество Key/Value-heads в attention (их меньше для быстрой генерации).
         emb_size : int
-            Размерность embedding (должна делиться на num_q_heads без остатка).
+            Размерность embedding.
         head_size : int
-            Размер одного attention head.
+            Размер одного attention head (num_q_heads * head_size может отличаться от emb_size).
         max_seq_len : int
             Максимально обрабатываемая длина последовательности.
         window_size : int
@@ -82,8 +84,7 @@ class MistralDecoder(nn.Module):
 
         Внутри:
         -------
-        - Собираются num_layers Sequential-блоков из GQA + SwiGLU + RMSNorm.
-        - Все параметры передаются в каждый слой (блок).
+        - GroupedQueryAttention (с RoPE и sliding window), SwiGLU и две RMSNorm.
         """
         super().__init__()
         self._heads = GroupedQueryAttention(
@@ -100,9 +101,9 @@ class MistralDecoder(nn.Module):
         self._norm1 = RMSNorm(emb_size)
         self._norm2 = RMSNorm(emb_size)
 
-    def forward(self, x: torch.Tensor, mask: torch.Tensor = None, use_cache: bool = True, cache: list = None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, use_cache: bool = True, cache: tuple = None) -> tuple:
         """
-        Прямой проход через стек MistralDecoder.
+        Прямой проход через блок MistralDecoder.
 
         Аргументы:
         ----------
@@ -111,7 +112,7 @@ class MistralDecoder(nn.Module):
         use_cache : bool, по умолчанию True
             Включить ли кэширование для ускорения генерации (авторегрессия).
         cache : list, опционально
-            Предыдущий кеш attention-блоков (или None).
+            KV-кэш этого слоя с предыдущих шагов: (K, V, next_pos), или None.
 
         Возвращает:
         -----------
@@ -122,9 +123,9 @@ class MistralDecoder(nn.Module):
 
         """
         norm1_out = self._norm1(x)
-        attention, kv_caches = self._heads(norm1_out, mask, use_cache=use_cache, cache=cache)
+        attention, kv_caches = self._heads(norm1_out, use_cache=use_cache, cache=cache)
         out = attention + x
-        
+
         norm2_out = self._norm2(out)
         ffn_out = self._ff(norm2_out)
 

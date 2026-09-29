@@ -2,51 +2,57 @@
 
 import torch
 from torch import nn
-from .feed_forward import FeedForward
 from .multi_head_attention import MultiHeadAttention
 from .rope import RoPE
 
 
 class CachedDecoder(nn.Module):
     """
-    CachedDecoder — Transformer-декодер с key/value-кэшированием (реализация накладывающегося masked multi-head attention).
+    CachedDecoder — pre-norm блок декодера с KV-кэшем и подставляемыми нормализацией и FFN.
 
     Назначение:
     -----------
-    Позволяет быстро и эффективно реализовывать autoregressive генерацию текста в стиле GPT-2/3/4:
-    - На шаге генерации используются только нужные токены, “прошлые” key/value значения не пересчитываются, а подаются из кэша.
-    - Позволяет значительно ускорять inferece (особенно на длинных последовательностях).
-    - Вдохновлено реализациями в HuggingFace transformers, GPT-2/3 и других LLM.
+    Общий блок, из которого собирается декодер LLaMA: attention — всегда MultiHeadAttention
+    (опционально с RoPE), а нормализация и feed-forward передаются в конструктор.
+    - LLaMA: norm_layer=RMSNorm, feed_forward_layer=SwiGLU, rope=RoPE(...).
+    - По умолчанию norm_layer=nn.LayerNorm — тогда это классический pre-LN блок.
+
+    Формула работы (псевдокод):
+    ---------------------------
+        out = x + Attention(Norm1(x))
+        result = out + FFN(Norm2(out))
 
     Архитектурные особенности:
     --------------------------
-    - Использует классическую multi-head attention (с causal mask — запрещает видеть “будущее”).
-    - Предусматривает передачу и накопление KV-cache для каждого слоя (hidden state attention).
-    - Поддерживает передачу внимания через стек attention-блоков.
-    - Применяется layernorm и feed-forward block (GELU).
+    - Встроенная causal-маска; паддинг проверяется в forward модели (check_attention_mask).
+    - KV-кэш каждого слоя: при генерации K/V прошлых токенов не пересчитываются.
 
     Параметры конструктора:
     -----------------------
+    feed_forward_layer : nn.Module — FFN-блок (для LLaMA — SwiGLU)
     num_heads : int — число attention heads
     emb_size : int — embedding размерность
     head_size : int — размер каждой attention head (обычно emb_size // num_heads)
-    feed_forward_layer : nn.Module — feedforward блок (mLP), может быть любым PyTorch-слоем
     max_seq_len : int — максимально допустимая длина последовательности
-    dropout : float — dropout на attention/ffn
+    norm_layer : type — класс нормализации (nn.LayerNorm по умолчанию, для LLaMA — RMSNorm)
+    dropout : float — dropout в attention
+    rope : RoPE — rotary positional encoding для Q и K (для LLaMA)
 
     Пример использования:
     ---------------------
-        >>> from llm.core.feed_forward import FeedForward
-        >>> ff_block = FeedForward(emb_size=256, dropout=0.1, activation=\"gelu\")
-        >>> decoder = CachedDecoder(num_heads=4, emb_size=256, head_size=64, feed_forward_layer=ff_block, max_seq_len=2048, dropout=0.1)
+        >>> from llm.core.swi_glu import SwiGLU
+        >>> from llm.core.rms_norm import RMSNorm
+        >>> from llm.core.rope import RoPE
+        >>> decoder = CachedDecoder(
+        ...     feed_forward_layer=SwiGLU(emb_size=256, dropout=0.1), num_heads=4, emb_size=256,
+        ...     head_size=64, max_seq_len=2048, norm_layer=RMSNorm, rope=RoPE(64, 2048))
         >>> x = torch.randn(2, 100, 256)
         >>> y, kv_cache = decoder(x, use_cache=True, cache=None)
         >>> print(y.shape)  # torch.Size([2, 100, 256])
 
     Подробнее:
     ----------
-    - GPT-2: https://cdn.openai.com/better-language-models/language-models.pdf
-    - HuggingFace cache mechanics: https://huggingface.co/docs/transformers/main/en/model_doc/gpt2
+    - LLaMA: https://arxiv.org/abs/2302.13971
     - Объяснения autoregressive cache: https://jalammar.github.io/illustrated-gpt2/
 
     """
@@ -72,7 +78,7 @@ class CachedDecoder(nn.Module):
         emb_size : int
             Размерность входного вектора x.
         head_size : int
-            Размерность каждой attention head; emb_size = num_heads * head_size должно быть True!
+            Размерность каждой attention head (обычно emb_size // num_heads).
         feed_forward_layer : nn.Module
             Feed-forward слой (например, обычный двухслойный MLP), который применяется после нормы и внимания, и после второй нормы.
         max_seq_len : int
@@ -96,7 +102,6 @@ class CachedDecoder(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        mask: torch.Tensor = None,
         use_cache: bool = True,
         cache: list = None,
     ):
@@ -106,8 +111,8 @@ class CachedDecoder(nn.Module):
         В этом методе применяется:
         - Causal multi-head attention (masked, не смотрит вперёд)
         - Быстрая обработка длинных последовательностей за счёт сохранения и передачи KV-кэша
-        - LayerNorm перед каждым блоком
-        - Feed-forward блок и вторая LayerNorm
+        - Нормализация (norm_layer) перед каждым подблоком
+        - Feed-forward блок (feed_forward_layer)
         - Dropout
 
         Аргументы:
@@ -129,7 +134,7 @@ class CachedDecoder(nn.Module):
         norm1_out = self._norm1(x)
         # Передаём все cache/use_cache дальше в attention
         attention, kv_caches = self._heads(
-            norm1_out, mask=mask, use_cache=use_cache, cache=cache
+            norm1_out, use_cache=use_cache, cache=cache
         )
         out = attention + x
         norm2_out = self._norm2(out)

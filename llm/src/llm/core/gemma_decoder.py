@@ -1,6 +1,5 @@
 import torch
 from torch import nn
-import torch.nn.functional as F
 from llm.core.rope import RoPE
 from llm.core.multi_query_attention import MultiQueryAttention
 from llm.core.rms_norm import RMSNorm
@@ -12,72 +11,61 @@ class GemmaDecoder(nn.Module):
 
     Назначение:
     -----------
-    Данный блок реализует одну «ячейку» декодерного стека в модели Gemma. Архитектура схожа с современными LLM (Llama/Mistral),
-    но имеет уникальные особенности attention и feed-forward слоёв, соответствующие спецификации Gemma.
+    Одна «ячейка» декодерного стека Gemma: pre-norm блок с RMSNorm, Multi-Query Attention
+    (одна общая K/V-голова, как в Gemma 2B) с RoPE и GeGLU feed-forward.
 
     Архитектурные компоненты:
     -------------------------
-    - LayerNorm или RMSNorm
-    - Multi-head self-attention (обычно Multi-Query Attention)
-    - Skip connection (остаточное сложение)
-    - Feed-forward блок (может включать SwiGLU, GeGLU или классический FFN)
-    - Повторная нормализация
-    - Dropout (регуляризация на уровне attention и feed-forward)
+    - RMSNorm перед attention и перед FFN
+    - Multi-Query Attention с RoPE и KV-кэшем
+    - GeGLU feed-forward (GELU-gated MLP)
+    - Residual-связь вокруг каждого подблока
+    - Dropout в attention и FFN (в оригинальной Gemma его нет, см. docs/gemma.md)
 
     Алгоритм прямого прохода:
     -------------------------
-        1. norm1_out = LayerNorm(x)
-        2. attention_out = Attention(norm1_out, ...)
+        1. norm1_out = RMSNorm1(x)
+        2. attention_out = MQA(norm1_out)
         3. resid1 = attention_out + x
-        4. norm2_out = LayerNorm(resid1)
-        5. ffn_out = FeedForward(norm2_out)
+        4. norm2_out = RMSNorm2(resid1)
+        5. ffn_out = GeGLU(norm2_out)
         6. output = ffn_out + resid1
-
-    Теоретические детали:
-    ---------------------
-    - В Gemma используются техники оптимизации памяти и ускорения инференса (например, shared K/V-головы, Rope, кастомные FFN).
-    - Поддержка кэширования attention для ускорения генерации (KV cache).
-    - Блок проектирован для использования в стеке, повторяется N раз во всей LLM.
 
     Аргументы конструктора:
     ----------------------
     num_q_heads : int
-        Число голов query (Query Heads) для attention.
-    num_kv_heads : int
-        Число ключевых/значенческих голов (Key/Value Heads).
+        Число голов query (K/V-голова всегда одна).
     emb_size : int
         Размерность скрытого пространства (embedding dim).
     head_size : int
         Размерность одной attention-головы.
     max_seq_len : int
-        Максимальная длина последовательности (ограничение на causal mask).
+        Максимальная длина последовательности (размер causal-маски).
+    rope : RoPE
+        Позиционное кодирование Rotary Position Embedding.
     dropout : float, optional
         Dropout для регуляризации (примерно 0.0–0.1).
-    rope : RoPE, optional
-        Позиционное кодирование Rotary Position Embedding.
 
     Пример использования:
     ---------------------
         >>> decoder = GemmaDecoder(
         ...     num_q_heads=8,
-        ...     num_kv_heads=2,
         ...     emb_size=256,
         ...     head_size=32,
         ...     max_seq_len=1024,
+        ...     rope=RoPE(32, 1024),
         ...     dropout=0.1,
-        ...     rope=rope_obj
         ... )
         >>> x = torch.randn(2, 24, 256)
-        >>> out, cache = decoder(x, mask=None, use_cache=True, cache=None)
+        >>> out, cache = decoder(x, use_cache=True, cache=None)
         >>> print(out.shape)  # torch.Size([2, 24, 256])
 
     Литература и ссылки:
     --------------------
     - Gemma (официальный релиз): https://ai.google.dev/gemma
-    - Gemma paper: https://arxiv.org/abs/2403.07794
+    - Gemma paper: https://arxiv.org/abs/2403.08295
     - Rotary Embedding: https://arxiv.org/abs/2104.09864
     - Multi-Query Attention: https://arxiv.org/abs/1911.02150
-    - Llama: https://arxiv.org/abs/2302.13971
     """
     def __init__(self, 
         num_q_heads: int,
@@ -90,8 +78,7 @@ class GemmaDecoder(nn.Module):
         """
         Конструктор слоя GemmaDecoder.
 
-        Производит инициализацию всех подслоёв (нормализация, multi-head или multi-query attention, feed-forward блок, Dropout)
-        согласно архитектуре декодера Gemma. Обеспечивает поддержку rotary-позиционирования, обучения и inference с caching.
+        Создаёт подслои блока: две RMSNorm, Multi-Query Attention с RoPE и GeGLU.
 
         Аргументы:
         ----------
@@ -110,9 +97,7 @@ class GemmaDecoder(nn.Module):
 
         Внутри:
         -------
-        - Инициализируются все слои norm, attention, rope, FFN, остаточные соединения.
-        - Строится causal-маска автоагрессивного attention (если требуется).
-        - Гибко поддерживает работу как на training, так и для быстрых inference/генерации.
+        - MultiQueryAttention (со своей causal-маской), GeGLU, RMSNorm ×2.
 
         Пример:
         -------
@@ -133,16 +118,16 @@ class GemmaDecoder(nn.Module):
         self._norm1 = RMSNorm(emb_size)
         self._norm2 = RMSNorm(emb_size)
 
-    def forward(self, x: torch.Tensor, mask: torch.Tensor = None, use_cache: bool = True, cache: list = None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, use_cache: bool = True, cache: tuple = None) -> tuple:
         """
         Прямой проход (forward) через GemmaDecoder.
 
         Последовательно реализует:
-        - Нормализацию входа (обычно RMSNorm или LayerNorm)
-        - Self-attention (multi-query или multi-head, с опциональной маской и кэшем)
+        - Нормализацию входа (RMSNorm)
+        - Multi-Query self-attention со встроенной causal-маской и кэшем
         - Остаточное сложение (skip connection)
         - Вторую нормализацию
-        - Feed-Forward-блок (например, GeGLU/SwiGLU)
+        - Feed-Forward-блок GeGLU
         - Ещё одно residual сложение
 
         Поддерживает autoregressive режим с caching (KV-слоты attention для ускорения генерации).
@@ -151,8 +136,6 @@ class GemmaDecoder(nn.Module):
         ----------
         x : torch.Tensor
             Входной скрытый тензор формы [batch_size, seq_length, emb_size].
-        mask : torch.Tensor, optional
-            Attention mask (например, causal или padding mask). Если None, используется встроенная causal mask.
         use_cache : bool, по умолчанию True
             Если True — возвращается кэш KV для ускорения autoregressive генерации.
         cache : list, optional
@@ -166,19 +149,19 @@ class GemmaDecoder(nn.Module):
 
         Пример:
         -------
-            >>> out, new_cache = decoder(x, mask=att_mask, use_cache=True, cache=old_cache)
+            >>> out, new_cache = decoder(x, use_cache=True, cache=old_cache)
             >>> out.shape  # [batch_size, seq_len, emb_size]
 
         Примечания:
         -----------
-        - mask используется для ограничения внимания (напр., каузальный режим GPT/LLM).
+        - Паддинг (attention_mask) проверяется в forward модели; блок применяет только встроенную causal-маску.
         - Для ускорения в режиме генерации рекомендуется использовать use_cache=True + передавать cache.
 
         """
         norm1_out = self._norm1(x)
-        attention, kv_caches = self._heads(norm1_out, mask, use_cache=use_cache, cache=cache)
+        attention, kv_caches = self._heads(norm1_out, use_cache=use_cache, cache=cache)
         out = attention + x
-        
+
         norm2_out = self._norm2(out)
         ffn_out = self._ff(norm2_out)
 

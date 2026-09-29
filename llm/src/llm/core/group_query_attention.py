@@ -13,7 +13,7 @@ class GroupedQueryAttention(nn.Module):
     ----------------------------------
     Это разновидность многоголового внимания (multi-head), где для Q (query) голов может быть больше, чем для K/V (key/value) голов:
     вместо стандартного MHA (num_q_heads == num_kv_heads) — меньшее число K/V разделяет информацию для всех Q.
-    Такой подход экономит память и ускоряет инференс, сохраняя высокое качество внимания (используется например в Mistral, Llama-2, GPT-4 и др.).
+    Такой подход экономит память и ускоряет инференс, сохраняя высокое качество внимания (используется, например, в Llama 2 70B и Mistral 7B).
 
     Зачем это нужно?
     ----------------
@@ -55,7 +55,7 @@ class GroupedQueryAttention(nn.Module):
     ------------------------
     - LlamaV2 (Section 2.3): https://arxiv.org/abs/2307.09288
     - Mistral: https://arxiv.org/abs/2310.06825
-    - \"Self-attention with linear complexity\" (Vila et al.): https://arxiv.org/abs/2302.05442
+    - GQA: Ainslie et al., "GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints", 2023: https://arxiv.org/abs/2305.13245
     - Обзор: https://huggingface.co/blog/mistral
 
     """
@@ -80,7 +80,7 @@ class GroupedQueryAttention(nn.Module):
         Аргументы:
         ----------
         num_q_heads : int
-            Количество Query attention heads (чаще всего кратно num_kv_heads, напр. 8/2, 12/4).
+            Количество Query attention heads; должно делиться на num_kv_heads (напр. 8/2, 12/4), иначе ValueError.
             Чем больше — тем богаче контекстное окно каждой позиции.
         num_kv_heads : int
             Количество Key/Value attention heads (обычно 2-4, иногда меньше, чем Query).
@@ -89,7 +89,7 @@ class GroupedQueryAttention(nn.Module):
             Размерность входного embedding (общий размер вектора на токен).
         head_size : int
             Размерность одной головы внимания.
-            Требуется: num_q_heads * head_size == emb_size (иначе ошибка).
+            num_q_heads * head_size может отличаться от emb_size: выходная проекция возвращает результат в emb_size.
         max_seq_len : int
             Максимальная поддерживаемая длина входной последовательности; определяет размер триангулярной (causal/sliding window) маски.
         window_size : int
@@ -150,7 +150,6 @@ class GroupedQueryAttention(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        mask: torch.Tensor = None,
         use_cache: bool = True,
         cache: list = None,
     ):
@@ -161,7 +160,7 @@ class GroupedQueryAttention(nn.Module):
         Что происходит в этом методе:
         -----------------------------
         - Преобразует входной тензор x (токеновые эмбеддинги) в Q, K, V-матрицы с учётом разного числа голов для Q и KV.
-        - Формирует attention "маску" для sliding window, если нужно ограничить историю.
+        - Накладывает встроенную маску causal + sliding window (внешней маски нет: паддинг проверяется в forward модели).
         - Применяет RoPE (если задан) к Q и K, вносит позиционную информацию.
         - При работе с кэшем дополняет ключи и значения предыдущими (ускоряет генерацию).
         - Повторяет K/V головы для соответствия количеству Q (чтобы на каждую Q-head приходился свой KV).
@@ -173,8 +172,6 @@ class GroupedQueryAttention(nn.Module):
         ----------
         x : torch.Tensor
             Входной тензор размера [batch, seq_len, emb_size]
-        mask : torch.Tensor, по умолчанию None
-            Матричная маска для внимания (можно передать внешнюю или использовать встроенную sliding window mask)
         use_cache : bool, по умолчанию True
             Нужно ли использовать/возвращать кэш KV для быстрых автогенераций.
         cache : list, опционально
@@ -201,66 +198,43 @@ class GroupedQueryAttention(nn.Module):
         """
         batch_size, seq_len, emb_size = x.shape
 
-        # Кэш — (K, V, next_pos). K и V обрезаны до последних window_size позиций (rolling buffer),
-        # поэтому абсолютную позицию для RoPE нельзя брать из длины кэша — она хранится отдельно.
+        # Кэш — (K, V, next_pos). K и V обрезаны до последних window_size позиций, поэтому
+        # абсолютную позицию для RoPE нельзя брать из длины кэша — она хранится отдельно.
         start_pos = cache[2] if cache is not None else 0
         if start_pos + seq_len > self._max_seq_len:
             raise ValueError(
                 f"Длина последовательности {start_pos + seq_len} превышает максимум {self._max_seq_len}"
             )
 
-        # Пропустите тензор x через матрицы Wq, Wk , Wv, чтобы получить матрицы запроса, ключа и значения.
-        k = self._k(x)  # [B, T, hs]
-        q = self._q(x)  # [B, T, hs]
-        v = self._v(x)  # [B, T, hs]
+        # 1. Проекции: Q — на num_q_heads голов, K и V — на num_kv_heads голов
+        q = self._q(x)  # [B, T, H_q * hs]
+        k = self._k(x)  # [B, T, H_kv * hs]
+        v = self._v(x)  # [B, T, H_kv * hs]
 
-        # Шаг 2: Изменение формы для multi-head
-        # [batch_size, seq_len, num_heads * head_size] 
-        # -> [batch_size, seq_len, num_heads, head_size]
-        # Измените форму запроса (query) на batch_size × num_q_heads × seq_len × head_size.
-        q = q.reshape(batch_size, seq_len, self._num_heads, self._head_size)
+        # 2. Разбиение на головы: [B, T, H, hs] -> [B, H, T, hs]
+        q = q.reshape(batch_size, seq_len, self._num_heads, self._head_size).transpose(1, 2)
+        k = k.reshape(batch_size, seq_len, self._num_kv_heads, self._head_size).transpose(1, 2)
+        v = v.reshape(batch_size, seq_len, self._num_kv_heads, self._head_size).transpose(1, 2)
 
-        # Измените форму ключа (key) и значения (value) на batch_size × num_kv_heads × seq_len × head_size.
-        k = k.reshape(batch_size, seq_len, self._num_kv_heads, self._head_size)
-        v = v.reshape(batch_size, seq_len, self._num_kv_heads, self._head_size)
-     
-
-        # 3. Transpose: [B, T, H, hs] -> [B, H, T, hs]
-        q = q.transpose(1, 2)
-        k = k.transpose(1, 2)
-        v = v.transpose(1, 2)
-
-        # Пропустите матрицы запроса и ключа через экземпляр rope, чтобы выполнить поворот.
+        # 3. RoPE поворачивает Q и K (не V) по абсолютным позициям start_pos …
         if self._rope is not None:
-            # Применяем RoPE к Q и K (НЕ к V!)
-            q = self._rope(q, start_pos=start_pos)  # [B, T, hs]
-            k = self._rope(k, start_pos=start_pos)  # [B, T, hs]
+            q = self._rope(q, start_pos=start_pos)  # [B, H_q, T, hs]
+            k = self._rope(k, start_pos=start_pos)  # [B, H_kv, T, hs]
 
-        # Если cache пришел, то объединяем кэш и одну строку из ключа и значения. Это будут новые key и value  для последующих вычислений.
-        # 5. Кэширование (для autoregressive generation)
+        # 4. Ключи и значения из кэша идут перед новыми (кэш хранится до дублирования голов)
         if cache is not None:
             k_cache, v_cache, _ = cache
-            k = torch.cat([k_cache, k], dim=2)  # Concat по seq_len (dim=2)
+            k = torch.cat([k_cache, k], dim=2)  # [B, H_kv, cache_len + T, hs]
             v = torch.cat([v_cache, v], dim=2)
 
-        # Если use_cache == True, то сохраните матрицы ключа и значения для кэша (это нужно сделать до дублирования голов).
-        #if use_cache == True:
-        #    # Обрезаем до последних window_size токенов
-        #    k_to_cache = k[:, :, -self._window_size:, :]
-        #    v_to_cache = v[:, :, -self._window_size:, :]
-        #    kv_cache = (k_to_cache, v_to_cache)
-
-        # Продублируйте головы в тензорах ключа (key) и значения (value), чтобы получился тензор размера на batch_size × num_q_heads × seq_len × head_size.
-        #k = self._repeat_kv_heads(k, self._num_heads, self._num_kv_heads)
-        #v = self._repeat_kv_heads(v, self._num_heads, self._num_kv_heads)
-        k_expanded = self._repeat_kv_heads(k, self._num_heads, self._num_kv_heads)
+        # 5. Каждая K/V-голова дублируется на свою группу Q-голов
+        k_expanded = self._repeat_kv_heads(k, self._num_heads, self._num_kv_heads)  # [B, H_q, T_kv, hs]
         v_expanded = self._repeat_kv_heads(v, self._num_heads, self._num_kv_heads)
-        
-        # Перемножим матрицы запроса и ключа (транспонированную), чтобы вычислить матрицу внимания.
-        # И разделить все значения в матрице внимания на корень из head_size.
-        scores = q @ k_expanded.transpose(-2, -1) / (self._head_size ** 0.5)
 
-        # Маска causal + скользящее окно по абсолютным позициям. Строки — новые токены
+        # 6. Scaled dot-product
+        scores = q @ k_expanded.transpose(-2, -1) / (self._head_size ** 0.5)  # [B, H_q, T, T_kv]
+
+        # 7. Маска causal + скользящее окно по абсолютным позициям. Строки — новые токены
         # start_pos … start_pos + seq_len − 1, столбцы — ключи: из кэша (последние
         # cache_len позиций перед start_pos) и новые. Нужна и с кэшем: при префилле кусками
         # новые токены не должны видеть друг друга «вперёд», и каждой строке нужно своё окно.
@@ -270,29 +244,17 @@ class GroupedQueryAttention(nn.Module):
         ]
         scores = scores.masked_fill(~window_mask, float("-inf"))
 
-        # Применить к матрице внимания (построчно) функцию Softmax.
+        # 8. Softmax и взвешенная сумма значений
         weights = F.softmax(scores, dim=-1)
+        x_out = weights @ v_expanded  # [B, H_q, T, hs]
 
-        # Перемножим матрицу внимания и матрицу значения.
-        x_out = weights @ v_expanded  # [B, T, hs]
-
-        # Измените форму тензора на batch_size × seq_len × num_heads*head_size.
-        # Transpose обратно и concatenate heads
-        x_out = x_out.transpose(1, 2)  # [B, T_q, H, hs]
-        x_out = x_out.contiguous()  # Важно для reshape!
+        # 9. Склейка голов и проекция обратно в emb_size
+        x_out = x_out.transpose(1, 2).contiguous()  # [B, T, H_q, hs]
         concatenated_attention = x_out.reshape(batch_size, seq_len, self._num_heads * self._head_size)
-
-        #concatenated_attention = x_out.reshape(batch_size, seq_len, self._num_heads * self._head_size)
-
-        # Пропустите получившийся тензор через последний линейный слой.
-        # 3. Проецируем в пространство эмбеддингов
-        projected_output = self._layer(concatenated_attention)
-
-        # 4. Применяем dropout для регуляризации
-        output = self._dropout(projected_output)
+        output = self._dropout(self._layer(concatenated_attention))  # [B, T, emb_size]
 
         if use_cache:
-            # Обрезаем оригинальный K и V (до дублирования)
+            # В кэш — последние window_size позиций K и V (до дублирования голов)
             k_to_cache = k[:, :, -self._window_size:, :]
             v_to_cache = v[:, :, -self._window_size:, :]
             kv_cache = (k_to_cache, v_to_cache, start_pos + seq_len)

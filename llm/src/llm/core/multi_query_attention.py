@@ -15,9 +15,10 @@ class MultiQueryAttention(nn.Module):
 
     Теоретическое преимущество:
     --------------------------
-    - Существенно экономит память на матрицы Key и Value: количество KV-голов обычно в 4–8 раз меньше, чем число Query-голов.
-    - Позволяет достигать скорости почти обычной MHA при минимальной потере точности (см. Llama, Mistral).
-    - Является стандартом де-факто для deployment и inference современных LLM.
+    - Существенно экономит память на матрицы Key и Value: K/V-голова одна на все Query-головы,
+      поэтому KV-кэш в num_q_heads раз меньше, чем у MHA.
+    - Почти не теряет в качестве по сравнению с MHA (используется, например, в PaLM и Gemma 2B).
+    - Обобщение с несколькими K/V-головами — Grouped Query Attention (GroupedQueryAttention).
 
     Архитектурная схема:
     --------------------
@@ -34,31 +35,31 @@ class MultiQueryAttention(nn.Module):
 
     Аргументы конструктора:
     -----------------------
+    num_q_heads : int
+        Число Query-голов; K/V-голова всегда одна.
     emb_size : int
         Размерность скрытого пространства (hidden size, embedding dim).
-    num_heads : int
-        Число Query-голов (обычно 8–32 в LLM).
-    kv_heads : int
-        Число Key/Value-голов (обычно 1, 2, 4, 8).
-    head_size : int, optional
-        Размерность одной головы (обычно emb_size // num_heads).
+    head_size : int
+        Размерность одной головы (обычно emb_size // num_q_heads).
+    max_seq_len : int
+        Максимальная длина последовательности (размер causal-маски).
+    rope : RoPE, optional
+        Rotary positional encoding для Q и K.
     dropout : float, optional
-        Вероятность Dropout для регуляризации внимания.
+        Вероятность Dropout после выходной проекции.
 
     Пример использования:
     ---------------------
-        >>> mqa = MultiQueryAttention(emb_size=512, num_heads=8, kv_heads=1)
+        >>> mqa = MultiQueryAttention(num_q_heads=8, emb_size=512, head_size=64, max_seq_len=128)
         >>> x = torch.randn(2, 16, 512)
-        >>> mask = torch.ones(2, 16, 16)
-        >>> out = mqa(x, mask)
+        >>> out, cache = mqa(x, use_cache=True)
         >>> print(out.shape)  # torch.Size([2, 16, 512])
 
     Литература и статьи:
     --------------------
     - Shazeer, N., “Fast Transformer Decoding: One Write-Head Is All You Need” (MQA): https://arxiv.org/abs/1911.02150
-    - Llama: https://arxiv.org/abs/2302.13971
-    - Mistral: https://arxiv.org/abs/2310.06825
-    - PaLM/PaLM2, Mixtral, ChatGLM: практическое описание MQA.
+    - Gemma (2B использует MQA): https://arxiv.org/abs/2403.08295
+    - GQA как обобщение MQA: https://arxiv.org/abs/2305.13245
     """
     def __init__(
         self,
@@ -132,7 +133,6 @@ class MultiQueryAttention(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        mask: torch.Tensor = None,
         use_cache: bool = True,
         cache: list = None,
     ):
@@ -146,8 +146,6 @@ class MultiQueryAttention(nn.Module):
         ----------
         x : torch.Tensor
             Входной тензор формы [batch_size, seq_len, emb_size] — скрытые состояния после предыдущего слоя или эмбеддинга.
-        mask : torch.Tensor, optional
-            Необязательная маска внимания (например, для padding или custom-маскировки). По умолчанию используется встроенная causal mask.
         use_cache : bool, по умолчанию True
             Если True, возвращает кэш ключей/значений (для autoregressive inference/generation).
         cache : list, optional
@@ -167,18 +165,18 @@ class MultiQueryAttention(nn.Module):
             1. Q = Wq·x; K = Wk·x; V = Wv·x     # Q: индивидуальные для каждой головы, K/V — общие
             2. [optional] Rotary positional encoding применяется к Q и K
             3. (optional) concat c k/v cache (for autoregressive inference)
-            4. attention_scores = softmax(Q·K^T / sqrt(head_size), mask)
+            4. attention_scores = softmax(causal_mask(Q·K^T / sqrt(head_size)))
             5. attention_out = attention_scores·V
             6. heads сливаются и проецируются в emb_size; применяется dropout.
 
         Пример:
         -------
-            >>> out, cache = mqa(x, mask=attn_mask, use_cache=True, cache=prev_cache)
+            >>> out, cache = mqa(x, use_cache=True, cache=prev_cache)
             >>> print(out.shape)   # torch.Size([batch_size, seq_len, emb_size])
 
         Примечания:
         -----------
-        - Для каузального режима используется треугольная маска (по умолчанию).
+        - Маска только встроенная, causal; паддинг проверяется в forward модели (check_attention_mask).
         - Для генерации текста с cache передавайте кэш от предыдущих токенов — это ускоряет autoregressive inference.
         - Внимание! Тензоры внутри cache должны иметь форму [batch, heads, seq_len, head_size].
         """
@@ -191,69 +189,42 @@ class MultiQueryAttention(nn.Module):
                 f"Длина последовательности {start_pos + seq_len} превышает максимум {self._max_seq_len}"
             )
 
-        # Пропустите тензор x через матрицы Wq, Wk , Wv, чтобы получить матрицы запроса, ключа и значения.
+        # 1. Проекции: Q — на num_q_heads голов, K и V — на одну общую голову
+        q = self._q(x)  # [B, T, H * hs]
         k = self._k(x)  # [B, T, hs]
-        q = self._q(x)  # [B, T, hs]
         v = self._v(x)  # [B, T, hs]
 
-        # Шаг 2: Изменение формы для multi-head
-        # [batch_size, seq_len, num_heads * head_size] 
-        # -> [batch_size, seq_len, num_heads, head_size]
-        q = q.reshape(batch_size, seq_len, self._num_q_heads, self._head_size)
-        k = k.reshape(batch_size, seq_len, 1, self._head_size)
-        v = v.reshape(batch_size, seq_len, 1, self._head_size)
+        # 2. Разбиение на головы: [B, T, H, hs] -> [B, H, T, hs]; у K и V H = 1
+        q = q.reshape(batch_size, seq_len, self._num_q_heads, self._head_size).transpose(1, 2)
+        k = k.reshape(batch_size, seq_len, 1, self._head_size).transpose(1, 2)
+        v = v.reshape(batch_size, seq_len, 1, self._head_size).transpose(1, 2)
 
-        # 3. Transpose: [B, T, H, hs] -> [B, H, T, hs]
-        q = q.transpose(1, 2)
-        k = k.transpose(1, 2)
-        v = v.transpose(1, 2)
-
-        # Позиция первого нового токена = длина кэша: без неё RoPE повернёт новые Q и K как позицию 0.
-
-        # Пропустите матрицы запроса и ключа через экземпляр rope, чтобы выполнить поворот.
+        # 3. RoPE поворачивает Q и K (не V) по абсолютным позициям start_pos …
         if self._rope is not None:
-            # Применяем RoPE к Q и K (НЕ к V!)
-            q = self._rope(q, start_pos=start_pos)  # [B, T, hs]
-            k = self._rope(k, start_pos=start_pos)  # [B, T, hs]
+            q = self._rope(q, start_pos=start_pos)  # [B, H, T, hs]
+            k = self._rope(k, start_pos=start_pos)  # [B, 1, T, hs]
 
-
-        # Если cache пришел, то объединяем кэш и одну строку из ключа и значения. Это будут новые key и value  для последующих вычислений.
-        # 5. Кэширование (для autoregressive generation)
+        # 4. Ключи и значения из кэша идут перед новыми
         if cache is not None:
             k_cache, v_cache = cache
-            k = torch.cat([k_cache, k], dim=2)  # Concat по seq_len (dim=2)
+            k = torch.cat([k_cache, k], dim=2)  # [B, 1, cache_len + T, hs]
             v = torch.cat([v_cache, v], dim=2)
 
+        # 5. Scaled dot-product: общая K-голова транслируется на все Q-головы
+        scores = q @ k.transpose(-2, -1) / (self._head_size ** 0.5)  # [B, H, T, T_kv]
 
-        # Перемножим матрицы запроса и ключа (транспонированную), чтобы вычислить матрицу внимания.
-        # И разделить все значения в матрице внимания на корень из head_size.
-        scores = q @ k.transpose(-2, -1) / (self._head_size ** 0.5)
-
-        # Causal-маска по абсолютным позициям (с кэшем тоже — см. MultiHeadAttention)
+        # 6. Causal-маска по абсолютным позициям (с кэшем тоже — см. MultiHeadAttention)
         causal_mask = self._tril_mask[start_pos:start_pos + seq_len, :start_pos + seq_len]
         scores = scores.masked_fill(~causal_mask, float("-inf"))
 
-        # Применить к матрице внимания (построчно) функцию Softmax.
+        # 7. Softmax и взвешенная сумма значений
         weights = F.softmax(scores, dim=-1)
+        x_out = weights @ v  # [B, H, T, hs]
 
-        # Перемножим матрицу внимания и матрицу значения.
-        x_out = weights @ v  # [B, T, hs]
-
-
-        # Измените форму тензора на batch_size × seq_len × num_heads*head_size.
-        # Transpose обратно и concatenate heads
-        x_out = x_out.transpose(1, 2)  # [B, T_q, H, hs]
-        x_out = x_out.contiguous()  # Важно для reshape!
+        # 8. Склейка голов и проекция обратно в emb_size
+        x_out = x_out.transpose(1, 2).contiguous()  # [B, T, H, hs]
         concatenated_attention = x_out.reshape(batch_size, seq_len, self._num_q_heads * self._head_size)
-
-
-        # Пропустите получившийся тензор через последний линейный слой.
-        # 3. Проецируем в пространство эмбеддингов
-        projected_output = self._layer(concatenated_attention)
-
-
-        # 4. Применяем dropout для регуляризации
-        final_output = self._dropout(projected_output)
+        final_output = self._dropout(self._layer(concatenated_attention))  # [B, T, emb_size]
 
         if use_cache is True:
             return (final_output, (k, v))
