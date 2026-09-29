@@ -7,7 +7,9 @@ from llm.core.generation import (
     check_attention_mask,
     check_sequence_length,
 )
-from llm.core.token_embeddings import TokenEmbeddings
+import math
+
+from llm.core.token_embeddings import TokenEmbeddings, output_projection
 from llm.core.rope import RoPE
 from llm.core.rms_norm import RMSNorm
 from llm.core.gemma_decoder import GemmaDecoder
@@ -41,9 +43,15 @@ class Gemma(BaseModel):
             - max_position_embeddings : int — максимальная длина последовательности
             - num_layers : int — количество декодерных блоков
             - num_q_heads : int — количество attention голов (Queries)
-            - num_kv_heads : int — количество ключевых/значенческих attention голов
-            - dropout : float — Dropout率
-            - ... (доп. гиперпараметры, требуемые GemmaDecoder'ами)
+            - dropout : float — вероятность dropout (в Gemma dropout нет — 0)
+        Необязательные ключи; по умолчанию прежняя структура, как в Gemma — значения в скобках:
+            - num_kv_heads : int — число K/V-голов, по умолчанию 1 — MQA (2B: 1, 7B: 16 = num_q_heads)
+            - head_size : int — размер головы, по умолчанию embed_dim // num_q_heads (Gemma: 256)
+            - intermediate_size : int — скрытый размер GeGLU, по умолчанию 4·embed_dim (8·embed_dim)
+            - bias : bool — bias во всех Linear, по умолчанию True (False)
+            - tie_word_embeddings : bool — голова делит веса с эмбеддингами, без bias, по умолчанию False (True)
+            - scale_embeddings : bool — умножать эмбеддинги на √embed_dim, по умолчанию False (True)
+            - rms_norm_eps (1e-6), rope_theta (10000)
 
     Основные методы:
     ----------------
@@ -119,6 +127,11 @@ class Gemma(BaseModel):
         head_size = resolve_head_size(config, "num_q_heads", rope=True)
         # eps всех RMSNorm: 1e-6 по умолчанию (LLaMA, Gemma), у Mistral 7B — 1e-5
         norm_eps = config.get("rms_norm_eps", 1e-6)
+        # Необязательные ключи для Gemma как в статье (см. docstring класса); по умолчанию — прежняя структура
+        intermediate_size = config.get("intermediate_size")
+        bias = config.get("bias", True)
+        # Gemma умножает эмбеддинги на √d: при tied embeddings их норма рассчитана на выходную проекцию
+        self._embedding_scale = math.sqrt(config["embed_dim"]) if config.get("scale_embeddings", False) else None
 
         self._max_seq_len = config["max_position_embeddings"]
 
@@ -141,10 +154,17 @@ class Gemma(BaseModel):
             max_seq_len=config["max_position_embeddings"],
             rope=self._position_embeddings,
             dropout=config["dropout"],
-            norm_eps=norm_eps
+            norm_eps=norm_eps,
+            num_kv_heads=config.get("num_kv_heads", 1),
+            intermediate_size=intermediate_size,
+            bias=bias,
         ) for _ in range(config["num_layers"])])
         self._norm = RMSNorm(config["embed_dim"], eps=norm_eps)
-        self._linear = nn.Linear(config["embed_dim"], config["vocab_size"])
+        if config.get("tie_word_embeddings", False):
+            # Как в Gemma: голова без bias делит матрицу с эмбеддингами
+            self._linear = output_projection(self._token_embeddings, tie_weights=True)
+        else:
+            self._linear = nn.Linear(config["embed_dim"], config["vocab_size"], bias=bias)
 
     def forward(
         self,
@@ -199,6 +219,9 @@ class Gemma(BaseModel):
         
         # Эмбеддинги токенов и позиций
         tok_out = self._token_embeddings(x)  # [batch, seq_len, emb_size]
+        if self._embedding_scale is not None:
+            # как в HF: множитель приводится к dtype эмбеддингов
+            tok_out = tok_out * torch.tensor(self._embedding_scale, dtype=tok_out.dtype)
         
         # Комбинирование
         out = self._dropout(tok_out)  # [batch, seq_len, emb_size]

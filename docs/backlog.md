@@ -505,6 +505,7 @@
 - **Что:** в Gemma выход `embed_tokens` умножается на `sqrt(hidden_size)` перед первым блоком (в `gemma_pytorch` и старых версиях HF — `normalizer` в `GemmaModel.forward`, в текущем HF — `GemmaTextScaledWordEmbedding` с буфером `embed_scale`). Здесь эмбеддинги идут в декодер как есть.
 - **Последствия:** при tied embeddings (пункт 43) без масштабирования вход в первый блок на порядок меньше по норме, чем предполагает архитектура. Веса Gemma дают неверный результат даже при совпадении остальных слоёв.
 - **Исправление:** `out = tok_out * math.sqrt(embed_dim)` в `Gemma.forward` (в HF константа приводится к dtype эмбеддингов).
+- **Статус:** исправлено в ветке `feat/gemma-hf-parity`: ключ `scale_embeddings` (по умолчанию `false`) умножает выход эмбеддингов на `√embed_dim`, множитель приводится к dtype эмбеддингов, как в HF. Без него сверка с HF не проходит — это проверяет тест.
 
 #### 43. Нет weight tying, bias во всех `Linear` — P2
 
@@ -512,18 +513,20 @@
 - **Воспроизведено:** `m._linear.bias is not None`, `m._decoders[0]._heads._q.bias is not None`, `m._linear.weight is not m._token_embeddings._embedding.weight`.
 - **Последствия:** у Gemma словарь 256 000 токенов, поэтому отдельная голова — это лишние ~524M параметров для 2B (`256000 × 2048`), то есть около пятой части модели (~21% от 2.5B).
 - **Исправление:** как в пунктах 5 и 24: `bias=False` под флагом конфига, `_linear.weight = _token_embeddings._embedding.weight`.
+- **Статус:** исправлено в ветке `feat/gemma-hf-parity`: ключ `tie_word_embeddings` (голова без bias делит матрицу с эмбеддингами — `output_projection`, как в пункте 5) и `bias` (Q/K/V, выход attention, GeGLU и голова). По умолчанию прежняя структура, старые чекпоинты загружаются.
 
 #### 44. GeGLU с hidden = 4·d вместо 8·d — P2
 
 - **Где:** [`core/geglu.py`](../llm/src/llm/core/geglu.py), `nn.Linear(emb_size, 4 * emb_size)` для `_gate`, `_up`, `_down`.
 - **Что:** в Gemma `intermediate_size` = 16384 при `hidden_size` = 2048 (2B) и 24576 при 3072 (7B), то есть 8·d на каждую из матриц `gate_proj` и `up_proj`. (В табл. 1 статьи «feedforward hidden dims» 32768 / 49152 — это сумма gate + up.) Здесь 4·d — FFN вдвое уже, чем в статье. Сама активация — tanh-GELU — совпадает с `gelu_pytorch_tanh` в HF. В отличие от пункта 23 (LLaMA), здесь FFN не тяжелее, а легче оригинала.
 - **Исправление:** параметр `hidden_dim` в `GeGLU` с чтением из конфига, как предложено для `SwiGLU` в пункте 23.
+- **Статус:** исправлено в ветке `feat/gemma-hf-parity`: `GeGLU` принимает `hidden_dim` и `bias`, `Gemma` читает ключ `intermediate_size` (по умолчанию `4 · embed_dim`; у Gemma — `8 · embed_dim`).
 
 #### 45. Нельзя выразить Gemma 7B: MQA всегда, `head_size` = d / heads — P2
 
 - **Что:** MQA (одна K/V-голова) используется только в Gemma 2B. Gemma 7B — обычный MHA с 16 головами, и `head_dim = 256` не равен `hidden_size / num_heads` (16 × 256 = 4096 ≠ 3072). Здесь `MultiQueryAttention` всегда с одной K/V-головой, а `head_size` всегда `embed_dim // num_q_heads` (пункт 28).
 - **Исправление:** заменить `MultiQueryAttention` на `GroupedQueryAttention` с `num_kv_heads` из конфига (MQA — частный случай `num_kv_heads=1`) и читать `head_size` из конфига. `_layer` уже умеет проецировать `num_q_heads * head_size ≠ embed_dim` обратно в `embed_dim`. Тогда же уйдёт отдельный модуль MQA и пункты 41 и 47 закроются вместе с 27 и 31.
-- **Статус:** частично: `head_size` уже читается из конфига (пункт 28, ветка `fix/config-validation`), так что `head_dim = 256` при `embed_dim = 3072` выразим. Осталось число K/V-голов: `MultiQueryAttention` всегда с одной.
+- **Статус:** исправлено в ветке `feat/gemma-hf-parity`: `GemmaDecoder` построен на `GroupedQueryAttention` без окна с `num_kv_heads` из конфига (по умолчанию `1` — MQA). При одной K/V-голове GQA транслирует её, а не копирует, поэтому результат побитово совпадает с прежним `MultiQueryAttention`, включая шаги с кэшем; кэш слоя стал `(K, V, next_pos)`. `MultiQueryAttention` остался в `llm.core` как учебный модуль. Вместе с `head_size` (пункт 28) Gemma 7B — `num_kv_heads: 16`, `head_size: 256` при `embed_dim: 3072` — выразима.
 
 #### 46. RMSNorm без `(1 + w)` и вычислений во float32 — P3
 
@@ -531,6 +534,7 @@
 - **Что:** в Gemma `GemmaRMSNorm` хранит вес, инициализированный нулями, и умножает на `(1 + weight)`, а нормализацию считает во float32 и приводит результат обратно. Здесь вес инициализирован единицами и умножается напрямую, вычисления в dtype входа. При обучении с нуля параметризации эквивалентны, но веса Gemma без поправки `+1` не загрузятся корректно, а в bf16 нормализация менее точна.
 - **Исправление:** для загрузки весов — прибавлять 1 при конвертации. Для bf16 — `x.float()` внутри `forward` и `.to(x.dtype)` на выходе (затрагивает LLaMA, Mistral, Mixtral).
 - **Замечание по загрузке весов HF в целом:** помимо пунктов 42–46 нужна перестановка строк `q_proj`/`k_proj` — HF Gemma использует `rotate_half`, здесь чередующиеся пары (как в пункте 24).
+- **Статус:** исправлено в ветке `feat/gemma-hf-parity`: `RMSNorm` для float16/bfloat16 считает нормализацию во float32 и приводит к dtype входа перед умножением на вес, как `LlamaRMSNorm` (затрагивает LLaMA, Mistral, Mixtral и Gemma; во float32 побитово прежний результат). Параметризация `(1 + w)` не добавлялась: `convert_hf_state_dict` из `llm.models.gemma` прибавляет 1 к весам RMSNorm. Веса `GemmaForCausalLM` загружаются; сверено со случайными моделями HF в форме 2B (MQA) и 7B (MHA, `head_dim` ≠ `hidden / heads`): логиты до ~1e-5, greedy с KV-кэшем совпадает. Остаётся отличие в bf16 в последних битах: `GemmaRMSNorm` умножает на вес ещё во float32.
 
 #### 55. Dropout на эмбеддингах, в attention и GeGLU — P3
 

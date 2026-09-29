@@ -30,8 +30,8 @@ llm-arch-research/
 │   │   │   ├── positional_embeddings.py    # обучаемые абсолютные позиции (GPT)
 │   │   │   ├── rope.py                     # Rotary Positional Embeddings
 │   │   │   ├── multi_head_attention.py     # MHA (+ RoPE, KV-кэш)
-│   │   │   ├── multi_query_attention.py    # MQA (Gemma)
-│   │   │   ├── group_query_attention.py    # GQA + sliding window (Mistral, Mixtral)
+│   │   │   ├── multi_query_attention.py    # MQA (учебный модуль)
+│   │   │   ├── group_query_attention.py    # GQA + sliding window (Mistral, Mixtral, Gemma)
 │   │   │   ├── feed_forward.py             # FFN с GELU
 │   │   │   ├── swi_glu.py / geglu.py       # gated FFN
 │   │   │   ├── gelu.py / silu.py           # активации
@@ -258,6 +258,7 @@ flowchart TB
 - **Top-p** ([#31](https://github.com/pese-git/llm-arch-research/pull/31)) теперь включает в ядро токен, на котором сумма вероятностей переходит порог (как в HuggingFace). При тех же весах и seed выборка с `top_p` может отличаться; greedy, температура и top-k не изменились.
 
 - **GPT-1 и GPT-2: инициализация весов из статей** ([#41](https://github.com/pese-git/llm-arch-research/pull/41)) — N(0, 0.02), у GPT-2 ещё и масштабирование residual-проекций. Меняет только обучение с нуля: у новой модели другие начальные веса, чекпоинты и их выход не затрагиваются. Стандартное отклонение — ключ `initializer_range`.
+- **RMSNorm в float16/bfloat16 считается во float32** ([#48](https://github.com/pese-git/llm-arch-research/pull/48)), как в HuggingFace. LLaMA, Mistral, Mixtral и Gemma в половинной точности дают немного другие (более точные) логиты, а во float16 больше не переполняются на больших активациях. Во float32 результат побитово прежний.
 
 ### Чекпоинты и конфиги
 
@@ -271,6 +272,7 @@ flowchart TB
 - **`generate` не принимает лишних аргументов** ([#31](https://github.com/pese-git/llm-arch-research/pull/31)): неизвестный именованный аргумент (например, опечатка `max_lenght`) — `TypeError`, а не молчаливое игнорирование. Появились `eos_token_id` и `pad_token_id`.
 - **`attention_mask`** ([#29](https://github.com/pese-git/llm-arch-research/pull/29)): раньше игнорировалась. Правый паддинг в `forward` работает; левый паддинг и любые нули в `generate` — `NotImplementedError` (см. [docs/README.md](docs/README.md#маски)).
 - **Длина с учётом кэша** ([#29](https://github.com/pese-git/llm-arch-research/pull/29)): `forward` с кэшем, у которого кэш + новые токены длиннее `max_position_embeddings`, — `ValueError`. `generate` в этом случае продолжает по последним `max_position_embeddings` токенам.
+- **Кэш слоя Gemma — `(K, V, next_pos)`** ([#48](https://github.com/pese-git/llm-arch-research/pull/48)), как у Mistral и Mixtral: блок Gemma построен на `GroupedQueryAttention` вместо `MultiQueryAttention`. Результат, `generate` и передача кэша из одного `forward` в другой не изменились; разница видна, только если разбирать кэш вручную.
 - **Параметр `mask` удалён** из `forward` модулей attention (`MultiHeadAttention`, `GroupedQueryAttention`, `MultiQueryAttention`) и декодеров, параметр `rope` — из `Gpt2Decoder` ([#35](https://github.com/pese-git/llm-arch-research/pull/35)). Они принимались и не использовались; передача теперь — `TypeError`.
 
 ## 🛠️ Технологический стек
