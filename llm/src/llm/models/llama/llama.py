@@ -33,7 +33,10 @@ class Llama(BaseModel):
     - FeedForward блоки с SwiGLU (см. https://arxiv.org/abs/2002.05202).
     - Нормализация RMSNorm перед каждым sub-layer (вот почему "Pre-RMSNorm").
     - Кэширование attention (KV cache) для быстрой autoregressive генерации.
-    - Отличия от оригинала: Linear-слои (Q/K/V, выходная проекция, голова) создаются с bias, dropout применяется в attention и FFN.
+    - По умолчанию два отличия от оригинала оставлены ради совместимости со старыми чекпоинтами:
+      все Linear-слои (Q/K/V, выходная проекция attention, три матрицы SwiGLU, голова) с bias
+      и скрытый размер SwiGLU 4·embed_dim. Как в LLaMA — "bias": False и
+      "intermediate_size": llama_intermediate_size(embed_dim). dropout применяется в attention и FFN.
 
     Аргументы конструктора:
     -----------------------
@@ -44,6 +47,11 @@ class Llama(BaseModel):
         num_layers: int — число слоёв-декодеров
         max_position_embeddings: int — максимальная длина последовательности
         dropout: float — вероятность dropout
+    необязательные ключи:
+        intermediate_size: int — скрытый размер SwiGLU, по умолчанию 4·embed_dim
+            (в LLaMA — llama_intermediate_size(embed_dim), для 7B — 11008)
+        bias: bool — bias во всех Linear, по умолчанию True (в LLaMA — False)
+        head_size, rms_norm_eps (1e-6), rope_theta (10000)
  
     Пример использования:
     ---------------------
@@ -77,6 +85,9 @@ class Llama(BaseModel):
         head_size = resolve_head_size(config, "num_heads", rope=True)
         # eps всех RMSNorm: 1e-6 по умолчанию как в LLaMA
         norm_eps = config.get("rms_norm_eps", 1e-6)
+        # Размер FFN и bias: по умолчанию прежние 4·embed_dim и bias, как в LLaMA — см. docstring класса
+        intermediate_size = config.get("intermediate_size", 4 * config["embed_dim"])
+        bias = config.get("bias", True)
 
         # Инициализация слоев
         self._max_seq_len = config["max_position_embeddings"]
@@ -101,16 +112,19 @@ class Llama(BaseModel):
                     feed_forward_layer=SwiGLU(
                         emb_size=config["embed_dim"],
                         dropout=config["dropout"],
+                        hidden_dim=intermediate_size,
+                        bias=bias,
                     ),
                     max_seq_len=config["max_position_embeddings"],
                     rope=self._position_embeddings,
                     dropout=config["dropout"],
+                    bias=bias,
                 )
                 for _ in range(config["num_layers"])
             ]
         )
         self._norm = RMSNorm(config["embed_dim"], eps=norm_eps)
-        self._linear = nn.Linear(config["embed_dim"], config["vocab_size"])
+        self._linear = nn.Linear(config["embed_dim"], config["vocab_size"], bias=bias)
 
     def forward(
         self,
@@ -166,3 +180,21 @@ class Llama(BaseModel):
             return (logits, new_cache)
         else:
             return (logits, None)
+
+
+def llama_intermediate_size(embed_dim: int, multiple_of: int = 256, ffn_dim_multiplier: float = None) -> int:
+    """
+    Скрытый размер SwiGLU по формуле LLaMA (FeedForward в facebookresearch/llama/model.py).
+
+    ⅔ от 4·embed_dim — чтобы три матрицы SwiGLU весили как две матрицы обычного FFN с 4·embed_dim, —
+    затем необязательный множитель и округление вверх до кратного multiple_of.
+
+        >>> llama_intermediate_size(4096)  # LLaMA 7B
+        11008
+        >>> llama_intermediate_size(288, multiple_of=32)  # llama2.c stories15M
+        768
+    """
+    hidden = int(2 * 4 * embed_dim / 3)
+    if ffn_dim_multiplier is not None:
+        hidden = int(ffn_dim_multiplier * hidden)
+    return multiple_of * ((hidden + multiple_of - 1) // multiple_of)

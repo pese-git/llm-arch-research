@@ -236,7 +236,7 @@
 - **Что:** в LLaMA (разд. 2.2 статьи; `FeedForward` в `facebookresearch/llama/model.py`) скрытая размерность — `2/3 · 4d`, округлённая вверх до кратного `multiple_of=256`, чтобы три матрицы SwiGLU весили столько же, сколько две матрицы обычного FFN с `4d`. Здесь три матрицы по `4d`.
 - **Последствия:** FFN примерно в 1.5 раза тяжелее, чем в статье. Для `d=4096`: hidden 16384 вместо 11008, ~201M вместо ~135M параметров FFN на слой. При сравнении с GPT той же ширины LLaMA получает лишние параметры, и сравнение архитектур становится нечестным.
 - **Исправление:** параметр `hidden_dim` в `SwiGLU` (по умолчанию — формула LLaMA, опционально `multiple_of`). Затрагивает Mistral и Mixtral, которые используют тот же `SwiGLU`; меняет размеры весов, поэтому старые чекпоинты не загрузятся.
-- **Статус:** не задокументировано.
+- **Статус:** исправлено для LLaMA в ветке `feat/llama-hf-parity`: `SwiGLU` принимает `hidden_dim`, `Llama` читает ключ `intermediate_size` (по умолчанию прежние `4 · embed_dim`, старые чекпоинты загружаются). Формула LLaMA — `llama_intermediate_size(embed_dim, multiple_of=256, ffn_dim_multiplier=None)`: 11008 для 7B, 13824 для 13B, 28672 для LLaMA 2 70B. Проверено на весах `nickypro/tinyllama-15M/42M/110M` (FFN 768, 1376, 2048 — по той же формуле с `multiple_of=32`): логиты совпадают с HF до 4e-5, greedy — токен в токен. Mistral и Mixtral пока строят `SwiGLU` с 4d (пункт 30).
 
 #### 24. Bias во всех `Linear` — P3
 
@@ -244,7 +244,7 @@
 - **Воспроизведено:** `m._decoders[0]._heads._q.bias is not None`, `m._linear.bias is not None`.
 - **Последствия:** веса Meta/HF LLaMA напрямую не загружаются (лишние ключи `*.bias`). Для загрузки весов HF, помимо bias, нужна перестановка строк `q_proj`/`k_proj`: HF использует `rotate_half` (половины вектора), а здесь, как у Meta, — чередующиеся пары `(2i, 2i+1)`.
 - **Исправление:** флаг `bias` в конфиге (по умолчанию `False` для LLaMA) с пробросом в `MultiHeadAttention` и `SwiGLU`.
-- **Статус:** задокументировано в докстринге и [llama.md](llama.md#известное-расхождение-с-докстрингом), но там перечислены Q/K/V, выходная проекция и голова — bias в матрицах SwiGLU не упомянут.
+- **Статус:** исправлено для LLaMA в ветке `feat/llama-hf-parity`: ключ `bias` (по умолчанию `true`, прежнее поведение) пробрасывается в `MultiHeadAttention`, `CachedDecoder`, `SwiGLU` и голову. Веса HF загружаются через `convert_hf_state_dict` (`models/llama/hf_weights.py`) с перестановкой строк `q_proj`/`k_proj` под RoPE на чередующихся парах; сверено с пятью моделями (`nickypro/tinyllama-*`, `JackFram/llama-68m/160m`): логиты до 1.1e-4, greedy с KV-кэшем совпадает. Для Mistral и Mixtral bias остаётся (у `GroupedQueryAttention` флага пока нет).
 
 ### Качество кода
 
