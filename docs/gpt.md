@@ -56,6 +56,8 @@ flowchart TB
 
 ### Multi-Head Attention
 
+Обзор всех видов attention в репозитории (MHA, GQA, MQA, скользящее окно) — в [attention.md](attention.md).
+
 `h = num_heads` голов считаются параллельно; в коде это не отдельные модули, а одна проекция `Linear(emb_size, h · head_size)` для каждого из Q, K, V с последующим `reshape` на головы.
 
 ```mermaid
