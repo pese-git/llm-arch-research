@@ -106,14 +106,8 @@ result    = ffn_out + out
 | `max_position_embeddings` | 512 | ✅ |
 | `dropout` | 0.1 | ✅ |
 | `head_size` | 64 | ✅ необязательный; по умолчанию `embed_dim // num_q_heads` |
-| `num_kv_heads` | 2 | ❌ не читается |
-| `num_experts` | 8 | ❌ не читается |
-| `top_k_experts` | 2 | ❌ не читается |
-| `window_size` | 16 | ❌ не читается |
 
-## Неиспользуемые ключи конфига
-
-`Gemma.__init__` ([`models/gemma/gemma.py`](../llm/src/llm/models/gemma/gemma.py)) передаёт в `GemmaDecoder` только `num_q_heads`, `emb_size`, `head_size`, `max_seq_len`, `rope`, `dropout`. Ключи `num_kv_heads`, `num_experts`, `top_k_experts`, `window_size`, присутствующие в [`gemma_train.json`](../experiments/llm_only/configs/gemma_train.json) (судя по всему, скопированные из конфига Mixtral; в [`gemma_generate.json`](../experiments/llm_only/configs/gemma_generate.json) конфига модели нет — он ссылается на `config.json` чекпоинта), моделью не используются и ни на что не влияют. Это не баг в смысле краша — конструктор просто их игнорирует, — но конфиг вводит в заблуждение: MoE и настраиваемый GQA в текущей реализации Gemma отсутствуют, там всегда MQA с ровно одной K/V-головой.
+Числа K/V-голов в конфиге нет: `MultiQueryAttention` всегда использует одну K/V-голову. Ключи Mixtral (`num_kv_heads`, `num_experts`, `top_k_experts`, `window_size`), которые раньше были в этом конфиге и моделью не читались, удалены.
 
 ## Генерация
 

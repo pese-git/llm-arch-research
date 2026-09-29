@@ -107,6 +107,7 @@
 - Пример в докстринге `GptDecoder` использует `Decoder(...)` и ожидает от `decoder(x)` тензор, а возвращается кортеж.
 - Докстринг `GptDecoder.forward` называет аргумент `mask` (на деле `attention_mask`) и обещает тензор на выходе.
 - В References класса `GPT` битая ссылка на статью: `research-covers/languageunsupervised/` (нет дефиса, правильно `language-unsupervised`).
+- **Статус:** исправлено в ветке `chore/docs-and-cleanup`: докстринги `GptDecoder` описывают post-LN, пример использует `GptDecoder` и кортеж на выходе, у `forward` описаны фактические параметры; ссылка на статью GPT-1 исправлена. Неиспользуемые параметры `mask` удалены из `forward` всех модулей attention и декодеров (маска паддинга проверяется в `forward` модели, пункт 3); тесты, которые передавали маску и проверяли только форму, заменены проверками встроенной causal-маски.
 
 #### 12. Мусор в коде — P3
 
@@ -114,6 +115,7 @@
 - Неиспользуемые импорты: `Optional`, `Dict` в `gpt.py` (`math` в `feed_forward.py` удалён).
 - ~~Мёртвые проверки `hasattr(torch, "bool")`~~ — удалены в ветке `refactor/remove-dead-bool-checks` (см. пункт 32).
 - ~~Сравнения `do_sample == True`, `top_k != None`~~ — были только в копиях `generate` и ушли вместе с ними (пункт 18).
+- **Статус:** исправлено в ветке `chore/docs-and-cleanup`: неиспользуемые `Optional`, `Dict` удалены.
 
 ## GPT-2
 
@@ -191,6 +193,7 @@
 - ~~Пример в докстринге модуля: `model.generate(input_ids, max_length=30)`~~ — исправлен на `max_new_tokens`/`do_sample` вместе с пунктом 18. В докстринге класса `model(input_ids)` по-прежнему описан как возвращающий логиты, а возвращается кортеж.
 - Неиспользуемые импорты в `gpt2.py`: `FeedForward`, `Tensor`.
 - Параметр `rope` в `Gpt2Decoder` (и импорт `RoPE`) — GPT-2 его не использует.
+- **Статус:** исправлено в ветке `chore/docs-and-cleanup`: примеры в докстрингах `GPT2` распаковывают кортеж, неиспользуемые импорты удалены, параметр `rope` и импорт `RoPE` в `Gpt2Decoder` удалены.
 
 ## LLaMA
 
@@ -256,6 +259,7 @@
 - В [README.md](README.md) устарели пометки «⚠️ без GQA, вопреки докстрингу» в таблице и пункт «LLaMA — нет GQA, вопреки докстрингу» в известных ограничениях: докстринг уже исправлен, расхождения больше нет.
 - ~~Нет `save`/`load` ни в `Llama`, ни в `BaseModel`~~ — есть в `BaseModel` (пункт 35).
 - [`tests/models/test_llama.py`](../llm/tests/models/test_llama.py) проверяет только формы. Кэшированная генерация по одному токену сверяется с полным forward в [`test_kv_cache.py`](../llm/tests/models/test_kv_cache.py) для всех моделей, там же — префилл кусками и генерация за `max_position_embeddings` (пункты 1, 2). Какие токены оставляют top-k/top-p, проверяет `test_generation.py` (пункт 49).
+- **Статус:** исправлено в ветке `chore/docs-and-cleanup`: закомментированный код в `Llama.forward` и неиспользуемые импорты удалены, докстринг `CachedDecoder` описывает подставляемые нормализацию и FFN (для LLaMA — RMSNorm и SwiGLU), комментарий к форме выхода `RoPE` исправлен, устаревшие пометки о GQA в [README.md](README.md) убраны.
 
 ## Mistral
 
@@ -347,6 +351,7 @@
 - Кэш пересобирается через `torch.cat` и срез на каждом шаге. Для учебного кода это приемлемо, но настоящего rolling buffer (запись по индексу `pos % W`) нет, хотя документация так его называет.
 - ~~Нет `save`/`load` в `Mistral`~~ — есть в `BaseModel` (пункт 35).
 - [`tests/models/test_mistral.py`](../llm/tests/models/test_mistral.py) проверяет только формы; генерация по одному токену с кэшем покрыта [`test_kv_cache.py`](../llm/tests/models/test_kv_cache.py). Там же — префилл кусками и генерация за `max_position_embeddings` (пункты 1, 27). Нет тестов на проверки из пункта 29 и на чтение `head_size` из конфига (пункт 28).
+- **Статус:** исправлено в ветке `chore/docs-and-cleanup`: название статьи Mistral, ссылки и утверждения в докстринге `GroupedQueryAttention` (GQA — Ainslie et al., без GPT-4, без требования `num_q_heads * head_size == emb_size`) и докстринг `MistralDecoder` (один pre-norm блок) исправлены; закомментированный код и неиспользуемые импорты удалены; комментарии в `GroupedQueryAttention.forward` перенумерованы, размерности указаны 4D. Документация больше не называет кэш rolling buffer: [mistral.md](mistral.md) описывает дописывание через `torch.cat` и обрезку срезом. Сам кэш не менялся. Неиспользуемые параметры `mask` удалены из `forward` всех модулей attention и декодеров (маска паддинга проверяется в `forward` модели, пункт 3); тесты, которые передавали маску и проверяли только форму, заменены проверками встроенной causal-маски.
 
 ## Mixtral
 
@@ -366,7 +371,7 @@
 - **50**, **51** — `eps` RMSNorm не задаётся из конфига, dropout в attention (в Mixtral 8x7B его нет).
 - **28** — ключ `head_size` игнорировался (исправлен).
 - **29** — проверки голов (исправлен).
-- **33** — мусор в `GroupedQueryAttention` (неиспользуемый `mask`).
+- **33** — мусор в `GroupedQueryAttention` (исправлен).
 - **31**, **32** — `_tril_mask` в `state_dict`, совместимость с torch < 1.2 (исправлены).
 
 ### Баги
@@ -446,6 +451,7 @@
 - Неиспользуемые импорты: `Tensor`, `sqrt` в `mixtral.py`; `F` в `mixtral_decoder.py`. Параметр `mask` в `MixtralDecoder.forward` передаётся в `GroupedQueryAttention`, где игнорируется.
 - Роутер создаётся с bias; в Mixtral `gate` — `Linear(dim, num_experts, bias=False)` (частный случай пункта 24).
 - Тесты: [`test_moe.py`](../llm/tests/core/test_moe.py) проверяет формы, градиенты и детерминизм, но не корректность против эталона; тест на bf16/fp16 добавлен с исправлением пункта 34, префилл кусками и генерация за `max_position_embeddings` — в `test_kv_cache.py`. В [`test_mixtral.py`](../llm/tests/models/test_mixtral.py) только формы; генерация по одному токену с кэшем покрыта [`test_kv_cache.py`](../llm/tests/models/test_kv_cache.py).
+- **Статус:** исправлено в ветке `chore/docs-and-cleanup`: статья Mixtral добавлена в References `Mixtral` и `MixtralDecoder`, ссылка на GQA исправлена, формула роутера в докстринге `MoE` соответствует коду, неиспользуемые импорты удалены; добавлен тест `MoE` против наивного цикла по токенам. Bias роутера остаётся частью пункта 24.
 
 ## Gemma
 
@@ -454,7 +460,7 @@
 Кэшированная генерация по одному токену совпадает с полным forward (покрыто [`test_kv_cache.py`](../llm/tests/models/test_kv_cache.py)).
 
 Общие с предыдущими моделями пункты касаются Gemma так же и здесь не повторяются:
-- **1**, **3** — генерация за `max_position_embeddings` и `attention_mask` (исправлены). До исправления `Gemma.forward` пропускал проверку длины при кэше, а `MultiQueryAttention` сравнивал с лимитом только `seq_len`, без `start_pos`. Параметр `mask` в `GemmaDecoder.forward` и `MultiQueryAttention.forward` по-прежнему не используется: `attention_mask` проверяется в `Gemma.forward`.
+- **1**, **3** — генерация за `max_position_embeddings` и `attention_mask` (исправлены). До исправления `Gemma.forward` пропускал проверку длины при кэше, а `MultiQueryAttention` сравнивал с лимитом только `seq_len`, без `start_pos`. Неиспользуемые параметры `mask` в `GemmaDecoder.forward` и `MultiQueryAttention.forward` удалены (пункт 48): `attention_mask` проверяется в `Gemma.forward`.
 - **56** — нет поддержки левого паддинга.
 - **4**, **49** — валидация аргументов `generate` и top-p (исправлены).
 - **8** — `use_cache=True` по умолчанию и нет `no_grad` (исправлен).
@@ -535,5 +541,7 @@
 - Неверная ссылка на статью Gemma в докстрингах `Gemma`, `Gemma.generate` и `GemmaDecoder`: `arXiv:2403.07794`, правильно `arXiv:2403.08295`.
 - Неиспользуемые импорты: `math`, `sqrt`, `Tensor` в `gemma.py`; `F` в `gemma_decoder.py`.
 - Комментарии в `MultiQueryAttention.forward`: сбитая нумерация шагов («Шаг 2», «3.», «5.», снова «3.», «4.») и неверные размерности (`# [B, T, hs]` там, где `[B, H, T, hs]`).
-- [`gemma_train.json`](../experiments/llm_only/configs/gemma_train.json) содержит ключи Mixtral (`num_kv_heads`, `num_experts`, `top_k_experts`, `window_size`), которые модель не читает. Задокументировано в [gemma.md](gemma.md#неиспользуемые-ключи-конфига), но проще убрать их из JSON.
-- Тесты: [`test_gemma.py`](../llm/tests/models/test_gemma.py) проверяет только формы. `test_forward_masked` в [`test_gemma_decoder.py`](../llm/tests/core/test_gemma_decoder.py) передаёт маску и проверяет лишь форму, создавая впечатление, что модуль её применяет; на деле `attention_mask` проверяется в `Gemma.forward` (пункт 3). Префилл кусками и генерация за `max_position_embeddings` покрыты `test_kv_cache.py`.
+- [`gemma_train.json`](../experiments/llm_only/configs/gemma_train.json) содержит ключи Mixtral (`num_kv_heads`, `num_experts`, `top_k_experts`, `window_size`), которые модель не читает. Ключи убраны из JSON.
+- Тесты: [`test_gemma.py`](../llm/tests/models/test_gemma.py) проверяет только формы. ~~`test_forward_masked` в `test_gemma_decoder.py` создавал впечатление, что блок применяет маску~~ — заменён проверкой встроенной causal-маски. Префилл кусками и генерация за `max_position_embeddings` покрыты `test_kv_cache.py`.
+- **Статус:** исправлено в ветке `chore/docs-and-cleanup`: докстринги `Gemma` и `GemmaDecoder` описывают фактическую схему (MQA + GeGLU + RMSNorm), ссылка на статью Gemma исправлена, неиспользуемые импорты удалены, комментарии в `MultiQueryAttention.forward` перенумерованы. Ключи Mixtral убраны из `gemma_train.json`, раздел о неиспользуемых ключах в [gemma.md](gemma.md) удалён. Неиспользуемые параметры `mask` удалены из `forward` всех модулей attention и декодеров (маска паддинга проверяется в `forward` модели, пункт 3); тесты, которые передавали маску и проверяли только форму, заменены проверками встроенной causal-маски.
+
