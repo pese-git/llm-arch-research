@@ -22,3 +22,16 @@ test = [
 [build-system]
 requires = ["uv_build>=0.8.22,<0.9.0"]
 build-backend = "uv_build"
+
+[tool.coverage.run]
+branch = true
+source = ["src/llm"]
+
+[tool.coverage.report]
+show_missing = true
+# Не считаем строки, которые нечем проверить: тела абстрактных методов
+# (в них только pass) и extra_repr (строка для отладочного print(model)).
+exclude_also = [
+    "@(abc\\.)?abstractmethod",
+    "def extra_repr",
+]

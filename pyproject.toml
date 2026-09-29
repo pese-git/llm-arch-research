@@ -36,3 +36,16 @@ hf-proxy = { workspace = true, editable = true }
 [tool.uv.workspace]
 members = ["llm", "hf-proxy"]
 exclude = []
+
+[tool.coverage.run]
+branch = true
+source = ["llm/src/llm", "hf-proxy/src/hf_proxy"]
+
+[tool.coverage.report]
+show_missing = true
+# Не считаем строки, которые нечем проверить: тела абстрактных методов
+# (в них только pass) и extra_repr (строка для отладочного print(model)).
+exclude_also = [
+    "@(abc\\.)?abstractmethod",
+    "def extra_repr",
+]
