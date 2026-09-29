@@ -133,7 +133,7 @@ logits, cache = model(input_ids, use_cache=False)
 У всех моделей одинаковая сигнатура:
 
 ```python
-generate(x, max_new_tokens, do_sample, temperature=1.0, top_k=None, top_p=None, use_cache=True, attention_mask=None)
+generate(x, max_new_tokens, do_sample, temperature=1.0, top_k=None, top_p=None, use_cache=True, attention_mask=None, eos_token_id=None, pad_token_id=None)
 ```
 
 ```python
@@ -172,7 +172,6 @@ trainer.train()
 
 - **`attention_mask`: только правый паддинг** — на левый паддинг и паддинг в `generate` бросается `NotImplementedError`.
 - **`MoE` без load-balancing loss.**
-- **`BaseModel`** объявляет `forward(input_ids, attention_mask) -> Tensor` и `generate(input_ids, max_length)`, но модели реализуют интерфейс, описанный выше.
 
 ## 🧪 Тестирование
 
@@ -210,7 +209,7 @@ Attention(Q, K, V) = softmax(Q·Kᵀ/√d_k)·V
 ## 🔧 Добавление новой архитектуры
 
 1. Соберите блок декодера из компонентов `core/` (или используйте `CachedDecoder`, передав `norm_layer` и `feed_forward_layer`).
-2. Создайте класс модели, наследующий `BaseModel`, с `forward(x, use_cache=True, cache=None) -> (logits, cache)` и `generate(...)` с общей сигнатурой.
+2. Создайте класс модели, наследующий `BaseModel`, с `forward(x, use_cache=False, cache=None, attention_mask=None) -> (logits, cache)` и атрибутом `_max_seq_len`; `generate` наследуется из `BaseModel`.
 3. Добавьте тесты в `tests/core/` и `tests/models/`.
 4. Зарегистрируйте модель в `experiments/llm_only/run_llm_experiment.py` и добавьте конфиги в `experiments/llm_only/configs/`.
 

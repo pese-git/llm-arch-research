@@ -148,3 +148,55 @@ def next_generation_input(
     if use_cache and cache is not None:
         return x[:, -1:], cache
     return x, None
+
+
+def sample_next_token(
+    logits: torch.Tensor,
+    do_sample: bool,
+    temperature: float = 1.0,
+    top_k: Optional[int] = None,
+    top_p: Optional[float] = None,
+) -> torch.Tensor:
+    """
+    Выбирает следующий токен по логитам последней позиции.
+
+    Args:
+        logits: логиты [batch, vocab_size]; не изменяются.
+        do_sample: False — жадный выбор (argmax), остальные параметры не влияют;
+            True — сэмплирование из softmax(logits / temperature).
+        temperature: температура сэмплирования (> 0).
+        top_k: оставить только top_k самых вероятных токенов; значение больше
+            размера словаря означает весь словарь.
+        top_p: nucleus sampling — оставить минимальный набор самых вероятных токенов,
+            суммарная вероятность которых не меньше top_p (Holtzman et al., 2019).
+
+    Returns:
+        Индексы выбранных токенов [batch, 1].
+    """
+    if not do_sample:
+        return logits.argmax(dim=-1, keepdim=True)
+
+    logits = logits / temperature
+
+    if top_k is not None:
+        top_k = min(top_k, logits.size(-1))
+        topk_indices = torch.topk(logits, top_k, dim=-1).indices
+        keep = torch.zeros_like(logits, dtype=torch.bool).scatter_(-1, topk_indices, True)
+        logits = logits.masked_fill(~keep, float("-inf"))
+
+    if top_p is not None:
+        sorted_probs, sorted_indices = torch.sort(
+            torch.softmax(logits, dim=-1), descending=True, dim=-1
+        )
+        # Токен входит в ядро, если сумма вероятностей более вероятных токенов (без него)
+        # меньше top_p. Так в ядро попадает и токен, на котором сумма переходит порог, а
+        # самый вероятный токен остаётся всегда (сумма до него 0 < top_p).
+        prob_before = torch.cumsum(sorted_probs, dim=-1) - sorted_probs
+        keep_sorted = prob_before < top_p
+        keep = torch.zeros_like(logits, dtype=torch.bool).scatter_(
+            -1, sorted_indices, keep_sorted
+        )
+        logits = logits.masked_fill(~keep, float("-inf"))
+
+    probs = torch.softmax(logits, dim=-1)
+    return torch.multinomial(probs, num_samples=1)
