@@ -64,7 +64,6 @@ input_ids            attention_mask
 Специфичные для архитектуры:
 
 - **Mistral, Mixtral** — окно sliding window шириной `window_size + 1` позиций (как в тексте статьи и prefill эталонного кода), а в HuggingFace — `window_size`; см. [mistral.md](mistral.md#ширина-окна-w--1).
-- **Mixtral** — MoE без load-balancing loss, см. [mixtral.md](mixtral.md#moe-изнутри).
 
 Полный список технического долга с приоритетами и способами исправления — в [backlog.md](backlog.md).
 

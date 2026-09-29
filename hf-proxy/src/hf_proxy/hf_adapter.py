@@ -126,6 +126,11 @@ class HFGPTAdapter(PreTrainedModel):
             loss = loss_fct(
                 shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1)
             )
+            # Вспомогательный loss модели (load-balancing loss роутера MoE) — только при
+            # обучении, как в llm.training.Trainer: loss оценки остаётся loss языковой модели
+            aux_loss = self.llm_model.auxiliary_loss() if self.training else None
+            if aux_loss is not None:
+                loss = loss + aux_loss
 
         if not return_dict:
             output = (logits,)

@@ -11,6 +11,7 @@ from llm.core.token_embeddings import TokenEmbeddings
 from llm.core.rope import RoPE
 from llm.core.rms_norm import RMSNorm
 from llm.core.mixtral_decoder import MixtralDecoder
+from llm.core.moe import load_balancing_loss
 
 
 
@@ -131,6 +132,16 @@ class Mixtral(BaseModel):
         head_size = resolve_head_size(config, "num_q_heads", rope=True)
         # eps всех RMSNorm: 1e-6 по умолчанию (LLaMA, Gemma), у Mistral 7B — 1e-5
         norm_eps = config.get("rms_norm_eps", 1e-6)
+        # Коэффициент load-balancing loss роутера (router_aux_loss_coef в HF); 0 — выключен
+        self._router_aux_loss_coef = config.get("router_aux_loss_coef", 0.0)
+        if self._router_aux_loss_coef < 0:
+            raise ValueError(
+                f"router_aux_loss_coef должен быть ≥ 0, получено {self._router_aux_loss_coef}"
+            )
+        self._num_experts = config["num_experts"]
+        self._top_k_experts = config["top_k_experts"]
+        # Маска настоящих токенов последнего прохода (без правого паддинга) для aux loss
+        self._aux_token_mask = None
         
         self._max_seq_len = config["max_position_embeddings"]
 
@@ -211,6 +222,10 @@ class Mixtral(BaseModel):
         # attention_mask допускается только такая, при которой causal-маски достаточно.
         check_sequence_length(x.size(1), cache_start_pos(cache), self._max_seq_len)
         check_attention_mask(attention_mask, x, cache)
+        # Паддинг не должен влиять на статистику загрузки экспертов
+        self._aux_token_mask = (
+            (attention_mask[:, -x.size(1):] != 0).reshape(-1) if attention_mask is not None else None
+        )
         
         # Эмбеддинги токенов и позиций
         tok_out = self._token_embeddings(x)  # [batch, seq_len, emb_size]
@@ -239,3 +254,19 @@ class Mixtral(BaseModel):
             return (logits, new_cache)
         else:
             return (logits, None)
+
+    def auxiliary_loss(self):
+        """
+        Load-balancing loss роутеров всех слоёв MoE за последний прямой проход,
+        умноженный на router_aux_loss_coef, или None, если коэффициент равен 0.
+
+        Trainer прибавляет его к loss языковой модели при обучении. Без него роутер
+        склонен сводиться к нескольким «любимым» экспертам, остальные почти не учатся.
+        """
+        if self._router_aux_loss_coef == 0:
+            return None
+        router_logits = [decoder._ff.router_logits for decoder in self._decoders]
+        loss = load_balancing_loss(
+            router_logits, self._num_experts, self._top_k_experts, self._aux_token_mask
+        )
+        return self._router_aux_loss_coef * loss

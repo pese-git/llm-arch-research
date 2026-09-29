@@ -99,3 +99,33 @@ def test_trainer_evaluate_tuple_output():
     tensor_loss = Trainer(tensor_model, train_data, val_data, batch_size=4).evaluate()
 
     assert tuple_loss == pytest.approx(tensor_loss)
+
+
+def test_trainer_adds_auxiliary_loss():
+    """Вспомогательный loss модели (load-balancing MoE) прибавляется к LM loss при обучении."""
+
+    class ModelWithAuxLoss(TinyModel):
+        def __init__(self):
+            super().__init__()
+            self.aux_calls = 0
+
+        def auxiliary_loss(self):
+            self.aux_calls += 1
+            return torch.tensor(100.0)
+
+    torch.manual_seed(0)
+    train_data = ToyLMDataset()
+    model = ModelWithAuxLoss()
+    trainer = Trainer(model, train_data, lr=1e-3, batch_size=4, num_epochs=1, warmup_steps=1)
+    trainer.train()
+
+    assert model.aux_calls == len(trainer.train_loader)
+    assert trainer.loss_history[0] > 100  # LM loss + 100
+
+
+def test_trainer_models_without_auxiliary_loss():
+    """Модели без auxiliary_loss (и с None) обучаются как раньше."""
+    torch.manual_seed(0)
+    trainer = Trainer(TinyModel(), ToyLMDataset(), lr=1e-3, batch_size=4, num_epochs=1, warmup_steps=1)
+    trainer.train()
+    assert trainer.loss_history[0] < 100
