@@ -26,7 +26,7 @@ class CachedDecoder(nn.Module):
 
     Архитектурные особенности:
     --------------------------
-    - Встроенная causal-маска; паддинг проверяется в forward модели (check_attention_mask).
+    - Встроенная causal-маска; паддинг батча (padding, см. core/padding.py) передаётся в attention.
     - KV-кэш каждого слоя: при генерации K/V прошлых токенов не пересчитываются.
 
     Параметры конструктора:
@@ -111,6 +111,7 @@ class CachedDecoder(nn.Module):
         x: torch.Tensor,
         use_cache: bool = True,
         cache: list = None,
+        padding=None,
     ):
         """
         Прямой проход через Decoder Block с поддержкой KV-кэша.
@@ -130,6 +131,8 @@ class CachedDecoder(nn.Module):
             Включать ли накопление и возврат KV-кэша для autoregressive inferece.
         cache : list, опционально
             Список предыдущего KV-кеша для attention.
+        padding : Padding, опционально
+            Паддинг батча (core/padding.py) — передаётся в attention; None — без паддинга.
 
         Возвращает:
         -----------
@@ -140,9 +143,7 @@ class CachedDecoder(nn.Module):
         """
         norm1_out = self._norm1(x)
         # Передаём все cache/use_cache дальше в attention
-        attention, kv_caches = self._heads(
-            norm1_out, use_cache=use_cache, cache=cache
-        )
+        attention, kv_caches = self._heads(norm1_out, use_cache=use_cache, cache=cache, padding=padding)
         out = attention + x
         norm2_out = self._norm2(out)
         ffn_out = self._ff(norm2_out)

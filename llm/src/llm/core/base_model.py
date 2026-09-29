@@ -22,7 +22,7 @@ from typing import Optional, Tuple
 import torch
 
 from llm.core.generation import (
-    check_attention_mask,
+    check_generation_mask,
     next_generation_input,
     sample_next_token,
     validate_sampling_args,
@@ -68,8 +68,9 @@ class BaseModel(nn.Module, ABC):
             x (Tensor[int]): Индексы токенов [batch, seq_len]
             use_cache (bool): Вернуть KV-кэш для продолжения генерации
             cache (Optional[list]): KV-кэш предыдущих токенов (по слою на элемент)
-            attention_mask (Optional[Tensor]): Маска паддинга [batch, seq_len]; поддерживается
-                только правый паддинг (см. docs/masks.md)
+            attention_mask (Optional[Tensor]): Маска паддинга [batch, seq_len] (1 — токен,
+                0 — паддинг), с кэшем — [batch, cache_len + seq_len]; паддинг в любом месте
+                строки (см. docs/masks.md)
         Returns:
             (logits, cache): логиты [batch, seq_len, vocab_size] и новый кэш
             (None при use_cache=False)
@@ -174,6 +175,9 @@ class BaseModel(nn.Module, ABC):
         становится длиннее max_seq_len, модель продолжает по последним max_seq_len
         токенам без кэша (next_generation_input). Градиенты не считаются.
 
+        Промпты разной длины генерируются одним батчем с левым паддингом: pad-токены слева,
+        attention_mask с нулями на их местах. Маска растёт на единицу с каждым новым токеном;
+        каждая строка даёт то же, что и без паддинга.
         Args:
             x: Промпт [batch, seq_len].
             max_new_tokens: Сколько токенов сгенерировать (не больше — меньше при eos_token_id).
@@ -183,8 +187,9 @@ class BaseModel(nn.Module, ABC):
             top_k: Сэмплировать только из top_k самых вероятных токенов.
             top_p: Nucleus sampling — из минимального набора токенов с суммарной вероятностью ≥ top_p.
             use_cache: Использовать KV-кэш (результат тот же, генерация быстрее).
-            attention_mask: Маска промпта [batch, seq_len]; допускается только из единиц
-                (генерация после паддинга не поддерживается).
+            attention_mask: Маска промпта [batch, seq_len] (1 — токен, 0 — паддинг). Паддинг —
+                слева: последний токен каждой строки должен быть настоящим, с него продолжается
+                генерация.
             eos_token_id: Токен конца текста. Строка, сгенерировавшая его, считается
                 законченной; генерация останавливается, когда закончены все строки.
             pad_token_id: Чем заполнять законченные строки, пока генерируют остальные
@@ -196,7 +201,8 @@ class BaseModel(nn.Module, ABC):
         Raises:
             ValueError: Если при do_sample=True temperature ≤ 0, заданы одновременно
                 top_k и top_p, top_k ≤ 0 или top_p вне (0, 1].
-            NotImplementedError: Если в attention_mask есть нули.
+            ValueError: Если attention_mask не той формы или последний токен какой-то
+                строки — паддинг (правый паддинг в generate).
             TypeError: Если передан неизвестный именованный аргумент.
 
         Примеры:
@@ -210,7 +216,8 @@ class BaseModel(nn.Module, ABC):
               https://arxiv.org/abs/1904.09751
         """
         validate_sampling_args(do_sample, temperature, top_k, top_p)
-        check_attention_mask(attention_mask, x, generating=True)
+        # Маска из одних единиц — как без маски: None, прежний путь без маски ключей
+        mask = check_generation_mask(attention_mask, x)
         if pad_token_id is None:
             pad_token_id = eos_token_id
         finished = torch.zeros(x.size(0), dtype=torch.bool, device=x.device)
@@ -220,7 +227,12 @@ class BaseModel(nn.Module, ABC):
             # С кэшем подаём только последний токен; за пределами max_seq_len берём
             # последние max_seq_len токенов и пересчитываем без кэша.
             x_input, cache = next_generation_input(x, cache, use_cache, self.max_seq_len)
-            logits, new_cache = self(x_input, use_cache=use_cache, cache=cache)
+            # Маска — по всем токенам, которые видит проход: кэш и новые, а за пределами
+            # max_seq_len — последние max_seq_len (как и x_input)
+            mask_input = None if mask is None else mask[:, -min(x.size(1), self.max_seq_len):]
+            logits, new_cache = self(
+                x_input, use_cache=use_cache, cache=cache, attention_mask=mask_input
+            )
             if use_cache:
                 cache = new_cache
 
@@ -233,6 +245,8 @@ class BaseModel(nn.Module, ABC):
                 finished |= next_token.squeeze(-1) == eos_token_id
 
             x = torch.cat([x, next_token], dim=1)
+            if mask is not None:
+                mask = torch.cat([mask, mask.new_ones(mask.size(0), 1)], dim=1)
             if eos_token_id is not None and bool(finished.all()):
                 break
         return x

@@ -111,7 +111,9 @@ class MistralDecoder(nn.Module):
         self._norm1 = RMSNorm(emb_size, eps=norm_eps)
         self._norm2 = RMSNorm(emb_size, eps=norm_eps)
 
-    def forward(self, x: torch.Tensor, use_cache: bool = True, cache: tuple = None) -> tuple:
+    def forward(
+        self, x: torch.Tensor, use_cache: bool = True, cache: tuple = None, padding=None
+    ) -> tuple:
         """
         Прямой проход через блок MistralDecoder.
 
@@ -123,6 +125,8 @@ class MistralDecoder(nn.Module):
             Включить ли кэширование для ускорения генерации (авторегрессия).
         cache : list, опционально
             KV-кэш этого слоя с предыдущих шагов: (K, V, next_pos), или None.
+        padding : Padding, опционально
+            Паддинг батча (core/padding.py) — передаётся в attention; None — без паддинга.
 
         Возвращает:
         -----------
@@ -133,7 +137,7 @@ class MistralDecoder(nn.Module):
 
         """
         norm1_out = self._norm1(x)
-        attention, kv_caches = self._heads(norm1_out, use_cache=use_cache, cache=cache)
+        attention, kv_caches = self._heads(norm1_out, use_cache=use_cache, cache=cache, padding=padding)
         out = attention + x
 
         norm2_out = self._norm2(out)

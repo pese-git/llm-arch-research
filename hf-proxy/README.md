@@ -67,6 +67,6 @@ loaded_tokenizer = HFTokenizerAdapter.from_pretrained("checkpoints/my-gpt")
 ## ⚠️ Известные ограничения
 
 - **Только `GPT`.** `HFAdapter` всегда создаёт `llm.models.gpt.GPT`.
-- **`attention_mask` передаётся в модель**, которая поддерживает только правый паддинг (его и делает коллатор токенизатора); на левый паддинг — `NotImplementedError`. `past_key_values` игнорируются, KV-кэш HF не поддерживается.
+- **`attention_mask` передаётся в модель** — паддинг поддерживается в любом месте строки. `past_key_values` игнорируются, KV-кэш HF не поддерживается.
 - **`HFGPTAdapter.generate`** передаёт управление `GPT.generate`: учитываются `max_new_tokens`, `do_sample`, `temperature`, `top_k`, `top_p`, `use_cache`, `eos_token_id`, `pad_token_id`, переданные именованными аргументами; другой именованный аргумент — `TypeError`. `generation_config`, `logits_processor` и `stopping_criteria` не применяются.
 - Значения по умолчанию в `HFAdapterConfig` (`pad/bos/eos_token_id = 50256`, `architectures = ["GPT2LMHeadModel"]`) рассчитаны на словарь GPT-2 и не соответствуют собственному BPE-токенизатору.

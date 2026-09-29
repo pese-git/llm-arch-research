@@ -153,7 +153,7 @@ out = model.generate(input_ids, max_new_tokens=50, do_sample=False)
 out = model.generate(input_ids, max_new_tokens=50, do_sample=True, temperature=0.8, top_p=0.9)
 ```
 
-Когда последовательность становится длиннее `max_position_embeddings`, `generate` продолжает по последним `max_position_embeddings` токенам. `attention_mask` допускается только из единиц; `forward` принимает и правый паддинг (подробнее — [docs/masks.md](../docs/masks.md)).
+Когда последовательность становится длиннее `max_position_embeddings`, `generate` продолжает по последним `max_position_embeddings` токенам. Промпты разной длины генерируются одним батчем с левым паддингом: `generate(padded, attention_mask=mask, ...)`; каждая строка даёт то же, что её промпт отдельно. `forward` принимает паддинг в любом месте строки (подробнее — [docs/masks.md](../docs/masks.md#attention_mask-и-паддинг)).
 
 ### Сохранение и загрузка
 
@@ -185,10 +185,6 @@ trainer.train()
 `BPETokenizer` перед обучением и кодированием разбивает текст на слова, как GPT-2: пробел прикрепляется к началу следующего слова, пунктуация идёт отдельно (`pretokenize` в `bpe_tokenizer.py`). Слияния не выходят за границы слов, поэтому токен не длиннее слова. На маленьком корпусе обучение может остановиться раньше `vocab_size`, когда каждое слово уже стало одним токеном.
 
 `Trainer` — минимальный цикл: AdamW, линейный warmup/decay, gradient clipping 1.0, устройство `cuda` или `cpu`. Сохранение чекпоинтов, AMP и gradient accumulation в нём не реализованы.
-
-## ⚠️ Известные ограничения
-
-- **`attention_mask`: только правый паддинг** — на левый паддинг и паддинг в `generate` бросается `NotImplementedError`.
 
 ## 🧪 Тестирование
 

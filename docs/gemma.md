@@ -226,8 +226,9 @@ ffn_out = self._ff(norm2_out)          # GeGLU(RMSNorm2(U^(l)))
 `forward(x, use_cache=False, cache=None, attention_mask=None)`:
 
 ```python
-check_sequence_length(x.size(1), cache_start_pos(cache), self._max_seq_len)
-check_attention_mask(attention_mask, x, cache)            # только правый паддинг
+start_pos = cache_start_pos(cache)
+check_sequence_length(x.size(1), start_pos, self._max_seq_len)
+padding = padding_from_attention_mask(attention_mask, x, start_pos)  # паддинг где угодно; см. masks.md
 tok_out = self._token_embeddings(x)                       # [B, T, d]
 if self._embedding_scale is not None:
     tok_out = tok_out * torch.tensor(self._embedding_scale, dtype=tok_out.dtype)   # × √d

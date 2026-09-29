@@ -72,7 +72,7 @@ class PositionalEmbeddings(nn.Module):
             num_embeddings=max_seq_len, embedding_dim=emb_size
         )
 
-    def forward(self, seq_len: int, start_pos: int = 0) -> Tensor:
+    def forward(self, seq_len: int, start_pos: int = 0, positions: Tensor = None) -> Tensor:
         """
         Получить positional embeddings для последовательности длиной seq_len.
 
@@ -82,16 +82,22 @@ class PositionalEmbeddings(nn.Module):
             Сколько позиций сгенерировать (обычно == входная длина x)
         start_pos : int, по умолчанию 0
             Возможность выдать positional embeddings \"с середины\" (для autoregressive генерации)
+        positions : Tensor, опционально
+            Позиции токенов каждой строки [batch, seq_len] — при паддинге (см. core/padding.py).
+            Если задан, start_pos не используется.
 
         Возвращает:
         -----------
         torch.Tensor — positional embeddings формы [seq_len, emb_size]
+        (с positions — [batch, seq_len, emb_size])
 
         Пример:
         -------
             >>> pos = PositionalEmbeddings(512, 128)
             >>> p = pos(10)  # [10, 128]
         """
+        if positions is not None:
+            return self.embedding(positions)
         if seq_len < 1 or start_pos + seq_len > self.max_seq_len:
             raise IndexError(
                 f"Длина {seq_len} должна быть от 1 до {self.max_seq_len - start_pos} "

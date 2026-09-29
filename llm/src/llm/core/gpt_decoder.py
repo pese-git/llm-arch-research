@@ -24,7 +24,7 @@ class GptDecoder(nn.Module):
 
     Архитектурные особенности:
     --------------------------
-    - Только встроенная causal-маска; паддинг проверяется в forward модели (check_attention_mask)
+    - Встроенная causal-маска; паддинг батча (padding, см. core/padding.py) передаётся в attention
     - Residual connections для каждого подблока (attention, FFN)
     - Post-LN (норма после каждого residual-сложения)
     - KV-кэш для генерации по одному токену
@@ -110,6 +110,7 @@ class GptDecoder(nn.Module):
         x: torch.Tensor,
         use_cache: bool = False,
         cache: list = None,
+        padding=None,
     ) -> tuple:
         """
         Один прямой проход через блок декодера.
@@ -122,6 +123,8 @@ class GptDecoder(nn.Module):
             Вернуть KV-кэш attention.
         cache : tuple, optional
             KV-кэш этого слоя с предыдущих шагов.
+        padding : Padding, опционально
+            Паддинг батча (core/padding.py) — передаётся в attention; None — без паддинга.
 
         Возвращает:
         -----------
@@ -135,7 +138,7 @@ class GptDecoder(nn.Module):
         """
 
         # Self-Attention блок
-        attention, kv_caches = self._heads(x, use_cache=use_cache, cache=cache)
+        attention, kv_caches = self._heads(x, use_cache=use_cache, cache=cache, padding=padding)
         out = self._norm1(attention + x)
 
         # FeedForward блок
