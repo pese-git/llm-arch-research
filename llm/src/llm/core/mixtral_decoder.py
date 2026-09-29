@@ -59,6 +59,8 @@ class MixtralDecoder(nn.Module):
         Реализация позиционного кодирования RoPE.
     dropout : float
         Вероятность Dropout для регуляризации.
+    norm_eps : float
+        eps обеих RMSNorm (по умолчанию 1e-6).
 
     Пример использования:
     ---------------------
@@ -89,7 +91,8 @@ class MixtralDecoder(nn.Module):
         top_k_experts: int,
         window_size: int,
         rope: RoPE,
-        dropout: float = 0.1
+        dropout: float = 0.1,
+        norm_eps: float = 1e-6,
     ):
         """
         Конструктор декодерного блока MixtralDecoder.
@@ -121,6 +124,8 @@ class MixtralDecoder(nn.Module):
             Объект позиционного кодирования RoPE (Rotary Positional Embedding), необходим для архитектуры внимания.
         dropout : float, по умолчанию 0.1
             Вероятность зануляции выходных значений для регуляризации и борьбы с переобучением.
+        norm_eps : float, по умолчанию 1e-6
+            eps обеих RMSNorm.
 
         Пример:
         -------
@@ -155,8 +160,8 @@ class MixtralDecoder(nn.Module):
             top_k_experts=top_k_experts,
             dropout=dropout
         )
-        self._norm1 = RMSNorm(emb_size)
-        self._norm2 = RMSNorm(emb_size)
+        self._norm1 = RMSNorm(emb_size, eps=norm_eps)
+        self._norm2 = RMSNorm(emb_size, eps=norm_eps)
 
     def forward(self, x: torch.Tensor, use_cache: bool = True, cache: tuple = None) -> tuple:
         """

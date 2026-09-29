@@ -1,5 +1,7 @@
 # llm/src/llm/core/cached_decoder.py
 
+from typing import Callable
+
 import torch
 from torch import nn
 from .multi_head_attention import MultiHeadAttention
@@ -34,7 +36,8 @@ class CachedDecoder(nn.Module):
     emb_size : int — embedding размерность
     head_size : int — размер каждой attention head (обычно emb_size // num_heads)
     max_seq_len : int — максимально допустимая длина последовательности
-    norm_layer : type — класс нормализации (nn.LayerNorm по умолчанию, для LLaMA — RMSNorm)
+    norm_layer : callable — класс или фабрика нормализации, вызывается как norm_layer(emb_size)
+                 (nn.LayerNorm по умолчанию; LLaMA передаёт functools.partial(RMSNorm, eps=...))
     dropout : float — dropout в attention
     rope : RoPE — rotary positional encoding для Q и K (для LLaMA)
 
@@ -64,7 +67,7 @@ class CachedDecoder(nn.Module):
         emb_size: int,
         head_size: int,
         max_seq_len: int,
-        norm_layer: type = nn.LayerNorm,
+        norm_layer: Callable[[int], nn.Module] = nn.LayerNorm,
         dropout: float = 0.1,
         rope: RoPE = None,
     ):

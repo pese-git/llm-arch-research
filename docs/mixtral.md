@@ -179,6 +179,7 @@ result    = ffn_out + out
 | `head_size` | 64 | необязательный размер головы; по умолчанию `embed_dim // num_q_heads` (тогда `embed_dim` обязан делиться на `num_q_heads`). Если задан, `num_q_heads · head_size` может не совпадать с `embed_dim`; для RoPE — чётный |
 | `num_layers` | 4 | число блоков `MixtralDecoder` |
 | `max_position_embeddings` | 512 | максимальная длина последовательности |
+| `rms_norm_eps` | (нет в примере) | необязательный `eps` всех RMSNorm, по умолчанию `1e-6`; у Mixtral 8x7B — `1e-5` |
 | `num_experts` | 8 | общее число экспертов MoE на слой |
 | `top_k_experts` | 2 | сколько экспертов активируется на токен |
 | `window_size` | 16 | ширина скользящего окна внимания (в Mixtral 8x7B окна нет, здесь ключ обязателен) |

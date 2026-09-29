@@ -316,6 +316,7 @@
 - **Где:** [`core/rms_norm.py`](../llm/src/llm/core/rms_norm.py), `RMSNorm(dim, eps=1e-6)`; все модели и декодеры создают `RMSNorm` без `eps`.
 - **Что:** у Mistral 7B `norm_eps = 1e-5` (`rms_norm_eps` в HF), у LLaMA-1 — 1e-6, у Gemma — 1e-6. Задать значение из конфига нельзя. База RoPE 10 000 для LLaMA-1 и Mistral 7B v0.1 совпадает с оригиналом.
 - **Исправление:** читать `config.get("rms_norm_eps", 1e-6)` и пробрасывать в `RMSNorm` модели и декодеров.
+- **Статус:** исправлено в ветке `feat/rms-norm-eps`: LLaMA, Mistral, Mixtral и Gemma читают `config["rms_norm_eps"]` (по умолчанию `1e-6`) и передают его во все RMSNorm — по две в каждом блоке и финальную (LLaMA — через `functools.partial(RMSNorm, eps=...)` в `CachedDecoder`, декодеры Mistral, Mixtral и Gemma — параметром `norm_eps`). `eps ≤ 0` — `ValueError`. По умолчанию выход побитово прежний; `eps` не параметр, поэтому формат чекпоинтов не меняется. Конфиги экспериментов не менялись: для Mistral 7B и Mixtral 8x7B оригинальное значение `1e-5` задаётся в конфиге явно.
 
 #### 51. Dropout в attention и FFN — P3
 

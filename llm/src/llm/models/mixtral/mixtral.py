@@ -129,6 +129,8 @@ class Mixtral(BaseModel):
 
         # Размер головы: head_size из конфига или embed_dim // num_q_heads (с проверками)
         head_size = resolve_head_size(config, "num_q_heads", rope=True)
+        # eps всех RMSNorm: 1e-6 по умолчанию (LLaMA, Gemma), у Mistral 7B — 1e-5
+        norm_eps = config.get("rms_norm_eps", 1e-6)
         
         self._max_seq_len = config["max_position_embeddings"]
 
@@ -152,9 +154,10 @@ class Mixtral(BaseModel):
             top_k_experts=config["top_k_experts"],
             window_size=config["window_size"],
             rope=self._position_embeddings,
-            dropout=config["dropout"] 
+            dropout=config["dropout"],
+            norm_eps=norm_eps
         ) for _ in range(config["num_layers"])])
-        self._norm = RMSNorm(config["embed_dim"])
+        self._norm = RMSNorm(config["embed_dim"], eps=norm_eps)
         self._linear = nn.Linear(config["embed_dim"], config["vocab_size"])
 
     def forward(

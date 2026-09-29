@@ -45,6 +45,8 @@ class GemmaDecoder(nn.Module):
         Позиционное кодирование Rotary Position Embedding.
     dropout : float, optional
         Dropout для регуляризации (примерно 0.0–0.1).
+    norm_eps : float, optional
+        eps обеих RMSNorm (по умолчанию 1e-6, как в Gemma).
 
     Пример использования:
     ---------------------
@@ -73,7 +75,8 @@ class GemmaDecoder(nn.Module):
         head_size: int,
         max_seq_len: int,
         rope: RoPE,
-        dropout: float = 0.1
+        dropout: float = 0.1,
+        norm_eps: float = 1e-6,
     ):
         """
         Конструктор слоя GemmaDecoder.
@@ -94,6 +97,8 @@ class GemmaDecoder(nn.Module):
             Объект для rotary positional encoding (позиционное кодирование для attention).
         dropout : float, default=0.1
             Dropout после attention и feed-forward для регуляризации (обычно 0.0–0.1).
+        norm_eps : float, default=1e-6
+            eps обеих RMSNorm.
 
         Внутри:
         -------
@@ -115,8 +120,8 @@ class GemmaDecoder(nn.Module):
             dropout=dropout
         )
         self._ff = GeGLU(emb_size=emb_size, dropout=dropout)
-        self._norm1 = RMSNorm(emb_size)
-        self._norm2 = RMSNorm(emb_size)
+        self._norm1 = RMSNorm(emb_size, eps=norm_eps)
+        self._norm2 = RMSNorm(emb_size, eps=norm_eps)
 
     def forward(self, x: torch.Tensor, use_cache: bool = True, cache: tuple = None) -> tuple:
         """
