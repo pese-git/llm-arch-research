@@ -169,6 +169,51 @@ result    = ffn_out + out
 | `rms_norm_eps` | (нет в примере) | необязательный `eps` всех RMSNorm, по умолчанию `1e-6` — как в LLaMA |
 | `rope_theta` | (нет в примере) | необязательная база частот RoPE, по умолчанию `10000` — как в LLaMA; см. [Скорости вращения и база](#скорости-вращения-и-база-rope_theta) |
 | `dropout` | 0.1 | dropout в attention и FFN |
+| `intermediate_size` | (нет в примере) | необязательный скрытый размер SwiGLU, по умолчанию `4 · embed_dim`; в LLaMA — `llama_intermediate_size(embed_dim)`, см. [Размер FFN и bias](#размер-ffn-и-bias) |
+| `bias` | (нет в примере) | необязательный: bias во всех `Linear` (Q/K/V, выход attention, три матрицы SwiGLU, голова), по умолчанию `true`; в LLaMA — `false` |
+
+### Размер FFN и bias
+
+По умолчанию два отличия от оригинала сохранены, чтобы загружались чекпоинты, сохранённые раньше. Оба включаются ключами конфига и меняют форму весов, поэтому чекпоинт одного вида в модель другого не загрузится.
+
+**Скрытый размер SwiGLU.** В SwiGLU три матрицы, а не две, как в обычном FFN. Поэтому LLaMA (разд. 2.2 статьи, `FeedForward` в коде Meta) берёт скрытый размер `⅔ · 4d`, чтобы FFN весил столько же, сколько FFN шириной `4d`, и округляет вверх до кратного `multiple_of = 256`. Для 7B (`d = 4096`) это 11008 вместо 16384, около 135M параметров FFN на слой вместо 201M. Формула — `llama_intermediate_size(embed_dim, multiple_of=256, ffn_dim_multiplier=None)` из `llm.models.llama`:
+
+```python
+from llm.models.llama import Llama, llama_intermediate_size
+
+config = {..., "embed_dim": 4096, "intermediate_size": llama_intermediate_size(4096)}  # 11008
+```
+
+**Bias.** У Meta все проекции без bias. По умолчанию здесь bias есть в Q/K/V, выходной проекции attention, трёх матрицах SwiGLU и голове на словарь; `"bias": false` убирает все.
+
+### Загрузка весов HuggingFace
+
+С этими ключами загружаются веса `LlamaForCausalLM` — через `convert_hf_state_dict` из [`models/llama/hf_weights.py`](../llm/src/llm/models/llama/hf_weights.py):
+
+```python
+from transformers import LlamaForCausalLM
+from llm.models.llama import Llama, convert_hf_state_dict
+
+hf = LlamaForCausalLM.from_pretrained("nickypro/tinyllama-15M")
+c = hf.config
+model = Llama({"vocab_size": c.vocab_size, "embed_dim": c.hidden_size, "num_heads": c.num_attention_heads,
+               "num_layers": c.num_hidden_layers, "max_position_embeddings": c.max_position_embeddings,
+               "dropout": 0.0, "rms_norm_eps": c.rms_norm_eps, "rope_theta": c.rope_theta,
+               "intermediate_size": c.intermediate_size, "bias": False})
+model.load_state_dict(convert_hf_state_dict(hf.state_dict(), num_heads=c.num_attention_heads))
+```
+
+Матрицы те же, но строки `q_proj` и `k_proj` в HF переставлены. RoPE здесь, как в коде Meta, поворачивает соседние пары координат `(2i, 2i+1)`, а HF (`rotate_half`) — пары `(i, i + head_size/2)`; скрипт конвертации HF переставляет строки при переходе от формата Meta, `convert_hf_state_dict` делает обратную перестановку. Если в чекпоинте эмбеддинги привязаны к голове (`tie_word_embeddings`), голова получает их копию: результат тот же, но параметров больше на `vocab_size · embed_dim`.
+
+Подходят модели с обычным MHA (`num_key_value_heads == num_attention_heads`) и без `rope_scaling`. Проверено на пяти открытых моделях архитектуры LLaMA: логиты совпадают с HF с точностью до ~1e-4, greedy-генерация с KV-кэшем — токен в токен.
+
+| Модель | `intermediate_size` | Совпадает с `llama_intermediate_size` | max \|Δ логитов\| |
+|---|---|---|---|
+| `nickypro/tinyllama-15M` (llama2.c) | 768 | да, `multiple_of=32` | 4.0e-5 |
+| `nickypro/tinyllama-42M` | 1376 | да, `multiple_of=32` | 3.3e-5 |
+| `nickypro/tinyllama-110M` | 2048 | да, `multiple_of=32` | 2.0e-5 |
+| `JackFram/llama-68m` | 3072 (= 4d) | — | 4.1e-5 |
+| `JackFram/llama-160m` | 3072 (= 4d) | — | 1.1e-4 |
 
 ## Известное расхождение с докстрингом
 
@@ -176,7 +221,7 @@ result    = ffn_out + out
 
 Иными словами, реализован **LLaMA-1** в исходном виде (RoPE + RMSNorm + SwiGLU + обычный MHA; GQA появилась только в LLaMA-2 70B). GQA в этом репозитории впервые реализована в [Mistral](mistral.md).
 
-Ещё два отличия от оригинала: все `Linear`-слои (Q/K/V, выходная проекция attention, голова на словарь) созданы с bias, а dropout применяется в attention и FFN.
+Ещё отличия от оригинала: по умолчанию все `Linear`-слои (Q/K/V, выходная проекция attention, три матрицы SwiGLU, голова на словарь) созданы с bias, а скрытый размер SwiGLU — `4 · embed_dim` (оба отключаются, см. [Размер FFN и bias](#размер-ffn-и-bias)); dropout применяется в attention и FFN.
 
 ## Генерация
 

@@ -70,6 +70,7 @@ class CachedDecoder(nn.Module):
         norm_layer: Callable[[int], nn.Module] = nn.LayerNorm,
         dropout: float = 0.1,
         rope: RoPE = None,
+        bias: bool = True,
     ):
         """
         Конструктор CachedDecoder.
@@ -88,6 +89,8 @@ class CachedDecoder(nn.Module):
             Максимальная поддерживаемая длина последовательности (выделяет буфер для causal-маски).
         dropout : float, default=0.1
             Dropout после внимания и/или feedforward.
+        bias : bool, default=True
+            Есть ли bias у Q/K/V и выходной проекции attention (в LLaMA его нет).
         """
         super().__init__()
         self._heads = MultiHeadAttention(
@@ -97,6 +100,7 @@ class CachedDecoder(nn.Module):
             max_seq_len=max_seq_len,
             rope=rope,
             dropout=dropout,
+            bias=bias,
         )
         self._ff = feed_forward_layer
         self._norm1 = norm_layer(emb_size)

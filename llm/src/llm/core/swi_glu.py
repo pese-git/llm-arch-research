@@ -74,18 +74,27 @@ class SwiGLU(nn.Module):
 
     """
 
-    def __init__(self, emb_size: int, dropout: float = 0.1):
+    def __init__(
+        self, emb_size: int, dropout: float = 0.1, hidden_dim: int = None, bias: bool = True
+    ):
         """
         Инициализация SwiGLU слоя.
 
         Args:
             emb_size: Размерность входных/выходных эмбеддингов
             dropout: Вероятность dropout (по умолчанию 0.1)
+            hidden_dim: Скрытая размерность (ширина W_g, W_u и вход W_d); по умолчанию 4 * emb_size.
+                В LLaMA — ⅔·4·emb_size с округлением (см. llm.models.llama.llama_intermediate_size),
+                чтобы три матрицы весили как две матрицы обычного FFN с 4·emb_size
+            bias: Есть ли bias у трёх матриц (по умолчанию True; в LLaMA, Mistral и Mixtral его нет)
         """
         super().__init__()
-        self._gate = nn.Linear(emb_size, 4 * emb_size)
-        self._up = nn.Linear(emb_size, 4 * emb_size)
-        self._down = nn.Linear(4 * emb_size, emb_size)
+        hidden_dim = 4 * emb_size if hidden_dim is None else hidden_dim
+        if hidden_dim <= 0:
+            raise ValueError(f"hidden_dim SwiGLU должен быть положительным, получено {hidden_dim}")
+        self._gate = nn.Linear(emb_size, hidden_dim, bias=bias)
+        self._up = nn.Linear(emb_size, hidden_dim, bias=bias)
+        self._down = nn.Linear(hidden_dim, emb_size, bias=bias)
         self._activation = SiLU()
         self._dropout = nn.Dropout(dropout)
 
@@ -126,4 +135,7 @@ class SwiGLU(nn.Module):
 
     def extra_repr(self) -> str:
         """Строковое представление для отладки."""
-        return f"emb_size={self._gate.in_features}, dropout={self._dropout.p}"
+        return (
+            f"emb_size={self._gate.in_features}, hidden_dim={self._gate.out_features}, "
+            f"bias={self._gate.bias is not None}, dropout={self._dropout.p}"
+        )

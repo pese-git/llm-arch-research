@@ -75,6 +75,7 @@ class MultiHeadAttention(nn.Module):
         rope: RoPE = None,
         dropout: float = 0.1,
         attention_dropout: float = 0.0,
+        bias: bool = True,
     ):
         """
         Конструктор многоголового внимания (MultiHeadAttention).
@@ -105,6 +106,8 @@ class MultiHeadAttention(nn.Module):
         attention_dropout : float, по умолчанию 0.0
             Dropout на весах внимания после softmax (attn_pdrop в GPT-1/GPT-2, в статьях 0.1):
             случайно выключает связи «токен → токен». 0.0 — без dropout на весах.
+        bias : bool, по умолчанию True
+            Есть ли bias у W_Q, W_K, W_V и W_O (в GPT есть, в LLaMA нет).
 
         Внутри конструктора происходит:
         -------------------------------
@@ -123,9 +126,9 @@ class MultiHeadAttention(nn.Module):
         self._max_seq_len = max_seq_len
         self._rope = rope
 
-        self._q = nn.Linear(emb_size, num_heads * head_size)
-        self._k = nn.Linear(emb_size, num_heads * head_size)
-        self._v = nn.Linear(emb_size, num_heads * head_size)
+        self._q = nn.Linear(emb_size, num_heads * head_size, bias=bias)
+        self._k = nn.Linear(emb_size, num_heads * head_size, bias=bias)
+        self._v = nn.Linear(emb_size, num_heads * head_size, bias=bias)
 
         # Создание causal маски
         mask = torch.tril(torch.ones(max_seq_len, max_seq_len))
@@ -133,7 +136,7 @@ class MultiHeadAttention(nn.Module):
         # иначе она хранилась бы в каждом слое и привязывала бы чекпоинт к max_seq_len
         self.register_buffer("_tril_mask", mask.bool(), persistent=False)
         
-        self._layer = nn.Linear(head_size * num_heads, emb_size)
+        self._layer = nn.Linear(head_size * num_heads, emb_size, bias=bias)
         self._dropout = nn.Dropout(dropout)
         # Dropout весов внимания; при p=0 ничего не делает и не расходует генератор случайных чисел
         self._attn_dropout = nn.Dropout(attention_dropout)
