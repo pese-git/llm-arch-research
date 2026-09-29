@@ -122,7 +122,7 @@ model.load_state_dict(convert_hf_state_dict(hf.state_dict()))
 - обучаемые абсолютные позиционные эмбеддинги → **RoPE** (относительное, ротационное позиционное кодирование, встроено в attention);
 - `LayerNorm` → **RMSNorm**;
 - GELU-FFN → **SwiGLU**;
-- attention остаётся стандартным multi-head (см. оговорку в [llama.md](llama.md#известное-расхождение-с-докстрингом)) — GQA появится только в Mistral.
+- attention остаётся стандартным multi-head (см. [llama.md](llama.md#отличия-от-llama)) — GQA появится только в Mistral.
 
 Подробности — в [llama.md](llama.md).
 

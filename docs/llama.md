@@ -215,11 +215,9 @@ model.load_state_dict(convert_hf_state_dict(hf.state_dict(), num_heads=c.num_att
 | `JackFram/llama-68m` | 3072 (= 4d) | — | 4.1e-5 |
 | `JackFram/llama-160m` | 3072 (= 4d) | — | 1.1e-4 |
 
-## Известное расхождение с докстрингом
+## Отличия от LLaMA
 
-Раньше докстринг класса `Llama` и README проекта описывали **Grouped Query Attention** (`num_q_heads`/`num_kv_heads`) как часть LLaMA в этом репозитории. Фактически `Llama.__init__` читает из конфига только `num_heads` и строит обычный `MultiHeadAttention` через `CachedDecoder`; `GroupedQueryAttention` в `llama.py` не используется. Конфиг [`llama_train.json`](../experiments/llm_only/configs/llama_train.json) это подтверждает: там только `num_heads`. Докстринг и README исправлены под реализацию.
-
-Иными словами, реализован **LLaMA-1** в исходном виде (RoPE + RMSNorm + SwiGLU + обычный MHA; GQA появилась только в LLaMA-2 70B). GQA в этом репозитории впервые реализована в [Mistral](mistral.md).
+Реализован **LLaMA-1** в исходном виде: RoPE + RMSNorm + SwiGLU + обычный MHA. `Llama.__init__` читает из конфига только `num_heads` и строит `MultiHeadAttention` через `CachedDecoder`; GQA появилась только в LLaMA-2 70B, а в этом репозитории впервые реализована в [Mistral](mistral.md).
 
 Ещё отличия от оригинала: по умолчанию все `Linear`-слои (Q/K/V, выходная проекция attention, три матрицы SwiGLU, голова на словарь) созданы с bias, а скрытый размер SwiGLU — `4 · embed_dim` (оба отключаются, см. [Размер FFN и bias](#размер-ffn-и-bias)); dropout применяется в attention и FFN.
 

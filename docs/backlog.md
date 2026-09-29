@@ -4,7 +4,7 @@
 
 Приоритеты: **P1** — неверный результат или падение; **P2** — расхождение с документацией или статьёй, дешёвые исправления; **P3** — качество кода.
 
-Состояние кода — `master` после влития `fix/kv-cache` (PR #8) и `feat/gpt-activation` (PR #9), на 2026-09-28. Пункты с пометкой «воспроизведено» проверены запуском (torch 2.8). Величины расхождений при префилле кусками зависят от seed и приведены для порядка.
+Бэклог составлен по `master` после влития `fix/kv-cache` (PR #8) и `feat/gpt-activation` (PR #9), на 2026-09-28; описания «Что» и «Воспроизведено» относятся к тому состоянию. Строки «Статус» обновляются по мере исправлений и отражают `master` после PR #48. Пункты с пометкой «воспроизведено» проверены запуском (torch 2.8). Величины расхождений при префилле кусками зависят от seed и приведены для порядка.
 
 Пункты 49–55 добавлены при сверке бэклога с кодом и первоисточниками, пункт 56 — при исправлении пункта 3. Они стоят в разделах своих архитектур, номера не перенумерованы, чтобы не ломать перекрёстные ссылки.
 
@@ -224,11 +224,11 @@
 - **Что:** `**kwargs` нигде не используется, поэтому опечатки и аргументы из других API (`max_length`, `eos_token_id`) проглатываются без ошибки.
 - **Воспроизведено:** `generate(x, 2, do_sample=False, max_lenght=5)` выполняется без ошибок.
 - **Исправление:** `hf-proxy/src/hf_proxy/hf_adapter.py` пробрасывает `**kwargs` в `model.generate`, поэтому просто убрать параметр нельзя. Явно перечислить поддерживаемые ключи и бросать `TypeError` на остальных (или фильтровать ключи в адаптере).
+- **Статус:** исправлено в ветке `refactor/shared-generate`: у общего `generate` нет `**kwargs`, неизвестный именованный аргумент — `TypeError`. `hf_adapter.generate` передаёт свои `**kwargs` как есть, поэтому опечатки через адаптер тоже дают `TypeError`; настоящий `transformers.pipeline` лишних ключей не передаёт (проверено).
 
 ### Отклонения от LLaMA
 
-Докстринг `Llama` и [llama.md](llama.md#известное-расхождение-с-докстрингом) уже упоминают bias и dropout; ниже — что из этого следует и чего там нет.
-- **Статус:** исправлено в ветке `refactor/shared-generate`: у общего `generate` нет `**kwargs`, неизвестный именованный аргумент — `TypeError`. `hf_adapter.generate` передаёт свои `**kwargs` как есть, поэтому опечатки через адаптер тоже дают `TypeError`; настоящий `transformers.pipeline` лишних ключей не передаёт (проверено).
+Докстринг `Llama` и [llama.md](llama.md#отличия-от-llama) уже упоминают bias и dropout; ниже — что из этого следует и чего там нет.
 
 #### 23. SwiGLU с hidden = 4·d вместо ⅔·4·d — P2
 
@@ -236,7 +236,7 @@
 - **Что:** в LLaMA (разд. 2.2 статьи; `FeedForward` в `facebookresearch/llama/model.py`) скрытая размерность — `2/3 · 4d`, округлённая вверх до кратного `multiple_of=256`, чтобы три матрицы SwiGLU весили столько же, сколько две матрицы обычного FFN с `4d`. Здесь три матрицы по `4d`.
 - **Последствия:** FFN примерно в 1.5 раза тяжелее, чем в статье. Для `d=4096`: hidden 16384 вместо 11008, ~201M вместо ~135M параметров FFN на слой. При сравнении с GPT той же ширины LLaMA получает лишние параметры, и сравнение архитектур становится нечестным.
 - **Исправление:** параметр `hidden_dim` в `SwiGLU` (по умолчанию — формула LLaMA, опционально `multiple_of`). Затрагивает Mistral и Mixtral, которые используют тот же `SwiGLU`; меняет размеры весов, поэтому старые чекпоинты не загрузятся.
-- **Статус:** исправлено для LLaMA в ветке `feat/llama-hf-parity`: `SwiGLU` принимает `hidden_dim`, `Llama` читает ключ `intermediate_size` (по умолчанию прежние `4 · embed_dim`, старые чекпоинты загружаются). Формула LLaMA — `llama_intermediate_size(embed_dim, multiple_of=256, ffn_dim_multiplier=None)`: 11008 для 7B, 13824 для 13B, 28672 для LLaMA 2 70B. Проверено на весах `nickypro/tinyllama-15M/42M/110M` (FFN 768, 1376, 2048 — по той же формуле с `multiple_of=32`): логиты совпадают с HF до 4e-5, greedy — токен в токен. Mistral и Mixtral пока строят `SwiGLU` с 4d (пункт 30).
+- **Статус:** исправлено для LLaMA в ветке `feat/llama-hf-parity`: `SwiGLU` принимает `hidden_dim`, `Llama` читает ключ `intermediate_size` (по умолчанию прежние `4 · embed_dim`, старые чекпоинты загружаются). Формула LLaMA — `llama_intermediate_size(embed_dim, multiple_of=256, ffn_dim_multiplier=None)`: 11008 для 7B, 13824 для 13B, 28672 для LLaMA 2 70B. Проверено на весах `nickypro/tinyllama-15M/42M/110M` (FFN 768, 1376, 2048 — по той же формуле с `multiple_of=32`): логиты совпадают с HF до 4e-5, greedy — токен в токен. Для Mistral и Mixtral — в пункте 30.
 
 #### 24. Bias во всех `Linear` — P3
 
@@ -280,7 +280,7 @@
 - **18** — дублирование `generate` (исправлен).
 - **19** — пограничные случаи `generate`: `top_k` больше словаря, остановка по `eos_token_id` (исправлен).
 - **22** — `**kwargs` в `generate` (исправлен).
-- **24** — bias во всех `Linear`: у Mistral 7B проекции тоже без bias. Воспроизведено: `_heads._q.bias is not None`, `_linear.bias is not None`.
+- **24** — bias во всех `Linear`: у Mistral 7B проекции тоже без bias. До исправления: `_heads._q.bias is not None`, `_linear.bias is not None`. Исправлен ключом `bias` (пункт 30).
 - **25** — RoPE-буферы в `state_dict` по копии на слой (исправлен).
 
 ### Баги
@@ -327,7 +327,7 @@
 
 #### 51. Dropout в attention и FFN — P3
 
-- **Что:** в Mistral 7B dropout нет (в `mistral-inference` его нет вовсе, в HF `attention_dropout=0.0`). Здесь dropout есть в `GroupedQueryAttention` и в `SwiGLU`. Для LLaMA это указано в докстринге и [llama.md](llama.md#известное-расхождение-с-докстрингом), для Mistral — нигде.
+- **Что:** в Mistral 7B dropout нет (в `mistral-inference` его нет вовсе, в HF `attention_dropout=0.0`). Здесь dropout есть в `GroupedQueryAttention` и в `SwiGLU`. Для LLaMA это указано в докстринге и [llama.md](llama.md#отличия-от-llama), для Mistral — нигде.
 - **Исправление:** задокументировать в [mistral.md](mistral.md) или ставить `dropout=0.0` по умолчанию.
 - **Статус:** сделано в ветке `docs/mistral-gemma-dropout`: задокументировано в [mistral.md](mistral.md#отличия-от-mistral-7b) (новый раздел «Отличия от Mistral 7B») и в таблице конфигурации. Значение по умолчанию поменять нельзя: `dropout` — обязательный ключ конфига. Проверено, что `dropout: 0` обнуляет все пять dropout модели (после эмбеддингов и в attention и SwiGLU каждого блока), так что для соответствия оригиналу достаточно конфига. Dropout в attention у Mistral не на весах внимания, а на выходе — как и был.
 
@@ -374,11 +374,11 @@
 - **4**, **22** — валидация аргументов и `**kwargs` в `generate` (исправлены).
 - **8** — `use_cache=True` по умолчанию и нет `no_grad` (исправлен).
 - **10**, **18**, **19** — интерфейс `BaseModel`, дублирование `generate`, пограничные случаи top-k (исправлены).
-- **23**, **24** — SwiGLU с `4·d` и bias во всех `Linear`. У Mixtral 8x7B эксперт — `hidden_dim = 14336` при `dim = 4096`, все проекции, включая роутер, без bias.
+- **23**, **24** — SwiGLU с `4·d` и bias во всех `Linear`. У Mixtral 8x7B эксперт — `hidden_dim = 14336` при `dim = 4096`, все проекции, включая роутер, без bias (исправлены ключами `intermediate_size` и `bias`, пункт 30).
 - **25** — RoPE-буферы в `state_dict` по копии на слой (исправлен).
 - **27** — нет маски при кэше и `seq_len > 1` (исправлен). До исправления префилл 6 + 8 токенов через кэш расходился с полным forward на 0.27–0.35 по логитам при `window_size=5`.
 - **49** — top-p отбрасывает пограничный токен (исправлен).
-- **50**, **51** — `eps` RMSNorm не задаётся из конфига, dropout в attention (в Mixtral 8x7B его нет).
+- **50**, **51** — `eps` RMSNorm из конфига (исправлен, ключ `rms_norm_eps`) и dropout, которого в Mixtral 8x7B нет (задокументирован, `dropout: 0` убирает его).
 - **28** — ключ `head_size` игнорировался (исправлен).
 - **29** — проверки голов (исправлен).
 - **33** — мусор в `GroupedQueryAttention` (исправлен).
@@ -468,7 +468,7 @@
 
 ## Gemma
 
-Модель: [`models/gemma/gemma.py`](../llm/src/llm/models/gemma/gemma.py), блок: [`core/gemma_decoder.py`](../llm/src/llm/core/gemma_decoder.py), attention: [`core/multi_query_attention.py`](../llm/src/llm/core/multi_query_attention.py) с [`core/rope.py`](../llm/src/llm/core/rope.py), FFN: [`core/geglu.py`](../llm/src/llm/core/geglu.py). `MultiQueryAttention` — отдельный модуль, поэтому исправления в `MultiHeadAttention` и `GroupedQueryAttention` его не затрагивают.
+Модель: [`models/gemma/gemma.py`](../llm/src/llm/models/gemma/gemma.py), блок: [`core/gemma_decoder.py`](../llm/src/llm/core/gemma_decoder.py), attention: [`core/group_query_attention.py`](../llm/src/llm/core/group_query_attention.py) с [`core/rope.py`](../llm/src/llm/core/rope.py), FFN: [`core/geglu.py`](../llm/src/llm/core/geglu.py). До пункта 45 блок Gemma был построен на отдельном модуле [`core/multi_query_attention.py`](../llm/src/llm/core/multi_query_attention.py), поэтому пункты 41 и 47 касаются его; теперь он остался только учебным модулем.
 
 Кэшированная генерация по одному токену совпадает с полным forward (покрыто [`test_kv_cache.py`](../llm/tests/models/test_kv_cache.py)).
 
@@ -483,7 +483,7 @@
 - **22** — `**kwargs` в `generate` (исправлен).
 - **25** — RoPE-буферы в `state_dict` по копии на слой (исправлен).
 - **28** — ключ `head_size` игнорировался (исправлен).
-- **32** — половинчатая совместимость с torch < 1.2 в top-k/top-p `generate` и в `_tril_mask`. Версия Gemma на float-масках с `== 0` прошла внешний стенд 2026-09-28.
+- **32** — половинчатая совместимость с torch < 1.2 в top-k/top-p `generate` и в `_tril_mask` (исправлен: проверки `hasattr(torch, "bool")` удалены). Версия Gemma на float-масках с `== 0` прошла внешний стенд 2026-09-28.
 - **35** — `save`/`load`, обещанные докстрингом (исправлен).
 
 ### Баги

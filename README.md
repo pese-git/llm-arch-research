@@ -55,7 +55,7 @@ llm-arch-research/
 │   ├── hf_integration/             # обучение и генерация через hf-proxy
 │   └── shared/                     # общие утилиты и встроенный учебный корпус
 │
-└── notebooks/                  # gpt, gpt2, llama, mistral, mixstral, gemma, bpe
+└── notebooks/                  # gpt, gpt2, llama, mistral, mixtral, gemma, bpe
 ```
 
 Каталог `checkpoints/` создаётся скриптами при запуске и в git не хранится.
@@ -134,7 +134,7 @@ hf_model = HFAdapter.from_llm_model(gpt)   # HFGPTAdapter — наследник
 | LLaMA | RoPE, RMSNorm, SwiGLU, обычный MHA (без GQA) |
 | Mistral | + Grouped Query Attention, Sliding Window Attention |
 | Mixtral | Mistral + Mixture-of-Experts вместо плотного FFN |
-| Gemma | RoPE, RMSNorm, Multi-Query Attention, GeGLU |
+| Gemma | RoPE, RMSNorm, Multi-Query Attention (или GQA/MHA через `num_kv_heads`), GeGLU |
 
 Пример блока декодера на примере GPT-1 (подробный разбор — в [notebooks/gpt.ipynb](notebooks/gpt.ipynb)):
 
@@ -177,66 +177,13 @@ flowchart TB
     classDef dim fill:#f5f5f5,stroke:#bbbbbb,color:#999999,stroke-dasharray:4 3;
 ```
 
-**Генерация:** greedy, sampling с температурой, top-k, top-p, KV-кэш (в Mistral/Mixtral — со скользящим окном, rolling buffer).
+**Генерация:** greedy, sampling с температурой, top-k, top-p, KV-кэш (в Mistral/Mixtral с `window_size` кэш обрезается до окна).
 
 **Обучение:** собственный BPE-токенизатор, `Trainer` (AdamW, линейный warmup, gradient clipping). `Trainer` чекпоинты не сохраняет: модель сохраняется в один файл с конфигом методом `model.save(path)` и загружается `Model.load(path)` (скрипт `run_llm_experiment.py` пока хранит веса и конфиг отдельными файлами).
 
-**HuggingFace:** модель `GPT` оборачивается в `PreTrainedModel`, собственный токенизатор — в HF-совместимый интерфейс; сохранение/загрузка в HF-формате.
+**Веса HuggingFace:** во все шесть моделей загружаются веса соответствующих моделей HF (`openai-community/openai-gpt`, `openai-community/gpt2`, `LlamaForCausalLM`, `MistralForCausalLM`, `MixtralForCausalLM`, `GemmaForCausalLM`) функцией `convert_hf_state_dict` из пакета модели. Для этого в конфиге включаются ключи, приближающие модель к оригиналу (`tie_word_embeddings`, `bias`, `intermediate_size`, `rms_norm_eps`, `rope_theta`, …); логиты совпадают с HF с точностью ~1e-5–1e-4, greedy-генерация — токен в токен. Пример и список ключей — в разделе «Загрузка весов HuggingFace» документа архитектуры в [docs/](docs/README.md).
 
-## 🔬 Эксперименты с hf-proxy
-
-### Успешно протестированные функции:
-
-1. **Базовая интеграция** (`test_hf_proxy.py`)
-   - ✅ Создание HF адаптера для токенизаторов
-   - ✅ Создание HF адаптера для моделей
-   - ✅ Токенизация и декодирование
-   - ✅ Forward pass через адаптированную модель
-   - ✅ Сохранение и загрузка моделей
-
-2. **Упрощенное обучение** (`simple_hf_training.py`)
-   - ✅ Обучение GPT модели с использованием hf-proxy
-   - ✅ Ручной цикл обучения без сложных зависимостей
-   - ✅ Сохранение результатов обучения
-
-3. **Генерация через HF инструменты** (`generate_with_hf_tools.py`)
-   - ✅ Загрузка моделей в HF формате
-   - ✅ Генерация через стандартные HF интерфейсы
-   - ✅ Сравнение стратегий генерации
-   - ✅ Интерактивная генерация
-
-### Решенные проблемы:
-
-- ✅ Исправление метода `pad` в токенизаторе для обработки разных типов данных
-- ✅ Корректная загрузка моделей с передачей конфигурации
-- ✅ Совместимость с HF экосистемой
-
-## 📊 Примеры работы
-
-### Обучение модели
-```bash
-🚀 УПРОЩЕННОЕ ОБУЧЕНИЕ GPT С HF-PROXY
-=========================================================
-🔧 Подготовка данных...
-📊 Данные: 10 train, 2 validation
-🔧 Подготовка токенизатора...
-✅ Токенизатор создан (vocab_size=473)
-🔧 Подготовка модели...
-✅ Модель создана
-🎯 Обучение модели...
-📊 Результаты обучения:
-   Final train loss: 4.6802
-   Final val loss: 5.1834
-✅ Модель сохранена
-```
-
-### Генерация через HF интерфейсы
-```bash
-🧪 Тестирование HuggingFace pipeline...
-🎯 Генерация текста через HF адаптер
-🔤 Промпт: 'Искусственный'
-🎯 Результат: 'Искусственный интеллект продолжает развиваться...'
-```
+**hf-proxy:** модель `GPT` оборачивается в `PreTrainedModel`, собственный токенизатор — в HF-совместимый интерфейс; обучение через `transformers.Trainer`, сохранение и загрузка в HF-формате. Сценарии — в [experiments/README.md](experiments/README.md#-hf_integration-через-hf-proxy).
 
 ## ⚠️ Известные ограничения
 
