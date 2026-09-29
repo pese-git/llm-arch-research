@@ -65,6 +65,7 @@ src/llm/
 | `rms_norm_eps` (необязательный, по умолчанию `1e-6`) | LLaMA | ✅ | ✅ | ✅ |
 | `rope_theta` (необязательный, по умолчанию `10000`) | LLaMA | ✅ | ✅ | ✅ |
 | `router_aux_loss_coef` (необязательный, по умолчанию `0`) | | | ✅ | |
+| `tie_word_embeddings` (необязательный, по умолчанию `false`) | GPT, GPT-2 | | | |
 | `window_size` | | ✅ | ✅ | |
 | `num_experts`, `top_k_experts` | | | ✅ | |
 

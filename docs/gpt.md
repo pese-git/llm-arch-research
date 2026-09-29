@@ -175,12 +175,33 @@ result         = Norm2(ffn_out + out)
 | `attention_dropout` | (нет в примере) | необязательный dropout на весах внимания после softmax (`attn_pdrop`), по умолчанию `0.0`; в статье — `0.1` |
 | `activation` | (нет в примере) | необязательный: активация FFN — `"gelu_tanh"` (по умолчанию, tanh-аппроксимация GELU, как в оригинальном коде OpenAI), `"gelu"` (точный GELU через erf) или `"relu"` |
 | `initializer_range` | (нет в примере) | необязательное стандартное отклонение начальных весов, по умолчанию `0.02` (см. ниже) |
+| `tie_word_embeddings` | (нет в примере) | необязательный: `true` — выходная проекция без bias делит веса с токенными эмбеддингами, как в оригинале (см. ниже); по умолчанию `false` — отдельный `Linear` с bias |
 
 ### Инициализация весов
 
 Как в статье (разд. 4.1) и коде OpenAI, веса `Linear` и `Embedding` инициализируются N(0, 0.02), bias — нулями, `LayerNorm` — весом 1 и нулевым сдвигом ([`core/weight_init.py`](../llm/src/llm/core/weight_init.py)). Инициализация PyTorch по умолчанию даёт эмбеддинги N(0, 1) и веса `Linear` с std ≈ 1/√(3·fan_in); с N(0, 0.02) логиты свежей модели близки к нулю, и начальный loss — около `ln(vocab_size)`, как у равномерного распределения. Инициализация важна только при обучении с нуля: загрузка чекпоинта её перезаписывает.
 
 Из-за post-LN и малых весов у свежей модели скалярные произведения Q·K почти нулевые и внимание почти равномерное — модель начинает учитывать порядок токенов по мере обучения.
+
+### Weight tying и веса OpenAI
+
+В оригинальном коде OpenAI (`finetune-transformer-lm/train.py`: `tf.matmul(h, we, transpose_b=True)`) и в HuggingFace (`OpenAIGPTLMHeadModel`) логиты считаются умножением скрытого состояния на ту же матрицу, что хранит токенные эмбеддинги: `logits = h · Eᵀ`, без bias. Это weight tying. В статье он явно не описан, но следует из кода.
+
+Здесь он включается ключом `"tie_word_embeddings": true` (функция `output_projection` в [`core/token_embeddings.py`](../llm/src/llm/core/token_embeddings.py)): `_linear.weight` — тот же параметр, что `_token_embeddings._embedding.weight`, и градиенты от входа и от выхода складываются в нём. Модель становится меньше на `vocab_size · embed_dim + vocab_size` параметров. По умолчанию ключ выключен, чтобы загружались чекпоинты, сохранённые раньше: в них есть отдельные `_linear.weight` и `_linear.bias`. Чекпоинт одного вида в модель другого не загружается.
+
+С `tie_word_embeddings` загружаются веса [`openai-community/openai-gpt`](https://huggingface.co/openai-community/openai-gpt) — через `convert_hf_state_dict` из [`models/gpt/hf_weights.py`](../llm/src/llm/models/gpt/hf_weights.py):
+
+```python
+from transformers import OpenAIGPTLMHeadModel
+from llm.models.gpt import GPT, convert_hf_state_dict
+
+hf = OpenAIGPTLMHeadModel.from_pretrained("openai-community/openai-gpt")
+model = GPT({"vocab_size": 40478, "embed_dim": 768, "num_heads": 12, "num_layers": 12,
+             "max_position_embeddings": 512, "dropout": 0.0, "tie_word_embeddings": True})
+model.load_state_dict(convert_hf_state_dict(hf.state_dict()))
+```
+
+Логиты совпадают с HF с точностью до ~2e-5, greedy-генерация — токен в токен. Активация по умолчанию подходит: `afn="gelu"` в конфиге HF для этой модели означает tanh-аппроксимацию (своя таблица активаций в `modeling_openai.py`), то есть наш `"gelu_tanh"`.
 
 ## Генерация
 
