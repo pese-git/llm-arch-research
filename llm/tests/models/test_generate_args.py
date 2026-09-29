@@ -102,3 +102,67 @@ def test_top_k_one_is_greedy(model, prompt):
         top1 = model.generate(prompt, max_new_tokens=4, do_sample=True, top_k=1)
 
     assert torch.equal(top1, greedy)
+
+
+# Семантика сэмплирования: в предельных случаях сэмплирование обязано совпасть
+# с жадной генерацией. Батч из двух промптов, чтобы ошибки в оси (softmax/cumsum
+# по батчу вместо словаря) тоже меняли результат.
+SAMPLING_LIMITS = {
+    "near_zero_temperature": {"temperature": 1e-4},
+    "tiny_top_p": {"top_p": 1e-6},
+    "top_k_one": {"top_k": 1},
+}
+
+
+@pytest.mark.parametrize("kwargs", list(SAMPLING_LIMITS.values()), ids=list(SAMPLING_LIMITS))
+def test_sampling_limit_equals_greedy(model, prompt, kwargs):
+    with torch.no_grad():
+        greedy = model.generate(prompt, max_new_tokens=6, do_sample=False)
+        torch.manual_seed(1)
+        sampled = model.generate(prompt, max_new_tokens=6, do_sample=True, **kwargs)
+
+    assert torch.equal(sampled, greedy)
+
+
+def test_plain_sampling_differs_from_greedy(model, prompt):
+    """Контроль для теста выше: обычное сэмплирование с этим seed дает другой результат."""
+    with torch.no_grad():
+        greedy = model.generate(prompt, max_new_tokens=6, do_sample=False)
+        torch.manual_seed(1)
+        sampled = model.generate(prompt, max_new_tokens=6, do_sample=True)
+
+    assert not torch.equal(sampled, greedy)
+
+
+def nucleus(probs, top_p):
+    """Множество токенов top-p для строки вероятностей (самый вероятный — всегда)."""
+    sorted_probs, sorted_indices = torch.sort(probs, descending=True)
+    keep = torch.cumsum(sorted_probs, dim=-1) <= top_p
+    keep[0] = True
+    return set(sorted_indices[keep].tolist())
+
+
+def test_top_p_samples_stay_in_nucleus(model, prompt):
+    """Каждый сэмпл при top_p лежит в ядре распределения своего промпта."""
+    top_p = 0.5
+    with torch.no_grad():
+        logits, _ = model(prompt, use_cache=False)
+    allowed = [nucleus(torch.softmax(row, dim=-1), top_p) for row in logits[:, -1]]
+    assert all(len(a) < BASE_CONFIG["vocab_size"] for a in allowed)
+
+    with torch.no_grad():
+        for seed in range(40):
+            torch.manual_seed(seed)
+            out = model.generate(prompt, max_new_tokens=1, do_sample=True, top_p=top_p)
+            for row, token in enumerate(out[:, -1].tolist()):
+                assert token in allowed[row], f"seed {seed}, row {row}"
+
+
+def test_default_temperature_is_one(model, prompt):
+    with torch.no_grad():
+        torch.manual_seed(3)
+        default = model.generate(prompt, max_new_tokens=6, do_sample=True)
+        torch.manual_seed(3)
+        explicit = model.generate(prompt, max_new_tokens=6, do_sample=True, temperature=1.0)
+
+    assert torch.equal(default, explicit)

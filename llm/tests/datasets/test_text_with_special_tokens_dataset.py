@@ -8,7 +8,8 @@ class DummyTokenizer:
         self.eos_token_id = 102
         self.pad_token_id = 0
     def encode(self, text, add_special_tokens=False, add_bos_token=False, add_eos_token=False):
-        ids = [ord(c) % 50 for c in text.strip()]
+        # id 1..50, чтобы не совпадать с pad_token_id=0
+        ids = [ord(c) % 50 + 1 for c in text.strip()]
         if add_bos_token:
             ids = [self.bos_token_id] + ids
         if add_eos_token:
