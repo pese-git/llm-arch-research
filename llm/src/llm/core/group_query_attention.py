@@ -233,9 +233,13 @@ class GroupedQueryAttention(nn.Module):
             k = torch.cat([k_cache, k], dim=2)  # [B, H_kv, cache_len + T, hs]
             v = torch.cat([v_cache, v], dim=2)
 
-        # 5. Каждая K/V-голова дублируется на свою группу Q-голов
-        k_expanded = self._repeat_kv_heads(k, self._num_heads, self._num_kv_heads)  # [B, H_q, T_kv, hs]
-        v_expanded = self._repeat_kv_heads(v, self._num_heads, self._num_kv_heads)
+        # 5. Каждая K/V-голова дублируется на свою группу Q-голов. Единственная K/V-голова (MQA)
+        # не копируется, а транслируется в матричном умножении — как в MultiQueryAttention
+        if self._num_kv_heads == 1:
+            k_expanded, v_expanded = k, v  # [B, 1, T_kv, hs]
+        else:
+            k_expanded = self._repeat_kv_heads(k, self._num_heads, self._num_kv_heads)  # [B, H_q, T_kv, hs]
+            v_expanded = self._repeat_kv_heads(v, self._num_heads, self._num_kv_heads)
 
         # 6. Scaled dot-product
         scores = q @ k_expanded.transpose(-2, -1) / (self._head_size ** 0.5)  # [B, H_q, T, T_kv]

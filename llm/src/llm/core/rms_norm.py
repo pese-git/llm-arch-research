@@ -106,6 +106,10 @@ class RMSNorm(nn.Module):
         - Вычислить rms = sqrt( mean( x**2, dim=-1, keepdim=True ) + eps )
         - Поделить x на rms
         - Помасштабировать обучаемым весом w
+
+        Для float16/bfloat16 нормализация считается во float32 и приводится обратно к dtype входа
+        перед умножением на вес, как в LlamaRMSNorm HF: сумма квадратов в половинной точности теряет
+        точность и может переполниться. Для float32 и float64 ничего не меняется.
     
         Пример:
         -------
@@ -113,11 +117,14 @@ class RMSNorm(nn.Module):
             >>> out = norm(torch.randn(2, 10, 256))
     
         """
+        # Половинная точность — во float32 (см. docstring)
+        x_compute = x.float() if x.dtype in (torch.float16, torch.bfloat16) else x
+
         # Вычисление RMS (Root Mean Square) по последнему измерению
-        rms = (x.pow(2).mean(-1, keepdim=True) + self._eps) ** 0.5
+        rms = (x_compute.pow(2).mean(-1, keepdim=True) + self._eps) ** 0.5
 
         # Нормализация и масштабирование
-        norm_x = x / rms
+        norm_x = (x_compute / rms).to(x.dtype)
         return self._w * norm_x
 
     def extra_repr(self) -> str:

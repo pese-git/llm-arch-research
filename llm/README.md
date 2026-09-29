@@ -14,8 +14,8 @@ src/llm/
 │   ├── positional_embeddings.py  # PositionalEmbeddings — обучаемые абсолютные позиции (GPT, GPT-2)
 │   ├── rope.py                   # RoPE — Rotary Positional Embeddings
 │   ├── multi_head_attention.py   # MultiHeadAttention (+ опциональный RoPE, KV-кэш)
-│   ├── multi_query_attention.py  # MultiQueryAttention — одна общая K/V-голова (Gemma)
-│   ├── group_query_attention.py  # GroupedQueryAttention + sliding window (Mistral, Mixtral)
+│   ├── multi_query_attention.py  # MultiQueryAttention — одна общая K/V-голова (учебный модуль)
+│   ├── group_query_attention.py  # GroupedQueryAttention + sliding window (Mistral, Mixtral, Gemma)
 │   ├── feed_forward.py           # FeedForward с GELU
 │   ├── swi_glu.py                # SwiGLU
 │   ├── geglu.py                  # GeGLU
@@ -49,7 +49,7 @@ src/llm/
 | LLaMA | `llm.models.llama.Llama` | MHA | RoPE | RMSNorm | SwiGLU | `CachedDecoder` |
 | Mistral | `llm.models.mistral.Mistral` | GQA + sliding window | RoPE | RMSNorm | SwiGLU | `MistralDecoder` |
 | Mixtral | `llm.models.mixtral.Mixtral` | GQA + sliding window | RoPE | RMSNorm | MoE (SwiGLU) | `MixtralDecoder` |
-| Gemma | `llm.models.gemma.Gemma` | MQA | RoPE | RMSNorm | GeGLU | `GemmaDecoder` |
+| Gemma | `llm.models.gemma.Gemma` | MQA (или GQA/MHA через `num_kv_heads`) | RoPE | RMSNorm | GeGLU | `GemmaDecoder` |
 
 ### Ключи конфига
 
@@ -60,13 +60,14 @@ src/llm/
 | `vocab_size`, `embed_dim`, `num_layers`, `max_position_embeddings`, `dropout` | ✅ | ✅ | ✅ | ✅ |
 | `num_heads` | ✅ | | | |
 | `num_q_heads` | | ✅ | ✅ | ✅ |
-| `num_kv_heads` | | ✅ | ✅ | |
+| `num_kv_heads` | | ✅ | ✅ | необязательный, по умолчанию `1` (MQA) |
 | `head_size` (необязательный) | ✅ | ✅ | ✅ | ✅ |
 | `rms_norm_eps` (необязательный, по умолчанию `1e-6`) | LLaMA | ✅ | ✅ | ✅ |
 | `rope_theta` (необязательный, по умолчанию `10000`) | LLaMA | ✅ | ✅ | ✅ |
 | `router_aux_loss_coef` (необязательный, по умолчанию `0`) | | | ✅ | |
-| `tie_word_embeddings` (необязательный, по умолчанию `false`) | GPT, GPT-2 | | | |
-| `intermediate_size` (необязательный, по умолчанию `4 · embed_dim`), `bias` (необязательный, по умолчанию `true`) | LLaMA | ✅ | ✅ | |
+| `tie_word_embeddings` (необязательный, по умолчанию `false`) | GPT, GPT-2 | | | ✅ |
+| `scale_embeddings` (необязательный, по умолчанию `false`) | | | | ✅ |
+| `intermediate_size` (необязательный, по умолчанию `4 · embed_dim`), `bias` (необязательный, по умолчанию `true`) | LLaMA | ✅ | ✅ | ✅ |
 | `window_size` (необязательный: без него окна нет) | | ✅ | ✅ | |
 | `num_experts`, `top_k_experts` | | | ✅ | |
 

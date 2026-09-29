@@ -13,6 +13,8 @@
 
 Цепочка развития (кроме Gemma, которая — параллельная ветка на той же базе RoPE+RMSNorm): GPT-1 → GPT-2 → LLaMA → Mistral → Mixtral.
 
+Общие механизмы, которые разные модели сочетают по-своему: [Attention и его виды](attention.md) — MHA, GQA, MQA, скользящее окно, KV-кэш; [маски](#маски) — ниже.
+
 ## Маски
 
 Маска в attention указывает, на какие позиции токен может смотреть: перед `softmax` запрещённым парам (строка — запрос `i`, столбец — ключ `j`) в матрицу `scores` записывается `−∞`, и их веса становятся нулевыми. В репозитории три вида масок.
@@ -97,6 +99,8 @@ input_ids            attention_mask
 - Xiong et al. *On Layer Normalization in the Transformer Architecture*. 2020. [arXiv:2002.04745](https://arxiv.org/abs/2002.04745) — почему pre-LN обучается стабильнее post-LN
 
 ### Внимание
+
+Обзор видов attention — в [attention.md](attention.md).
 
 - Shazeer. *Fast Transformer Decoding: One Write-Head is All You Need*. 2019. [arXiv:1911.02150](https://arxiv.org/abs/1911.02150) — Multi-Query Attention
 - Ainslie et al. *GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints*. 2023. [arXiv:2305.13245](https://arxiv.org/abs/2305.13245)

@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 from llm.core.rope import RoPE
-from llm.core.multi_query_attention import MultiQueryAttention
+from llm.core.group_query_attention import GroupedQueryAttention
 from llm.core.rms_norm import RMSNorm
 from llm.core.geglu import GeGLU
 
@@ -77,6 +77,9 @@ class GemmaDecoder(nn.Module):
         rope: RoPE,
         dropout: float = 0.1,
         norm_eps: float = 1e-6,
+        num_kv_heads: int = 1,
+        intermediate_size: int = None,
+        bias: bool = True,
     ):
         """
         Конструктор слоя GemmaDecoder.
@@ -99,6 +102,13 @@ class GemmaDecoder(nn.Module):
             Dropout после attention и feed-forward для регуляризации (обычно 0.0–0.1).
         norm_eps : float, default=1e-6
             eps обеих RMSNorm.
+        num_kv_heads : int, default=1
+            Число K/V-голов: 1 — Multi-Query Attention, как в Gemma 2B; num_q_heads — обычный MHA,
+            как в Gemma 7B. Внимание — GroupedQueryAttention без скользящего окна.
+        intermediate_size : int, опционально
+            Скрытый размер GeGLU, по умолчанию 4 * emb_size (в Gemma — 8 * emb_size).
+        bias : bool, default=True
+            Есть ли bias у всех Linear блока (в Gemma его нет).
 
         Внутри:
         -------
@@ -111,15 +121,17 @@ class GemmaDecoder(nn.Module):
             ... )
         """
         super().__init__()
-        self._heads = MultiQueryAttention(
-            num_q_heads=num_q_heads, 
-            emb_size=emb_size, 
-            head_size=head_size, 
+        self._heads = GroupedQueryAttention(
+            num_q_heads=num_q_heads,
+            num_kv_heads=num_kv_heads,
+            emb_size=emb_size,
+            head_size=head_size,
             max_seq_len=max_seq_len,
             rope=rope,
-            dropout=dropout
+            dropout=dropout,
+            bias=bias,
         )
-        self._ff = GeGLU(emb_size=emb_size, dropout=dropout)
+        self._ff = GeGLU(emb_size=emb_size, dropout=dropout, hidden_dim=intermediate_size, bias=bias)
         self._norm1 = RMSNorm(emb_size, eps=norm_eps)
         self._norm2 = RMSNorm(emb_size, eps=norm_eps)
 

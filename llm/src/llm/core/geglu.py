@@ -52,7 +52,9 @@ class GeGLU(nn.Module):
     - LLaMA: https://arxiv.org/abs/2302.13971
     - T5: https://arxiv.org/abs/1910.10683
     """
-    def __init__(self, emb_size: int, dropout: float = 0.1):
+    def __init__(
+        self, emb_size: int, dropout: float = 0.1, hidden_dim: int = None, bias: bool = True
+    ):
         """
         Инициализация блока GeGLU.
 
@@ -69,6 +71,11 @@ class GeGLU(nn.Module):
         dropout : float, по умолчанию 0.1
             Вероятность отключения нейронов после выхода из блока (регуляризация).
             Рекомендуемое значение: 0.1 (или чуть больше для небольших моделей).
+        hidden_dim : int, опционально
+            Скрытая размерность (ширина W_g, W_u и вход W_d), по умолчанию 4 * emb_size.
+            В Gemma — 8 * emb_size (16384 при 2048 у 2B, 24576 при 3072 у 7B).
+        bias : bool, по умолчанию True
+            Есть ли bias у трёх матриц (в Gemma его нет).
 
         Внутри:
         -------
@@ -85,9 +92,12 @@ class GeGLU(nn.Module):
         """
         super().__init__()
 
-        self._gate = nn.Linear(emb_size, 4 * emb_size)
-        self._up = nn.Linear(emb_size, 4 * emb_size)
-        self._down = nn.Linear(4 * emb_size, emb_size)
+        hidden_dim = 4 * emb_size if hidden_dim is None else hidden_dim
+        if hidden_dim <= 0:
+            raise ValueError(f"hidden_dim GeGLU должен быть положительным, получено {hidden_dim}")
+        self._gate = nn.Linear(emb_size, hidden_dim, bias=bias)
+        self._up = nn.Linear(emb_size, hidden_dim, bias=bias)
+        self._down = nn.Linear(hidden_dim, emb_size, bias=bias)
         self._activation = GELU()
         self._dropout = nn.Dropout(dropout)
 
