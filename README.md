@@ -179,7 +179,7 @@ flowchart TB
 
 **Генерация:** greedy, sampling с температурой, top-k, top-p, KV-кэш (в Mistral/Mixtral — со скользящим окном, rolling buffer).
 
-**Обучение:** собственный BPE-токенизатор, `Trainer` (AdamW, линейный warmup, gradient clipping). Сохранение весов и конфига выполняет скрипт `run_llm_experiment.py`, а не сам `Trainer`.
+**Обучение:** собственный BPE-токенизатор, `Trainer` (AdamW, линейный warmup, gradient clipping). `Trainer` чекпоинты не сохраняет: модель сохраняется в один файл с конфигом методом `model.save(path)` и загружается `Model.load(path)` (скрипт `run_llm_experiment.py` пока хранит веса и конфиг отдельными файлами).
 
 **HuggingFace:** модель `GPT` оборачивается в `PreTrainedModel`, собственный токенизатор — в HF-совместимый интерфейс; сохранение/загрузка в HF-формате.
 

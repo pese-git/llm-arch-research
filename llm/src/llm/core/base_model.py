@@ -14,7 +14,7 @@
     logits, cache = model(input_ids)
     tokens = model.generate(input_ids, max_new_tokens=20, do_sample=False)
 
-Наследник реализует forward (и задаёт self._max_seq_len); generate общий для всех моделей.
+Наследник реализует forward (и задаёт self._max_seq_len); generate, save и load общие для всех моделей.
 """
 import torch.nn as nn
 from abc import ABC, abstractmethod
@@ -75,6 +75,66 @@ class BaseModel(nn.Module, ABC):
             (None при use_cache=False)
         """
         pass
+
+    def save(self, path: str) -> None:
+        """
+        Сохраняет модель в один файл: класс, конфиг и веса.
+
+        Вычисляемые буферы (маски attention, таблицы RoPE) не сохраняются — они
+        строятся заново из конфига при загрузке.
+
+        Args:
+            path: Путь к файлу (например, "checkpoints/model.pt").
+
+        Пример:
+            >>> model.save("checkpoints/mistral.pt")
+            >>> restored = Mistral.load("checkpoints/mistral.pt")
+        """
+        torch.save(
+            {
+                "model_class": type(self).__name__,
+                "config": dict(self.config),
+                "state_dict": self.state_dict(),
+            },
+            path,
+        )
+
+    @classmethod
+    def load(cls, path: str, device: str = "cpu") -> "BaseModel":
+        """
+        Загружает модель, сохранённую методом save.
+
+        Модель создаётся заново по сохранённому конфигу, поэтому аргументы конструктора
+        передавать не нужно. Файл читается с weights_only=True: в нём только тензоры и
+        простые значения конфига, произвольный код при загрузке не выполняется.
+
+        Args:
+            path: Путь к файлу, созданному save.
+            device: Устройство для модели ("cpu", "cuda", ...).
+
+        Returns:
+            Модель класса cls в режиме eval (как после обучения перед инференсом).
+
+        Raises:
+            ValueError: Если файл не создан save (например, это голый state_dict) или
+                сохранён моделью другого класса.
+        """
+        # Читаем на CPU и переносим уже собранную модель: так файл, сохранённый на GPU,
+        # грузится и без GPU, а модель целиком оказывается на device
+        checkpoint = torch.load(path, map_location="cpu", weights_only=True)
+        if not isinstance(checkpoint, dict) or not {"config", "state_dict"} <= checkpoint.keys():
+            raise ValueError(
+                f"{path} не похож на файл BaseModel.save: нет ключей 'config' и 'state_dict'. "
+                "Голый state_dict загружается через cls(config).load_state_dict(torch.load(path))."
+            )
+        saved_class = checkpoint.get("model_class")
+        if saved_class is not None and saved_class != cls.__name__:
+            raise ValueError(
+                f"{path} сохранён моделью {saved_class}, а загружается как {cls.__name__}"
+            )
+        model = cls(checkpoint["config"])
+        model.load_state_dict(checkpoint["state_dict"])
+        return model.to(device).eval()
 
     @property
     def max_seq_len(self) -> int:

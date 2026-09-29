@@ -147,6 +147,15 @@ out = model.generate(input_ids, max_new_tokens=50, do_sample=True, temperature=0
 
 Когда последовательность становится длиннее `max_position_embeddings`, `generate` продолжает по последним `max_position_embeddings` токенам. `attention_mask` допускается только из единиц; `forward` принимает и правый паддинг (подробнее — [docs/README.md](../docs/README.md#маски)).
 
+### Сохранение и загрузка
+
+```python
+model.save("checkpoints/mistral.pt")                     # класс, конфиг и веса в одном файле
+model = Mistral.load("checkpoints/mistral.pt", device="cuda")  # конфиг передавать не нужно
+```
+
+`load` — метод класса: модель создаётся по сохранённому конфигу и возвращается в режиме `eval`. Файл читается с `weights_only=True`. Маски attention и таблицы RoPE в файл не попадают — они вычисляются из конфига.
+
 ### Токенизатор и обучение
 
 ```python

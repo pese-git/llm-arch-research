@@ -55,7 +55,7 @@ class Mixtral(BaseModel):
     ----------------
     - forward(x, use_cache=False, cache=None) — прямой проход, поддерживает batched вход, caching.
     - generate(...) — авторегрессивная генерация с разными стратегиями sampling и ускорением через cache.
-    - save(path)/load(path, device) — сохранение и восстановление обученной модели.
+    - save(path) / Mixtral.load(path, device) — сохранение и восстановление модели с конфигом (из BaseModel).
 
     Пример:
     -------
