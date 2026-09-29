@@ -30,7 +30,7 @@ from llm.core.generation import (
     check_attention_mask,
     check_sequence_length,
 )
-from llm.core.token_embeddings import TokenEmbeddings
+from llm.core.token_embeddings import TokenEmbeddings, output_projection
 from llm.core.positional_embeddings import PositionalEmbeddings
 from llm.core.gpt2_decoder import Gpt2Decoder
 
@@ -95,6 +95,8 @@ class GPT2(BaseModel):
                 num_layers: int — количество декодер-блоков
                 max_position_embeddings: максимальная длина последовательности
                 dropout: float — dropout
+                tie_word_embeddings: bool, опционально — общие веса эмбеддингов и выходной
+                    проекции без bias, как в оригинале и HF (по умолчанию False)
 
         Внутри:
         -------
@@ -128,7 +130,11 @@ class GPT2(BaseModel):
             ]
         )
         self._norm = nn.LayerNorm(config["embed_dim"])
-        self._linear = nn.Linear(config["embed_dim"], config["vocab_size"])
+        # Выходная проекция; tie_word_embeddings=True — общие веса с эмбеддингами и без bias,
+        # как в оригинале. По умолчанию False, чтобы грузились прежние чекпоинты
+        self._linear = output_projection(
+            self._token_embeddings, tie_weights=config.get("tie_word_embeddings", False)
+        )
 
         # Инициализация как в GPT-2: N(0, 0.02), а проекции, которые пишут в residual-поток
         # (выход attention и второй слой FFN), — N(0, 0.02 / √(2·num_layers)) (разд. 2.3 статьи)

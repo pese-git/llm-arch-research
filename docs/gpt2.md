@@ -89,10 +89,29 @@ result    = ffn_out + out
 | `dropout` | 0.1 | dropout на эмбеддингах и на выходах attention и FFN перед residual |
 | `attention_dropout` | (нет в примере) | необязательный dropout на весах внимания после softmax, по умолчанию `0.0`; в HF — `attn_pdrop = 0.1` |
 | `initializer_range` | (нет в примере) | необязательное стандартное отклонение начальных весов, по умолчанию `0.02` |
+| `tie_word_embeddings` | (нет в примере) | необязательный: `true` — выходная проекция без bias делит веса с `wte`, как в оригинале и HF (см. ниже); по умолчанию `false` — отдельный `Linear` с bias |
 
 ### Инициализация весов
 
 Как в GPT-1 ([gpt.md](gpt.md#инициализация-весов)), веса `Linear` и `Embedding` — N(0, 0.02), bias — нули. Дополнительно выходные проекции, которые пишут в residual-поток, — выход attention и второй слой FFN, по две на блок, — инициализируются N(0, 0.02 / √(2·num_layers)). Статья GPT-2 (разд. 2.3) масштабирует веса residual-слоёв на 1/√N, чтобы дисперсия residual-потока не росла с глубиной; `N = 2·num_layers` — как в `GPT2PreTrainedModel._init_weights` в HuggingFace. В коде OpenAI `wpe` инициализируется с 0.01, здесь, как в HF, — 0.02.
+
+### Weight tying и веса OpenAI
+
+В оригинале (`gpt-2/src/model.py`: `tf.matmul(h, wte, transpose_b=True)`) и в HF (`GPT2LMHeadModel`) выходная проекция — та же матрица, что `wte`, без bias. Здесь это ключ `"tie_word_embeddings": true`, как в GPT-1 ([gpt.md](gpt.md#weight-tying-и-веса-openai)). Для конфигурации 124M он экономит около 38,6M параметров (`50257 · 768` плюс bias): 124,4M вместо 163,1M.
+
+С ним загружаются веса [`openai-community/gpt2`](https://huggingface.co/openai-community/gpt2):
+
+```python
+from transformers import GPT2LMHeadModel
+from llm.models.gpt import GPT2, convert_hf_state_dict
+
+hf = GPT2LMHeadModel.from_pretrained("openai-community/gpt2")
+model = GPT2({"vocab_size": 50257, "embed_dim": 768, "num_heads": 12, "num_layers": 12,
+              "max_position_embeddings": 1024, "dropout": 0.0, "tie_word_embeddings": True})
+model.load_state_dict(convert_hf_state_dict(hf.state_dict()))
+```
+
+Логиты совпадают с HF с точностью до ~1e-4 (при значениях логитов порядка 100), greedy-генерация — токен в токен.
 
 ## Генерация
 

@@ -95,3 +95,21 @@ class TokenEmbeddings(nn.Module):
     def embedding_dim(self) -> int:
         """Возвращает размерность эмбеддингов (длина вектора каждого токена)."""
         return self._embedding.embedding_dim
+
+
+def output_projection(token_embeddings: TokenEmbeddings, tie_weights: bool = False) -> nn.Linear:
+    """
+    Создаёт выходную проекцию в словарь (lm-head): Linear(emb_size → vocab_size).
+
+    tie_weights=False — отдельная матрица с bias (прежнее поведение репозитория).
+    tie_weights=True — weight tying, как в оригинальном коде GPT-1 и GPT-2
+    (`tf.matmul(h, we, transpose_b=True)`) и в HuggingFace (`tie_word_embeddings=True`):
+    проекция без bias использует ту же матрицу [vocab_size, emb_size], что и эмбеддинги.
+    Параметр один, поэтому градиенты от входа и выхода складываются в нём.
+    """
+    linear = nn.Linear(
+        token_embeddings.embedding_dim, token_embeddings.num_embeddings, bias=not tie_weights
+    )
+    if tie_weights:
+        linear.weight = token_embeddings._embedding.weight
+    return linear

@@ -34,7 +34,7 @@ from llm.core.generation import (
     check_sequence_length,
 )
 from llm.core.gpt_decoder import GptDecoder
-from llm.core.token_embeddings import TokenEmbeddings
+from llm.core.token_embeddings import TokenEmbeddings, output_projection
 from llm.core.positional_embeddings import PositionalEmbeddings
 
 
@@ -107,6 +107,8 @@ class GPT(BaseModel):
               activation: str, опционально — активация FFN ("gelu_tanh" по умолчанию —
                   tanh-аппроксимация GELU, как в оригинальном коде; "gelu" — точный GELU через erf;
                   "relu" — упрощённый учебный вариант)
+              tie_word_embeddings: bool, опционально — общие веса эмбеддингов и выходной
+                  проекции без bias, как в оригинальном коде (по умолчанию False)
 
         Внутри:
         -------
@@ -140,7 +142,11 @@ class GPT(BaseModel):
                 for _ in range(config["num_layers"])
             ]
         )
-        self._linear = nn.Linear(config["embed_dim"], config["vocab_size"])
+        # Выходная проекция; tie_word_embeddings=True — общие веса с эмбеддингами и без bias,
+        # как в оригинале. По умолчанию False, чтобы грузились прежние чекпоинты
+        self._linear = output_projection(
+            self._token_embeddings, tie_weights=config.get("tie_word_embeddings", False)
+        )
 
         # Инициализация из статьи GPT-1 (разд. 4.1): Linear и Embedding — N(0, 0.02), bias — нули
         self.apply(

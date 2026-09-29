@@ -67,6 +67,7 @@
 - **Что:** в оригинальном коде OpenAI (`finetune-transformer-lm/train.py`: `tf.matmul(h, we, transpose_b=True)`, без bias) и в HuggingFace (`OpenAIGPTLMHeadModel.lm_head`, без bias, привязан к `tokens_embed`) выходная проекция делит веса с токенными эмбеддингами. В тексте статьи GPT-1 это явно не сказано — следует из кода. Здесь `_linear` — отдельный `nn.Linear` с bias.
 - **Последствия:** примерно на `vocab_size × embed_dim` параметров больше; веса `openai-community/openai-gpt` напрямую не загружаются.
 - **Исправление:** `_linear = nn.Linear(embed_dim, vocab_size, bias=False)` и `_linear.weight = _token_embeddings._embedding.weight`, под флагом конфига, если нужна обратная совместимость чекпойнтов.
+- **Статус:** исправлено в ветке `feat/gpt-weight-tying`: ключ конфига `tie_word_embeddings` (по умолчанию `false` — прежняя отдельная проекция с bias, старые чекпоинты загружаются). С `true` `_linear` создаётся без bias и делит параметр с `_token_embeddings._embedding.weight` (`output_projection` в `core/token_embeddings.py`). Веса `openai-community/openai-gpt` загружаются через `convert_hf_state_dict` (`models/gpt/hf_weights.py`): число параметров совпадает с HF (116 534 784), логиты — до 2.3e-5, greedy-генерация на 20 токенов — токен в токен. Заодно выяснилось, что `afn="gelu"` у HF OpenAIGPT — tanh-аппроксимация, то есть наш `activation` по умолчанию.
 
 #### 6. Нет dropout на весах внимания — P3
 
@@ -145,6 +146,7 @@
 - **Воспроизведено:** `m._linear.bias is not None`, `m._linear.weight is not m._token_embeddings._embedding.weight`.
 - **Последствия:** для конфигурации 124M лишних ~38M параметров (`50257 × 768`). Веса `openai-community/gpt2` напрямую не загружаются.
 - **Исправление:** как в пункте 5 для GPT-1.
+- **Статус:** исправлено в ветке `feat/gpt-weight-tying`, как пункт 5. Веса `openai-community/gpt2` загружаются через `convert_hf_state_dict`: 124 439 808 параметров, как в HF (без tying — 163 087 441), логиты — до 7.6e-5, greedy-генерация — токен в токен.
 
 #### 15. Нет dropout на весах внимания — P3
 
