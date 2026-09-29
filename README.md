@@ -2,7 +2,7 @@
 
 Исследовательский проект: реализация «с нуля» на PyTorch, обучение и сравнительный разбор архитектур больших языковых моделей — **GPT, GPT-2, LLaMA, Mistral, Mixtral, Gemma**. Код написан в учебных целях: каждый блок небольшой, самодостаточный и подробно задокументирован.
 
-Разбор каждой архитектуры (компоненты, конфиг, отличия от предыдущей модели) — в [docs/](docs/README.md).
+**[Учебное пособие](docs/README.md)** в `docs/` объясняет каждый механизм — токенизацию, эмбеддинги, позиционное кодирование, attention, нормализацию, FFN, MoE, обучение и генерацию — с научным обоснованием, формулами, схемами и ссылками на статьи, а затем разбирает каждую из шести архитектур и её реализацию в коде.
 
 ## 🏗️ Архитектура проекта
 
@@ -12,7 +12,7 @@
 - **`hf-proxy`** — экспериментальный адаптер к HuggingFace Transformers. **Поддерживает только модель `GPT`** (см. [hf-proxy/README.md](hf-proxy/README.md)).
 - **`experiments`** — скрипты обучения и генерации: без HF (`llm_only`) и через hf-proxy (`hf_integration`).
 - **`notebooks`** — ноутбуки с пошаговым разбором каждой архитектуры и BPE.
-- **`docs`** — документация по архитектурам.
+- **`docs`** — учебное пособие: основы трансформеров (часть I) и разбор архитектур (часть II).
 
 ## 📁 Структура проекта
 
@@ -20,7 +20,7 @@
 llm-arch-research/
 ├── pyproject.toml              # корневой workspace-конфиг
 ├── uv.lock
-├── docs/                       # разбор архитектур (по файлу на модель)
+├── docs/                       # учебное пособие: главы об основах и об архитектурах
 │
 ├── llm/                        # основная библиотека
 │   ├── src/llm/
@@ -189,7 +189,7 @@ flowchart TB
 
 Проект учебный; перед использованием для чего-то серьёзного учтите:
 
-- **`attention_mask`: только правый паддинг.** Левый паддинг и генерация батчем промптов разной длины не поддерживаются — модели бросают `NotImplementedError` (см. [docs/README.md](docs/README.md#маски)).
+- **`attention_mask`: только правый паддинг.** Левый паддинг и генерация батчем промптов разной длины не поддерживаются — модели бросают `NotImplementedError` (см. [docs/masks.md](docs/masks.md)).
 - **hf-proxy поддерживает только `GPT`.**
 - Модуль `llm.evaluation` пока пустой.
 
@@ -217,7 +217,7 @@ flowchart TB
 
 - **`forward` по умолчанию не возвращает кэш** ([#31](https://github.com/pese-git/llm-arch-research/pull/31)): `model(x)` → `(logits, None)`. Кэш — `model(x, use_cache=True)`.
 - **`generate` не принимает лишних аргументов** ([#31](https://github.com/pese-git/llm-arch-research/pull/31)): неизвестный именованный аргумент (например, опечатка `max_lenght`) — `TypeError`, а не молчаливое игнорирование. Появились `eos_token_id` и `pad_token_id`.
-- **`attention_mask`** ([#29](https://github.com/pese-git/llm-arch-research/pull/29)): раньше игнорировалась. Правый паддинг в `forward` работает; левый паддинг и любые нули в `generate` — `NotImplementedError` (см. [docs/README.md](docs/README.md#маски)).
+- **`attention_mask`** ([#29](https://github.com/pese-git/llm-arch-research/pull/29)): раньше игнорировалась. Правый паддинг в `forward` работает; левый паддинг и любые нули в `generate` — `NotImplementedError` (см. [docs/masks.md](docs/masks.md)).
 - **Длина с учётом кэша** ([#29](https://github.com/pese-git/llm-arch-research/pull/29)): `forward` с кэшем, у которого кэш + новые токены длиннее `max_position_embeddings`, — `ValueError`. `generate` в этом случае продолжает по последним `max_position_embeddings` токенам.
 - **Кэш слоя Gemma — `(K, V, next_pos)`** ([#48](https://github.com/pese-git/llm-arch-research/pull/48)), как у Mistral и Mixtral: блок Gemma построен на `GroupedQueryAttention` вместо `MultiQueryAttention`. Результат, `generate` и передача кэша из одного `forward` в другой не изменились; разница видна, только если разбирать кэш вручную.
 - **Параметр `mask` удалён** из `forward` модулей attention (`MultiHeadAttention`, `GroupedQueryAttention`, `MultiQueryAttention`) и декодеров, параметр `rope` — из `Gpt2Decoder` ([#35](https://github.com/pese-git/llm-arch-research/pull/35)). Они принимались и не использовались; передача теперь — `TypeError`.

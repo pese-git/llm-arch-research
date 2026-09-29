@@ -40,7 +40,7 @@ class GroupedQueryAttention(nn.Module):
     emb_size: int — embedding размерность
     head_size: int — размер каждой attention-head
     max_seq_len: int — максимальная длина последовательности
-    window_size: int — размер sliding window (макс. количество токенов в контексте внимания)
+    window_size: int — ширина sliding window: токен видит window_size предыдущих позиций и себя (window_size + 1 позиций)
     rope: RoPE (по желанию) — если задан, то будет применяться RoPE для Q и K
     dropout: float — dropout после линейной проекции
 
@@ -352,8 +352,8 @@ class GroupedQueryAttention(nn.Module):
 
         Как работает алгоритм:
         ----------------------
-        - Для каждого токена mask[i, j] == True только если токен j находится СЛЕВА и не дальше, чем window_size позиций (или сам i).
-        - Главное: mask всегда "нижнетреугольная" (causal), плюс полоса шириной window_size вдоль главной диагонали.
+        - Для каждого токена mask[i, j] == True только если 0 <= i - j <= window_size: токен j не правее i и не дальше window_size позиций.
+        - Главное: mask всегда "нижнетреугольная" (causal), плюс полоса шириной window_size + 1 вдоль главной диагонали (включая сам токен).
         - Всё за пределами окна — False (attention нельзя).
 
         Args:
@@ -361,7 +361,7 @@ class GroupedQueryAttention(nn.Module):
         max_seq_len : int
             Максимальная длина последовательности (размер будущей attention-матрицы).
         window_size : int
-            Сколько предыдущих токенов доступно для внимания у каждого шага (вкл. сам себя).
+            Сколько предыдущих токенов доступно для внимания у каждого шага (не считая самого токена; всего window_size + 1 позиций).
         device : torch.device, опционально
             На каком устройстве (cpu/gpu) создавать маску.
 
@@ -372,16 +372,16 @@ class GroupedQueryAttention(nn.Module):
 
         Пример:
         -------
-            >>> mask = create_sliding_window_mask(8, 3)
+            >>> mask = attn._create_sliding_window_mask(8, 3)
             >>> print(mask.int())
             tensor([[1, 0, 0, 0, 0, 0, 0, 0],
                     [1, 1, 0, 0, 0, 0, 0, 0],
                     [1, 1, 1, 0, 0, 0, 0, 0],
-                    [0, 1, 1, 1, 0, 0, 0, 0],
-                    [0, 0, 1, 1, 1, 0, 0, 0],
-                    [0, 0, 0, 1, 1, 1, 0, 0],
-                    [0, 0, 0, 0, 1, 1, 1, 0],
-                    [0, 0, 0, 0, 0, 1, 1, 1]])
+                    [1, 1, 1, 1, 0, 0, 0, 0],
+                    [0, 1, 1, 1, 1, 0, 0, 0],
+                    [0, 0, 1, 1, 1, 1, 0, 0],
+                    [0, 0, 0, 1, 1, 1, 1, 0],
+                    [0, 0, 0, 0, 1, 1, 1, 1]])
         """
         row_indices = torch.arange(max_seq_len, device=device).unsqueeze(1)  # [max_seq_len, 1]
         col_indices = torch.arange(max_seq_len, device=device).unsqueeze(0)  # [1, max_seq_len]

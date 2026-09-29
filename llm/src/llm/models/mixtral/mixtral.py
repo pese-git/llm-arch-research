@@ -207,7 +207,7 @@ class Mixtral(BaseModel):
         attention_mask : torch.Tensor, optional
             Маска [batch, seq_len] (1 — токен, 0 — паддинг). Поддерживается правый паддинг:
             causal-маска и так скрывает от настоящих токенов стоящий после них паддинг.
-            На другие маски с нулями — NotImplementedError (см. docs/README.md, раздел «Маски»).
+            На другие маски с нулями — NotImplementedError (см. docs/masks.md).
 
         Возвращает:
         -----------

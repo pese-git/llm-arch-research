@@ -69,7 +69,7 @@ class BaseModel(nn.Module, ABC):
             use_cache (bool): Вернуть KV-кэш для продолжения генерации
             cache (Optional[list]): KV-кэш предыдущих токенов (по слою на элемент)
             attention_mask (Optional[Tensor]): Маска паддинга [batch, seq_len]; поддерживается
-                только правый паддинг (см. docs/README.md, раздел «Маски»)
+                только правый паддинг (см. docs/masks.md)
         Returns:
             (logits, cache): логиты [batch, seq_len, vocab_size] и новый кэш
             (None при use_cache=False)

@@ -55,7 +55,7 @@ class MultiHeadAttention(nn.Module):
 
     Пример использования:
     ---------------------
-        >>> attn = MultiHeadAttention(num_heads=8, embed_dim=256, head_size=32, max_seq_len=1024)
+        >>> attn = MultiHeadAttention(num_heads=8, emb_size=256, head_size=32, max_seq_len=1024)
         >>> x = torch.randn(2, 128, 256)  # [batch, seq_len, embed_dim]
         >>> context, _ = attn(x)
         >>> print(context.shape)  # torch.Size([2, 128, 256])
