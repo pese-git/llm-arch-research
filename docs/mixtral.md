@@ -112,7 +112,7 @@ y = Σ_{i ∈ TopK(l)} softmax(l_TopK)_i · Expert_i(x),     l = W_r · x
 X = x.reshape(N, D)                          # N = batch · seq_len токенов, батч неважен
 L = X @ W_r                                  # [N, E]  логиты роутера
 topk_logits, topk_idx = topk(L, K)           # [N, K]  K лучших экспертов на токен
-W = softmax(topk_logits)                     # [N, K]  веса, сумма по K равна 1
+W = softmax(float32(topk_logits)).to(dtype) # [N, K]  веса, сумма по K равна 1
 Y = zeros(N, D)
 for e in 0 … E−1:
     tok, slot = where(topk_idx == e)         # токены, выбравшие e, и позиция e в их top-k
@@ -164,7 +164,7 @@ result    = ffn_out + out
 | Bias | нет ни в одной проекции, включая роутер | во всех `Linear`, включая роутер (24, 40) |
 | Load-balancing loss | в HF-реализации при обучении | нет (37) |
 | Dropout | нет | в attention, внутри каждого эксперта и на выходе MoE — выход эксперта прорежается дважды (38) |
-| Softmax роутера | во float32 (HF) | в dtype входа (54); сам MoE в bf16/fp16 работает (34 исправлен) |
+| Softmax роутера | во float32 (HF, эталон Mistral) | так же, явно во float32 с приведением к dtype входа (54) |
 
 ## Конфигурация
 
