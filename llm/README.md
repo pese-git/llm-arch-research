@@ -2,7 +2,7 @@
 
 Модульная учебная библиотека на PyTorch: строительные блоки трансформера и шесть собранных из них моделей — **GPT, GPT-2, LLaMA, Mistral, Mixtral, Gemma**. Зависит только от `torch` и `numpy`.
 
-Разбор каждой архитектуры — в [../docs/](../docs/README.md).
+Теория, формулы и разбор каждой архитектуры — в [учебном пособии](../docs/README.md).
 
 ## 🏗️ Структура
 
@@ -72,6 +72,8 @@ src/llm/
 | `num_experts`, `top_k_experts` | | | ✅ | |
 
 ## 🧩 Ключевые компоненты
+
+Краткая памятка; вывод формул и обоснование — в главах пособия: [RoPE](../docs/positional-encoding.md), [attention](../docs/attention.md), [RMSNorm](../docs/normalization.md), [SwiGLU и GeGLU](../docs/feed-forward.md), [MoE](../docs/mixture-of-experts.md).
 
 ### CachedDecoder (`core/cached_decoder.py`)
 **Универсальный декодер** с поддержкой dependency injection и кэширования KV-памяти.
@@ -151,7 +153,7 @@ out = model.generate(input_ids, max_new_tokens=50, do_sample=False)
 out = model.generate(input_ids, max_new_tokens=50, do_sample=True, temperature=0.8, top_p=0.9)
 ```
 
-Когда последовательность становится длиннее `max_position_embeddings`, `generate` продолжает по последним `max_position_embeddings` токенам. `attention_mask` допускается только из единиц; `forward` принимает и правый паддинг (подробнее — [docs/README.md](../docs/README.md#маски)).
+Когда последовательность становится длиннее `max_position_embeddings`, `generate` продолжает по последним `max_position_embeddings` токенам. `attention_mask` допускается только из единиц; `forward` принимает и правый паддинг (подробнее — [docs/masks.md](../docs/masks.md)).
 
 ### Сохранение и загрузка
 

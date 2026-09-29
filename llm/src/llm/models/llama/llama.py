@@ -142,7 +142,7 @@ class Llama(BaseModel):
             cache (list or None): предыдущий кэш, если нужен
             attention_mask (torch.Tensor, опц.): маска [batch, seq_len] (1 — токен, 0 — паддинг).
                 Поддерживается правый паддинг; на другие маски с нулями — NotImplementedError
-                (см. docs/README.md, раздел «Маски»).
+                (см. docs/masks.md).
 
         Returns:
             logits: torch.Tensor [batch, seq_len, vocab_size]
