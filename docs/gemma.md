@@ -104,6 +104,7 @@ result    = ffn_out + out
 | `num_q_heads` | 4 | ✅ (единственный параметр числа голов, который читает `Gemma.__init__`) |
 | `num_layers` | 4 | ✅ |
 | `max_position_embeddings` | 512 | ✅ |
+| `rms_norm_eps` | (нет в примере) | ✅ необязательный `eps` всех RMSNorm, по умолчанию `1e-6` — как в Gemma |
 | `dropout` | 0.1 | ✅ |
 | `head_size` | 64 | ✅ необязательный; по умолчанию `embed_dim // num_q_heads` |
 

@@ -1,3 +1,5 @@
+from functools import partial
+
 import torch
 from torch import nn
 
@@ -73,6 +75,8 @@ class Llama(BaseModel):
 
         # Размер головы: head_size из конфига или embed_dim // num_heads (с проверками)
         head_size = resolve_head_size(config, "num_heads", rope=True)
+        # eps всех RMSNorm: 1e-6 по умолчанию как в LLaMA
+        norm_eps = config.get("rms_norm_eps", 1e-6)
 
         # Инициализация слоев
         self._max_seq_len = config["max_position_embeddings"]
@@ -88,7 +92,7 @@ class Llama(BaseModel):
         self._decoders = nn.ModuleList(
             [
                 CachedDecoder(
-                    norm_layer=RMSNorm,
+                    norm_layer=partial(RMSNorm, eps=norm_eps),
                     num_heads=config["num_heads"],
                     emb_size=config["embed_dim"],
                     head_size=head_size,
@@ -103,7 +107,7 @@ class Llama(BaseModel):
                 for _ in range(config["num_layers"])
             ]
         )
-        self._norm = RMSNorm(config["embed_dim"])
+        self._norm = RMSNorm(config["embed_dim"], eps=norm_eps)
         self._linear = nn.Linear(config["embed_dim"], config["vocab_size"])
 
     def forward(

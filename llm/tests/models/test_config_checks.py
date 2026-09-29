@@ -1,6 +1,6 @@
 """
 Tests for config validation in every model: head_size from the config, divisibility of
-embed_dim by the number of heads, GQA head groups and MoE top-k.
+embed_dim by the number of heads, GQA head groups, MoE top-k and rms_norm_eps.
 
 A wrong config must fail in the constructor with a clear ValueError instead of silently
 shrinking the attention space or crashing in the first forward.
@@ -11,6 +11,7 @@ import torch
 
 from llm.core.config_checks import resolve_head_size
 from llm.core.moe import MoE
+from llm.core.rms_norm import RMSNorm
 from llm.models.gemma import Gemma
 from llm.models.gpt import GPT, GPT2
 from llm.models.llama import Llama
@@ -131,3 +132,43 @@ def test_resolve_head_size(config, expected):
 def test_resolve_head_size_errors(config, rope, message):
     with pytest.raises(ValueError, match=message):
         resolve_head_size(config, "num_heads", rope=rope)
+
+
+RMS_NORM_MODELS = [name for name, spec in MODELS.items() if spec[3]]  # все модели с RoPE используют RMSNorm
+
+
+def rms_norm_eps_values(model):
+    return {module._eps for module in model.modules() if isinstance(module, RMSNorm)}
+
+
+@pytest.mark.parametrize("name", RMS_NORM_MODELS)
+def test_rms_norm_eps_default(name):
+    assert rms_norm_eps_values(build(name)) == {1e-6}
+
+
+@pytest.mark.parametrize("name", RMS_NORM_MODELS)
+def test_rms_norm_eps_from_config(name):
+    """rms_norm_eps доходит до всех RMSNorm: в каждом блоке и финальной."""
+    model = build(name, rms_norm_eps=1e-5)
+    assert rms_norm_eps_values(model) == {1e-5}
+    # 2 нормы на блок + финальная
+    assert sum(isinstance(m, RMSNorm) for m in model.modules()) == 2 * BASE_CONFIG["num_layers"] + 1
+
+
+@pytest.mark.parametrize("name", RMS_NORM_MODELS)
+def test_rms_norm_eps_changes_output_not_weights(name):
+    torch.manual_seed(0)
+    default = build(name)
+    torch.manual_seed(0)
+    larger = build(name, rms_norm_eps=1e-1)
+    assert default.state_dict().keys() == larger.state_dict().keys()
+
+    tokens = torch.randint(0, BASE_CONFIG["vocab_size"], (2, 5))
+    with torch.no_grad():
+        assert not torch.allclose(default(tokens)[0], larger(tokens)[0])
+
+
+@pytest.mark.parametrize("eps", [0.0, -1e-6])
+def test_rms_norm_eps_must_be_positive(eps):
+    with pytest.raises(ValueError, match="eps"):
+        build("llama", rms_norm_eps=eps)

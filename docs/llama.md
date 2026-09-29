@@ -139,6 +139,7 @@ result    = ffn_out + out
 | `num_heads` | 4 | число attention-голов (используются одинаково для Q/K/V — см. ниже) |
 | `num_layers` | 4 | число блоков `CachedDecoder` |
 | `max_position_embeddings` | 128 | максимальная длина последовательности (и буфер RoPE cos/sin) |
+| `rms_norm_eps` | (нет в примере) | необязательный `eps` всех RMSNorm, по умолчанию `1e-6` — как в LLaMA |
 | `dropout` | 0.1 | dropout в attention и FFN |
 
 ## Известное расхождение с докстрингом

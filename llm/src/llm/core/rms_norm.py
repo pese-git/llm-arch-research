@@ -74,7 +74,8 @@ class RMSNorm(nn.Module):
         dim : int
             Последнее нормализуемое измерение (обычно размерность embedding или hidden).
         eps : float
-            Малое значение для устойчивости (по умолчанию 1e-6).
+            Малое значение для устойчивости (по умолчанию 1e-6, как в LLaMA и Gemma; у Mistral 7B — 1e-5).
+            В моделях задаётся ключом конфига rms_norm_eps.
 
         Внутри:
         -------
@@ -82,6 +83,8 @@ class RMSNorm(nn.Module):
         - Сохраняется параметр eps для добавления к RMS.
         """
         super().__init__()
+        if eps <= 0:
+            raise ValueError(f"eps должен быть > 0, получено {eps}")
         self._eps = eps
         self._w = nn.Parameter(torch.ones(dim))
 

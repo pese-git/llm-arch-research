@@ -111,6 +111,7 @@ result    = ffn_out + out
 | `head_size` | 64 | необязательный размер головы; по умолчанию `embed_dim // num_q_heads` (тогда `embed_dim` обязан делиться на `num_q_heads`). Если задан, `num_q_heads · head_size` может не совпадать с `embed_dim`; для RoPE — чётный |
 | `num_layers` | 4 | число блоков `MistralDecoder` |
 | `max_position_embeddings` | 512 | максимальная длина последовательности |
+| `rms_norm_eps` | (нет в примере) | необязательный `eps` всех RMSNorm, по умолчанию `1e-6`; у Mistral 7B — `1e-5` |
 | `window_size` | 16 | ширина скользящего окна внимания |
 | `dropout` | 0.1 | dropout в attention и FFN |
 

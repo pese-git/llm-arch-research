@@ -62,6 +62,7 @@ src/llm/
 | `num_q_heads` | | ✅ | ✅ | ✅ |
 | `num_kv_heads` | | ✅ | ✅ | |
 | `head_size` (необязательный) | ✅ | ✅ | ✅ | ✅ |
+| `rms_norm_eps` (необязательный, по умолчанию `1e-6`) | LLaMA | ✅ | ✅ | ✅ |
 | `window_size` | | ✅ | ✅ | |
 | `num_experts`, `top_k_experts` | | | ✅ | |
 

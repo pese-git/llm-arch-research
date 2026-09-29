@@ -32,7 +32,7 @@ class MistralDecoder(nn.Module):
     Аргументы конструктора:
     -----------------------
     num_q_heads, num_kv_heads, emb_size, head_size, max_seq_len, window_size, rope, dropout —
-    передаются в GroupedQueryAttention; emb_size и dropout — также в SwiGLU.
+    передаются в GroupedQueryAttention; emb_size и dropout — также в SwiGLU; norm_eps — eps обеих RMSNorm.
 
     Пример использования:
     ---------------------
@@ -58,7 +58,8 @@ class MistralDecoder(nn.Module):
         max_seq_len: int,
         window_size: int,
         rope: RoPE,
-        dropout: float = 0.1
+        dropout: float = 0.1,
+        norm_eps: float = 1e-6,
     ):
         """
         Инициализация блока MistralDecoder.
@@ -81,6 +82,8 @@ class MistralDecoder(nn.Module):
             Rotary Positional Embedding для Q/K.
         dropout : float, опционально
             Dropout на каждом attention/FFN (по умолчанию 0.1).
+        norm_eps : float, по умолчанию 1e-6
+            eps обеих RMSNorm (у Mistral 7B — 1e-5).
 
         Внутри:
         -------
@@ -98,8 +101,8 @@ class MistralDecoder(nn.Module):
             dropout=dropout
         )
         self._ff = SwiGLU(emb_size=emb_size, dropout=dropout)
-        self._norm1 = RMSNorm(emb_size)
-        self._norm2 = RMSNorm(emb_size)
+        self._norm1 = RMSNorm(emb_size, eps=norm_eps)
+        self._norm2 = RMSNorm(emb_size, eps=norm_eps)
 
     def forward(self, x: torch.Tensor, use_cache: bool = True, cache: tuple = None) -> tuple:
         """
