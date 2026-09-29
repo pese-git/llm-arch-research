@@ -37,6 +37,11 @@ hf-proxy = { workspace = true, editable = true }
 members = ["llm", "hf-proxy"]
 exclude = []
 
+[tool.pytest.ini_options]
+# Из корня собираем только юнит-тесты пакетов: скрипты в experiments/
+# (например, test_hf_proxy.py) не тесты и пишут артефакты в cwd.
+testpaths = ["llm/tests", "hf-proxy/tests"]
+
 [tool.coverage.run]
 branch = true
 source = ["llm/src/llm", "hf-proxy/src/hf_proxy"]

@@ -28,6 +28,7 @@ ENV/
 
 # Project specific
 checkpoints/
+test_save/
 logs/
 .ipynb_checkpoints
 
