@@ -184,9 +184,11 @@ class MultiHeadAttention(nn.Module):
         """
         batch_size, seq_len, emb_size = x.shape
 
-        if seq_len > self._max_seq_len:
+        # Абсолютная позиция первого нового токена = длина закэшированной последовательности
+        start_pos = cache[0].size(2) if cache is not None else 0
+        if start_pos + seq_len > self._max_seq_len:
             raise ValueError(
-                f"Длина последовательности {seq_len} превышает максимум {self._max_seq_len}"
+                f"Длина последовательности {start_pos + seq_len} превышает максимум {self._max_seq_len}"
             )
 
         # Пропустите тензор x через матрицы Wq, Wk , Wv, чтобы получить матрицы запроса, ключа и значения.
@@ -207,12 +209,6 @@ class MultiHeadAttention(nn.Module):
         k = k.transpose(1, 2)
         v = v.transpose(1, 2)
 
-        start_pos = 0
-        if cache is not None:
-            k_cache, v_cache = cache
-            cache_len = k_cache.shape[2]
-            start_pos = cache_len
-        
         # Пропустите матрицы запроса и ключа через экземпляр rope, чтобы выполнить поворот.
         if self._rope is not None:
             # ✅ Применяем RoPE к Q и K (НЕ к V!)
@@ -230,11 +226,11 @@ class MultiHeadAttention(nn.Module):
         # И разделить все значения в матрице внимания на корень из head_size.
         scores = q @ k.transpose(-2, -1) / (self._head_size ** 0.5)
 
-        # Если cache пришел, то маску не накладываем. Иначе наложите на матрицу внимания треугольную маску, созданную при инициализации. Все скрытые значения должны быть приведены к минус бесконечности: float('-inf').
-        if cache is None:
-            scores = scores.masked_fill(
-                ~self._tril_mask[:seq_len, :seq_len], float("-inf")
-            )
+        # Causal-маска по абсолютным позициям: строки — новые токены start_pos … start_pos + seq_len − 1,
+        # столбцы — все ключи 0 … start_pos + seq_len − 1 (кэш + новые). Нужна и с кэшем:
+        # при нескольких новых токенах (префилл кусками) они не должны видеть друг друга «вперёд».
+        causal_mask = self._tril_mask[start_pos:start_pos + seq_len, :start_pos + seq_len]
+        scores = scores.masked_fill(~causal_mask, float("-inf"))
 
         # Применить к матрице внимания (построчно) функцию Softmax.
         weights = F.softmax(scores, dim=-1)

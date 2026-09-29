@@ -6,7 +6,7 @@
 
 Состояние кода — `master` после влития `fix/kv-cache` (PR #8) и `feat/gpt-activation` (PR #9), на 2026-09-28. Пункты с пометкой «воспроизведено» проверены запуском (torch 2.8). Величины расхождений при префилле кусками зависят от seed и приведены для порядка.
 
-Пункты 49–55 добавлены при сверке бэклога с кодом и первоисточниками. Они стоят в разделах своих архитектур, номера не перенумерованы, чтобы не ломать перекрёстные ссылки.
+Пункты 49–55 добавлены при сверке бэклога с кодом и первоисточниками, пункт 56 — при исправлении пункта 3. Они стоят в разделах своих архитектур, номера не перенумерованы, чтобы не ломать перекрёстные ссылки.
 
 ## GPT-1
 
@@ -20,7 +20,7 @@
 - **Что:** контекст не обрезается. Проверки длины смотрят на `seq_len`, а не на `start_pos + seq_len`: в `GPT.forward` (`x.size(1)`), в `PositionalEmbeddings.forward` и в `MultiHeadAttention.forward` (проверяется только текущий кусок, без длины кэша). `GPT2.forward` при переданном кэше пропускает проверку совсем.
 - **Воспроизведено:** `max_position_embeddings=16`, промпт 10 токенов, `max_new_tokens=10`. С кэшем — `IndexError: index out of range in self` из `nn.Embedding` (на CUDA — device-side assert). Без кэша — `ValueError`.
 - **Исправление:** при `x.size(1) > max_seq_len` обрезать окно `x[:, -max_seq_len:]` и пересчитывать без кэша (абсолютные позиции сдвигаются, кэш становится невалидным). Проверять `start_pos + seq_len` в `forward`, `PositionalEmbeddings` и `MultiHeadAttention`.
-- **Статус:** общая часть упомянута в [известных ограничениях](README.md#известные-ограничения).
+- **Статус:** исправлено в ветке `fix/p1-bugs` для всех шести моделей: общие `next_generation_input` и `check_sequence_length` в `core/generation.py`, проверки `start_pos + seq_len` в `forward` моделей, `PositionalEmbeddings` и всех трёх модулях attention. Генерация с кэшем и без совпадает с эталоном, пересчитывающим последние `max_position_embeddings` токенов на каждом шаге (`test_kv_cache.py`).
 
 #### 2. Нет causal-маски при кэше и `seq_len > 1` — P1
 
@@ -28,14 +28,15 @@
 - **Что:** если передать кэш и несколько токенов (префилл кусками, спекулятивное декодирование), будущие токены внутри куска не маскируются. `generate` подаёт по одному токену, поэтому там не проявляется.
 - **Воспроизведено:** префилл 4 + 6 токенов через кэш расходится с полным forward на 0.21 по логитам.
 - **Исправление:** всегда накладывать маску со сдвигом `self._tril_mask[start_pos:start_pos + seq_len, :start_pos + seq_len]`.
-- **Статус:** упомянуто в [известных ограничениях](README.md#известные-ограничения).
+- **Статус:** исправлено в ветке `fix/p1-bugs` (вместе с пунктами 27 и 41): префилл любыми кусками совпадает с полным forward до 5e-7 во всех шести моделях (`test_kv_cache.py`).
 
 #### 3. `attention_mask` молча игнорируется — P1
 
 - **Где:** принимается в `GPT.forward`, `GptDecoder.forward`, `MultiHeadAttention.forward`, но нигде не применяется. У `GPT2.forward` такого параметра нет вовсе (передача даёт `TypeError`), маску принимает только `GPT2.generate`. `hf-proxy/src/hf_proxy/hf_adapter.py` в `forward` маску отбрасывает (`self.llm_model(input_ids)`), а в `generate` передаёт, ожидая, что она сработает.
 - **Воспроизведено:** `attention_mask` из нулей даёт логиты, побитово равные вызову без маски.
+- **Уточнение:** при правом паддинге маска не нужна: causal-маска и так не даёт настоящим токенам смотреть на стоящий после них паддинг (проверено: выход совпадает до 3e-7). Молча неверный результат получается при левом паддинге (расхождение 0.9–1.9) и при генерации после паддинга. Обучение через hf-proxy не страдало: коллатор дополняет справа.
 - **Исправление:** пробросить маску до attention и накладывать её вместе с causal-маской (`[B, T]` → `[B, 1, 1, T_kv]`). Либо, пока не реализовано, убрать параметр или бросать `NotImplementedError`, чтобы не было молчаливой ошибки.
-- **Статус:** упомянуто в [известных ограничениях](README.md#известные-ограничения).
+- **Статус:** исправлено в ветке `fix/p1-bugs` вторым способом. `forward` всех шести моделей принимает `attention_mask`; маска из единиц и правый паддинг допускаются, на остальные маски с нулями (левый паддинг, пропуски, нули с кэшем, любые нули в `generate`) — `NotImplementedError` (`check_attention_mask` в `core/generation.py`). `hf_adapter.forward` передаёт маску в модель. Поддержка левого паддинга вынесена в пункт 56; объяснение масок — в [README.md](README.md#маски).
 
 #### 4. `generate` не валидирует аргументы, хотя докстринг обещает — P2
 
@@ -51,6 +52,12 @@
 - **Что:** маска оставляет только токены, у которых накопленная вероятность *включая сам токен* не больше `top_p`. Токен, на котором сумма переходит порог, выкидывается, хотя в nucleus sampling (Holtzman et al., 2019; `TopPLogitsWarper` в HF) он входит в ядро. При вероятностях `[0.5, 0.3, 0.2]` и `top_p=0.7` остаётся один токен вместо двух; при `top_p` меньше вероятности самого частого токена ядро держится только за счёт принудительного первого токена.
 - **Исправление:** сдвинуть маску — `cum_probs - sorted_probs < top_p` (или `sorted_mask[..., 1:] = sorted_mask[..., :-1].clone(); sorted_mask[..., 0] = True`). Вносить в общую функцию выбора токена (пункт 18).
 - **Попутно:** при `temperature ≤ 0` `logits_scaled` — тот же тензор, что `logits`, и запись `-inf` на месте в ветке top-p портит выход `forward`. Сейчас безвредно, но после вынесения в общую функцию лучше клонировать.
+
+#### 56. Нет поддержки левого паддинга — P2
+
+- **Где:** все шесть моделей, `check_attention_mask` в [`core/generation.py`](../llm/src/llm/core/generation.py).
+- **Что:** генерация батчем промптов разной длины требует левого паддинга: строки должны кончаться в одной позиции. Для этого нужна маска ключей во всех трёх модулях attention и сдвиг позиций для каждой строки батча: иначе первый настоящий токен получает позицию, равную длине паддинга, а от позиции зависят `PositionalEmbeddings` и RoPE. Сейчас такие маски отклоняются с `NotImplementedError` (пункт 3).
+- **Исправление:** `position_ids = attention_mask.cumsum(-1) − 1` (как в HF) с передачей в `PositionalEmbeddings` и `RoPE` по строкам батча; маска ключей `[B, 1, 1, T_kv]` вместе с causal-маской; в `generate` — продление маски единицами для новых токенов и хранение её рядом с кэшем. Тест: логиты настоящих токенов с левым паддингом совпадают с прогоном без паддинга.
 
 ### Отклонения от GPT-1
 
@@ -111,9 +118,8 @@
 Модель: [`models/gpt/gpt2.py`](../llm/src/llm/models/gpt/gpt2.py), блок: [`core/gpt2_decoder.py`](../llm/src/llm/core/gpt2_decoder.py).
 
 Общие с GPT-1 пункты касаются GPT-2 так же и здесь не повторяются:
-- **1** — падение `generate` за `max_position_embeddings`. Воспроизведено на GPT-2 с `max_position_embeddings=16`, промптом 10 и `max_new_tokens=10`: с кэшем `IndexError`, без кэша `ValueError`.
-- **2** — нет causal-маски при кэше и `seq_len > 1`. На GPT-2 префилл 4 + 6 расходится с полным forward на 0.12–0.16.
-- **3** — `attention_mask`: `GPT2.forward` его не принимает, `generate` принимает и игнорирует.
+- **1**, **2**, **3** — генерация за `max_position_embeddings`, маска при кэше и `attention_mask` (исправлены). До исправления: с кэшем `IndexError`, без кэша `ValueError`; префилл 4 + 6 расходился с полным forward на 0.12–0.16; `GPT2.forward` не принимал `attention_mask`, `generate` принимал и игнорировал.
+- **56** — нет поддержки левого паддинга.
 - **49** — top-p отбрасывает пограничный токен (**4**, валидация аргументов `generate`, исправлен для всех моделей).
 - **8** — `use_cache=True` по умолчанию и нет `no_grad`.
 - **9** — dtype в `FeedForward` (исправлен).
@@ -186,9 +192,8 @@
 Модель: [`models/llama/llama.py`](../llm/src/llm/models/llama/llama.py), блок: [`core/cached_decoder.py`](../llm/src/llm/core/cached_decoder.py), attention: [`core/multi_head_attention.py`](../llm/src/llm/core/multi_head_attention.py) с [`core/rope.py`](../llm/src/llm/core/rope.py).
 
 Общие с GPT пункты касаются LLaMA так же и здесь не повторяются:
-- **1** — падение `generate` за `max_position_embeddings`. Воспроизведено с `max_position_embeddings=16`, промптом 10 и `max_new_tokens=10`: с кэшем `RuntimeError: shape '[1, 1, 1, <head_size / 2>]' is invalid for input of size 0` из `RoPE.forward` (пустой срез cos/sin; при `embed_dim=32, num_heads=4` — `[1, 1, 1, 4]`), без кэша `ValueError`. В моделях с RoPE контекст нельзя просто обрезать окном и продолжить с кэшем: при обрезке нужно пересчитать K заново с новыми позициями.
-- **2** — нет causal-маски при кэше и `seq_len > 1`. Префилл 4 + 6 расходится с полным forward на 0.14–0.28.
-- **3** — игнорируется `attention_mask`. У `Llama.forward` такого параметра нет вовсе, а `generate` его принимает: `attention_mask` из нулей даёт тот же результат, что и без маски.
+- **1**, **2**, **3** — генерация за `max_position_embeddings`, маска при кэше и `attention_mask` (исправлены). До исправления: с кэшем падал `RuntimeError: shape '[1, 1, 1, <head_size / 2>]' is invalid for input of size 0` из `RoPE.forward` (пустой срез cos/sin), без кэша `ValueError`; префилл 4 + 6 расходился с полным forward на 0.14–0.28; `Llama.forward` не принимал `attention_mask`, `generate` его игнорировал. В моделях с RoPE контекст нельзя просто обрезать окном и продолжить с кэшем: при обрезке K пересчитываются заново с новыми позициями.
+- **56** — нет поддержки левого паддинга.
 - **49** — top-p отбрасывает пограничный токен (**4**, валидация аргументов `generate`, исправлен для всех моделей).
 - **8** — `use_cache=True` по умолчанию и нет `no_grad`. В `eval()` логиты имеют `requires_grad=True`.
 - **10** — интерфейс `BaseModel`.
@@ -244,15 +249,15 @@
 - Комментарий к форме выхода в `RoPE.forward` — `[batch_size, seq_len, head_size]`, фактически 4D `[batch, num_heads, seq_len, head_size]`.
 - В [README.md](README.md) устарели пометки «⚠️ без GQA, вопреки докстрингу» в таблице и пункт «LLaMA — нет GQA, вопреки докстрингу» в известных ограничениях: докстринг уже исправлен, расхождения больше нет.
 - Нет `save`/`load` ни в `Llama`, ни в `BaseModel`, хотя версия для внешнего стенда их требует.
-- [`tests/models/test_llama.py`](../llm/tests/models/test_llama.py) проверяет только формы. Кэшированная генерация по одному токену сверяется с полным forward в [`test_kv_cache.py`](../llm/tests/models/test_kv_cache.py) для всех моделей, но нет тестов на префилл кусками с кэшем (пункт 2), на генерацию до границы `max_position_embeddings` (пункт 1) и на то, что top-k/top-p оставляют нужное число токенов (пункт 49).
+- [`tests/models/test_llama.py`](../llm/tests/models/test_llama.py) проверяет только формы. Кэшированная генерация по одному токену сверяется с полным forward в [`test_kv_cache.py`](../llm/tests/models/test_kv_cache.py) для всех моделей, там же — префилл кусками и генерация за `max_position_embeddings` (пункты 1, 2). Нет тестов на то, что top-k/top-p оставляют нужное число токенов (пункт 49).
 
 ## Mistral
 
 Модель: [`models/mistral/mistral.py`](../llm/src/llm/models/mistral/mistral.py), блок: [`core/mistral_decoder.py`](../llm/src/llm/core/mistral_decoder.py), attention: [`core/group_query_attention.py`](../llm/src/llm/core/group_query_attention.py) с [`core/rope.py`](../llm/src/llm/core/rope.py). `GroupedQueryAttention` общий с Mixtral, поэтому пункты 27–30 затрагивают и её.
 
 Общие с предыдущими моделями пункты касаются Mistral так же и здесь не повторяются:
-- **1** — падение `generate` за `max_position_embeddings`. Воспроизведено с `max_position_embeddings=16`, промптом 10 и `max_new_tokens=10`: с кэшем `RuntimeError: shape '[1, 1, 1, 4]' is invalid for input of size 0` из `RoPE.forward`. Для Mistral это особенно заметно: sliding window и rolling-buffer кэш позволяют генерировать сколь угодно долго, и мешает только таблица cos/sin.
-- **3** — игнорируется `attention_mask`. `Mistral.forward` его не принимает, а `generate` принимает: `attention_mask` из нулей даёт тот же результат, что и без маски.
+- **1**, **3** — генерация за `max_position_embeddings` и `attention_mask` (исправлены). До исправления с кэшем падал `RuntimeError: shape '[1, 1, 1, 4]' is invalid for input of size 0` из `RoPE.forward`. Для Mistral это было особенно заметно: sliding window и rolling-buffer кэш позволяют генерировать сколь угодно долго, мешала только таблица cos/sin. Теперь `generate` продолжает по последним `max_position_embeddings` токенам.
+- **56** — нет поддержки левого паддинга.
 - **49** — top-p отбрасывает пограничный токен (**4**, валидация аргументов `generate`, исправлен для всех моделей).
 - **8** — `use_cache=True` по умолчанию и нет `no_grad`. В `eval()` логиты имеют `requires_grad=True`.
 - **10** — интерфейс `BaseModel`.
@@ -271,7 +276,7 @@
 - **Что:** то же, что пункт 2, но в отдельном модуле GQA, и ломается не только causal-часть, но и окно: токены куска видят будущее внутри куска, а ключи из кэша не обрезаются по окну для каждой строки. При одном новом токене маска не нужна: кэш содержит ровно `window_size` позиций, плюс сам токен — это `W + 1`, как и в маске без кэша.
 - **Воспроизведено:** префилл 4 + 6 токенов через кэш расходится с полным forward на 0.2–0.3 по логитам (так же 5 + 5 и 6 + 4) при `window_size=4`. Генерация по одному токену с кэшем совпадает с полным forward (3.6e-7).
 - **Исправление:** при кэше строить маску по абсолютным позициям: строки `start_pos … start_pos + T − 1`, столбцы — позиции ключей `start_pos − len(k_cache) … start_pos + T − 1`, разрешено `0 ≤ i − j ≤ window_size`.
-- **Статус:** общая часть упомянута в [известных ограничениях](README.md#известные-ограничения).
+- **Статус:** исправлено в ветке `fix/p1-bugs`: маска берётся срезом `_tril_mask[start_pos:start_pos + T, start_pos − cache_len:start_pos + T]` по абсолютным позициям. Префилл кусками, в том числе длиннее окна, совпадает с полным forward (`test_kv_cache.py`).
 
 #### 28. Ключ `head_size` в конфиге игнорируется — P2
 
@@ -330,11 +335,11 @@
 - Докстринг `MistralDecoder` описывает «стек декодеров» с аргументом `num_layers`, хотя это один блок и такого аргумента нет; «RMSNorm перед и после» — на деле только pre-norm.
 - Параметр `mask` в `GroupedQueryAttention.forward` и `MistralDecoder.forward` принимается и не используется.
 - Закомментированный код: старый `PositionalEmbeddings` и `pos_out` в `Mistral`, старый блок кэширования и `_repeat_kv_heads` в `GroupedQueryAttention.forward`.
-- Неиспользуемые переменные и импорты: `k_seq_len` в `GroupedQueryAttention.forward`; `vocab_size` в `generate`; `sqrt`, `Tensor` в `mistral.py`.
+- Неиспользуемые переменные и импорты: `vocab_size` в `generate`; `sqrt`, `Tensor` в `mistral.py` (`k_seq_len` в `GroupedQueryAttention.forward` удалён вместе с исправлением пункта 27).
 - Комментарии в `GroupedQueryAttention.forward`: сбитая нумерация шагов («Шаг 2», «3.», «5.», «8.», снова «3.», «4.») и неверные размерности (`# [B, T, hs]` там, где `[B, H, T, hs]`).
 - Кэш пересобирается через `torch.cat` и срез на каждом шаге. Для учебного кода это приемлемо, но настоящего rolling buffer (запись по индексу `pos % W`) нет, хотя документация так его называет.
 - Нет `save`/`load` в `Mistral`, хотя версия для внешнего стенда их требует.
-- [`tests/models/test_mistral.py`](../llm/tests/models/test_mistral.py) проверяет только формы; генерация по одному токену с кэшем покрыта [`test_kv_cache.py`](../llm/tests/models/test_kv_cache.py). Нет тестов на префилл кусками с кэшем (пункт 27), на генерацию до границы `max_position_embeddings` (пункт 1), на проверки из пункта 29 и на чтение `head_size` из конфига (пункт 28).
+- [`tests/models/test_mistral.py`](../llm/tests/models/test_mistral.py) проверяет только формы; генерация по одному токену с кэшем покрыта [`test_kv_cache.py`](../llm/tests/models/test_kv_cache.py). Там же — префилл кусками и генерация за `max_position_embeddings` (пункты 1, 27). Нет тестов на проверки из пункта 29 и на чтение `head_size` из конфига (пункт 28).
 
 ## Mixtral
 
@@ -343,17 +348,17 @@
 Сама математика MoE верна: выход совпадает с наивным циклом по токенам (для каждого токена сумма `softmax(top-k логитов) · expert(x)`) с точностью 7e-8. Это то же, что `Softmax(TopK(x·W_g))` в статье и softmax → top-k → перенормировка в HF.
 
 Общие с предыдущими моделями пункты касаются Mixtral так же и здесь не повторяются:
-- **1** — падение `generate` за `max_position_embeddings`. Воспроизведено с `max_position_embeddings=16`, промптом 10 и `max_new_tokens=10`: с кэшем `RuntimeError: shape '[1, 1, 1, 4]' is invalid for input of size 0` из `RoPE.forward`.
-- **3**, **22** — `attention_mask` и `**kwargs` в `generate` игнорируются (**4**, валидация аргументов, исправлен).
+- **1**, **3** — генерация за `max_position_embeddings` и `attention_mask` (исправлены); **56** — нет поддержки левого паддинга.
+- **22** — `**kwargs` в `generate` игнорируются (**4**, валидация аргументов, исправлен).
 - **8** — `use_cache=True` по умолчанию и нет `no_grad`. Воспроизведено: в `train()` `forward` возвращает кэш; `Trainer` вызывает `self.model(input_ids)` и собирает K/V всех слоёв на каждом шаге.
 - **10**, **12**, **18**, **19** — интерфейс `BaseModel`, сравнения `== True` / `!= None`, дублирование `generate`, пограничные случаи top-k.
 - **23**, **24** — SwiGLU с `4·d` и bias во всех `Linear`. У Mixtral 8x7B эксперт — `hidden_dim = 14336` при `dim = 4096`, все проекции, включая роутер, без bias.
 - **25** — RoPE-буферы в `state_dict` по копии на слой.
-- **27** — нет маски при кэше и `seq_len > 1`. Воспроизведено на Mixtral: префилл 6 + 8 токенов через кэш расходится с полным forward на 0.27–0.35 по логитам при `window_size=5`.
+- **27** — нет маски при кэше и `seq_len > 1` (исправлен). До исправления префилл 6 + 8 токенов через кэш расходился с полным forward на 0.27–0.35 по логитам при `window_size=5`.
 - **49** — top-p отбрасывает пограничный токен.
 - **50**, **51** — `eps` RMSNorm не задаётся из конфига, dropout в attention (в Mixtral 8x7B его нет).
 - **28** — ключ `head_size` игнорируется. В [`mixtral_train.json`](../experiments/llm_only/configs/mixtral_train.json) `"head_size": 64` совпадает с `256 // 4` случайно.
-- **29**, **31**, **32**, **33** — проверки голов, `_tril_mask` в `state_dict`, половинчатая совместимость с torch < 1.2, мусор в `GroupedQueryAttention` (неиспользуемые `mask` и `k_seq_len`).
+- **29**, **31**, **32**, **33** — проверки голов, `_tril_mask` в `state_dict`, половинчатая совместимость с torch < 1.2, мусор в `GroupedQueryAttention` (неиспользуемый `mask`).
 
 ### Баги
 
@@ -363,6 +368,7 @@
 - **Что:** буфер весов создаётся без `dtype` и всегда float32. Запись в него `topk_weights[...]` в bf16/fp16 падает; обучение и инференс Mixtral в половинной точности невозможны.
 - **Воспроизведено:** `MoE(16, 4, 2).to(torch.bfloat16)` на bf16-входе — `RuntimeError: Index put requires the source and destination dtypes match, got Float for the destination and BFloat16 for the source`.
 - **Исправление:** `dtype=x.dtype`, либо переписать сборку выхода без промежуточного буфера (см. пункт 39).
+- **Статус:** исправлено в ветке `fix/p1-bugs` (`dtype=x.dtype`); переписывание сборки выхода (пункт 39) не делалось. Тест: MoE в bf16/fp16 совпадает с float32 (`test_moe.py`).
 
 #### 35. Нет `save`/`load`, хотя докстринг их обещает — P2
 
@@ -429,7 +435,7 @@
 - Неиспользуемые импорты: `Tensor`, `sqrt` в `mixtral.py`; `F` в `mixtral_decoder.py`. Параметр `mask` в `MixtralDecoder.forward` передаётся в `GroupedQueryAttention`, где игнорируется.
 - Неиспользуемые переменные в `generate`: `vocab_size`, `masked_logits` лишь дублирует `logits_scaled`.
 - Роутер создаётся с bias; в Mixtral `gate` — `Linear(dim, num_experts, bias=False)` (частный случай пункта 24).
-- Тесты: [`test_moe.py`](../llm/tests/core/test_moe.py) проверяет формы, градиенты и детерминизм, но не корректность против эталона; нет тестов на bf16 (пункт 34), на префилл кусками с кэшем (пункт 27) и на генерацию до границы `max_position_embeddings` (пункт 1). В [`test_mixtral.py`](../llm/tests/models/test_mixtral.py) только формы; генерация по одному токену с кэшем покрыта [`test_kv_cache.py`](../llm/tests/models/test_kv_cache.py).
+- Тесты: [`test_moe.py`](../llm/tests/core/test_moe.py) проверяет формы, градиенты и детерминизм, но не корректность против эталона; тест на bf16/fp16 добавлен с исправлением пункта 34, префилл кусками и генерация за `max_position_embeddings` — в `test_kv_cache.py`. В [`test_mixtral.py`](../llm/tests/models/test_mixtral.py) только формы; генерация по одному токену с кэшем покрыта [`test_kv_cache.py`](../llm/tests/models/test_kv_cache.py).
 
 ## Gemma
 
@@ -438,8 +444,8 @@
 Кэшированная генерация по одному токену совпадает с полным forward (покрыто [`test_kv_cache.py`](../llm/tests/models/test_kv_cache.py)).
 
 Общие с предыдущими моделями пункты касаются Gemma так же и здесь не повторяются:
-- **1** — падение `generate` за `max_position_embeddings`. Воспроизведено с `max_position_embeddings=16`, промптом 10 и `max_new_tokens=10`: с кэшем `RuntimeError: shape '[1, 1, 1, 4]' is invalid for input of size 0` из `RoPE.forward`, без кэша `ValueError`. `Gemma.forward` пропускает проверку длины при кэше, а `MultiQueryAttention` сравнивает с лимитом только `seq_len`, без `start_pos`.
-- **3** — игнорируется `attention_mask`. `Gemma.forward` его не принимает, `generate` принимает: `attention_mask` из нулей даёт тот же результат, что и без маски. Параметр `mask` в `GemmaDecoder.forward` и `MultiQueryAttention.forward` тоже не используется.
+- **1**, **3** — генерация за `max_position_embeddings` и `attention_mask` (исправлены). До исправления `Gemma.forward` пропускал проверку длины при кэше, а `MultiQueryAttention` сравнивал с лимитом только `seq_len`, без `start_pos`. Параметр `mask` в `GemmaDecoder.forward` и `MultiQueryAttention.forward` по-прежнему не используется: `attention_mask` проверяется в `Gemma.forward`.
+- **56** — нет поддержки левого паддинга.
 - **49** — top-p отбрасывает пограничный токен (**4**, валидация аргументов `generate`, исправлен для всех моделей).
 - **8** — `use_cache=True` по умолчанию и нет `no_grad`. В `eval()` логиты имеют `requires_grad=True`, кэш возвращается по умолчанию.
 - **10**, **12**, **18** — интерфейс `BaseModel`, сравнения `== True` / `!= None`, дублирование `generate`.
@@ -459,6 +465,7 @@
 - **Что:** то же, что пункты 2 и 27, но в третьем модуле attention. Токены куска, поданного вместе с кэшем, видят будущее внутри куска. `generate` подаёт по одному токену, поэтому там не проявляется.
 - **Воспроизведено:** префилл 4 + 6 токенов через кэш расходится с полным forward на 0.14–0.18 по логитам.
 - **Исправление:** всегда накладывать маску со сдвигом `self._tril_mask[start_pos:start_pos + seq_len, :start_pos + seq_len]` и проверять `start_pos + seq_len <= max_seq_len` (закрывает часть пункта 1). Проверено в версии для внешнего стенда: префилл кусками совпадает с полным forward.
+- **Статус:** исправлено в ветке `fix/p1-bugs`.
 
 ### Отклонения от Gemma
 
@@ -517,4 +524,4 @@
 - Неиспользуемые импорты: `math`, `sqrt`, `Tensor` в `gemma.py`; `F` в `gemma_decoder.py`. Неиспользуемая переменная `vocab_size` в `generate`, `masked_logits` лишь дублирует `logits_scaled`.
 - Комментарии в `MultiQueryAttention.forward`: сбитая нумерация шагов («Шаг 2», «3.», «5.», снова «3.», «4.») и неверные размерности (`# [B, T, hs]` там, где `[B, H, T, hs]`).
 - [`gemma_train.json`](../experiments/llm_only/configs/gemma_train.json) содержит ключи Mixtral (`num_kv_heads`, `num_experts`, `top_k_experts`, `window_size`), которые модель не читает. Задокументировано в [gemma.md](gemma.md#неиспользуемые-ключи-конфига), но проще убрать их из JSON.
-- Тесты: [`test_gemma.py`](../llm/tests/models/test_gemma.py) проверяет только формы. `test_forward_masked` в [`test_gemma_decoder.py`](../llm/tests/core/test_gemma_decoder.py) передаёт маску и проверяет лишь форму, создавая впечатление, что маска поддерживается (пункт 3). Нет тестов на префилл кусками с кэшем (пункт 41) и на генерацию до границы `max_position_embeddings` (пункт 1).
+- Тесты: [`test_gemma.py`](../llm/tests/models/test_gemma.py) проверяет только формы. `test_forward_masked` в [`test_gemma_decoder.py`](../llm/tests/core/test_gemma_decoder.py) передаёт маску и проверяет лишь форму, создавая впечатление, что модуль её применяет; на деле `attention_mask` проверяется в `Gemma.forward` (пункт 3). Префилл кусками и генерация за `max_position_embeddings` покрыты `test_kv_cache.py`.

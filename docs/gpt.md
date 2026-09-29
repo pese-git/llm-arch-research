@@ -177,7 +177,7 @@ result         = Norm2(ffn_out + out)
 
 `GPT.generate(x, max_new_tokens, do_sample, temperature=1.0, top_k=None, top_p=None, use_cache=True, attention_mask=None, **kwargs)` — унифицированная сигнатура, общая для всех архитектур в этом репозитории: greedy (`do_sample=False`), sampling с температурой, top-k, top-p (nucleus), с опциональным KV-кэшем.
 
-При генерации с KV-кэшем позиция новых токенов для позиционных эмбеддингов берётся из длины кэша (`start_pos = cache[0][0].size(2)`).
+При генерации с KV-кэшем позиция новых токенов для позиционных эмбеддингов берётся из длины кэша (`cache_start_pos` в [`core/generation.py`](../llm/src/llm/core/generation.py)). Когда последовательность становится длиннее `max_position_embeddings`, `generate` берёт последние `max_position_embeddings` токенов и пересчитывает их без кэша: при сдвиге окна абсолютные позиции всех токенов меняются, и закэшированные K/V больше не годятся. `attention_mask` в `generate` допускается только из единиц — см. [Маски](README.md#attention_mask-и-паддинг).
 
 ## Что изменилось в GPT-2
 

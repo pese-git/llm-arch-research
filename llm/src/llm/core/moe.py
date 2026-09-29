@@ -205,8 +205,9 @@ class MoE(nn.Module):
             # Для каждого токена может быть несколько весов (если эксперт в топ-k несколько раз)
             # Но на практике каждый эксперт появляется максимум 1 раз в топ-k
             # Находим веса: где expert_mask == True, берём соответствующий вес
+            # dtype как у входа: иначе буфер float32, и запись весов bf16/fp16 в него падает
             weights_for_expert = torch.zeros(
-                batch_size, seq_len, device=x.device
+                batch_size, seq_len, device=x.device, dtype=x.dtype
             )
 
             # Для каждой позиции в топ-k

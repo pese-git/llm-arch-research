@@ -22,7 +22,13 @@ import torch
 from torch import nn, Tensor
 import torch.nn.functional as F
 from llm.core.base_model import BaseModel
-from llm.core.generation import validate_sampling_args
+from llm.core.generation import (
+    cache_start_pos,
+    check_attention_mask,
+    check_sequence_length,
+    next_generation_input,
+    validate_sampling_args,
+)
 from llm.core.token_embeddings import TokenEmbeddings
 from llm.core.positional_embeddings import PositionalEmbeddings
 from llm.core.gpt2_decoder import Gpt2Decoder
@@ -122,7 +128,11 @@ class GPT2(BaseModel):
         self._linear = nn.Linear(config["embed_dim"], config["vocab_size"])
 
     def forward(
-        self, x: torch.Tensor, use_cache: bool = True, cache: list = None
+        self,
+        x: torch.Tensor,
+        use_cache: bool = True,
+        cache: list = None,
+        attention_mask: torch.Tensor = None,
     ) -> tuple:
         """
         Прямой проход для batch of sequences (получение логитов по токенам).
@@ -131,6 +141,9 @@ class GPT2(BaseModel):
             x (torch.Tensor): Входной тензор с токенами [batch, seq_len]
             use_cache (bool): Использовать/возвращать кэш KV attention (ускоряет генерацию)
             cache (list / None): Внешний кэш KV attention (передаётся при генерации)
+            attention_mask (torch.Tensor, опц.): маска [batch, seq_len] (1 — токен, 0 — паддинг).
+                Поддерживается правый паддинг; на другие маски с нулями — NotImplementedError
+                (см. docs/README.md, раздел «Маски»).
 
         Returns:
             logits: torch.Tensor [batch, seq_len, vocab_size]
@@ -139,16 +152,13 @@ class GPT2(BaseModel):
         Пример:
             >>> logits, cache = gpt2(x, use_cache=True)
         """
-        # Проверка длины последовательности (только при отсутствии кэша)
-        if cache is None and x.size(1) > self._max_seq_len:
-            raise ValueError(
-                f"Длина последовательности {x.size(1)} превышает максимальную {self.max_seq_len}"
-            )
+        # Длина с учётом кэша: позиции start_pos … start_pos + seq_len − 1 должны быть < max_seq_len.
+        # attention_mask допускается только такая, при которой causal-маски достаточно.
+        start_pos = cache_start_pos(cache)
+        check_sequence_length(x.size(1), start_pos, self._max_seq_len)
+        check_attention_mask(attention_mask, x, cache)
 
-        # Позиция первого нового токена = длина уже закэшированной последовательности.
-        # Кэш — список по слоям из (K, V), K: [batch, num_heads, cached_len, head_size]
         seq_len = x.size(1)
-        start_pos = cache[0][0].size(2) if cache is not None else 0
 
         # Эмбеддинги токенов и позиций
         tok_out = self._token_embeddings(x)  # [batch, seq_len, emb_size]
@@ -210,6 +220,8 @@ class GPT2(BaseModel):
             top_k (int, опционально): Если задан, sampling только из top_k самых вероятных токенов (top-k sampling).
             top_p (float, опционально): Если задан, sampling только из токенов, кумулятивная вероятность которых ≤ top_p (nucleus/top-p sampling, см. Holtzman et al., 2019).
             use_cache (bool, по умолчанию True): Использовать кэш attention KV для ускорения авторегрессии.
+            attention_mask (torch.Tensor, опц.): маска промпта [batch, seq_len]. Допускается только
+                маска из единиц: генерация после паддинга не поддерживается (NotImplementedError).
     
         Возвращает:
             torch.Tensor: Тензор индексов токенов [batch_size, seq_len + max_new_tokens].
@@ -248,16 +260,14 @@ class GPT2(BaseModel):
             - Оригинальная статья GPT-2: https://cdn.openai.com/better-language-models/language-models.pdf
         """
         validate_sampling_args(do_sample, temperature, top_k, top_p)
+        check_attention_mask(attention_mask, x, generating=True)
 
         cache = None
 
         for _ in range(max_new_tokens):
-            if use_cache and cache is not None:
-                # Используем кэш - передаем только последний токен
-                x_input = x[:, -1:]  # [batch_size, 1]
-            else:
-                # Первая итерация или кэш отключен - передаем всю последовательность
-                x_input = x
+            # С кэшем подаём только последний токен; за пределами max_seq_len берём
+            # последние max_seq_len токенов и пересчитываем без кэша.
+            x_input, cache = next_generation_input(x, cache, use_cache, self._max_seq_len)
 
             # Прямой проход с кэшем
             logits, new_cache = self.forward(x_input, use_cache=use_cache, cache=cache)
