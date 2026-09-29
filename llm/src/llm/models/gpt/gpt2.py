@@ -122,6 +122,7 @@ class GPT2(BaseModel):
                     head_size=head_size,
                     max_seq_len=config["max_position_embeddings"],
                     dropout=config["dropout"],
+                    attention_dropout=config.get("attention_dropout", 0.0),
                 )
                 for _ in range(config["num_layers"])
             ]

@@ -54,6 +54,7 @@ class Gpt2Decoder(nn.Module):
         head_size: int,
         max_seq_len: int,
         dropout: float = 0.1,
+        attention_dropout: float = 0.0,
     ):
         """
         Конструктор Gpt2Decoder.
@@ -70,6 +71,8 @@ class Gpt2Decoder(nn.Module):
             Максимальная поддерживаемая длина последовательности (выделяет буфер для causal-маски).
         dropout : float, default=0.1
             Dropout после внимания и/или feedforward.
+        attention_dropout : float, default=0.0
+            Dropout на весах внимания после softmax (в HF GPT-2 — attn_pdrop=0.1).
         """
         super().__init__()
         self._heads = MultiHeadAttention(
@@ -78,6 +81,7 @@ class Gpt2Decoder(nn.Module):
             head_size=head_size,
             max_seq_len=max_seq_len,
             dropout=dropout,
+            attention_dropout=attention_dropout,
         )
         # tanh-аппроксимация GELU, как в оригинальном коде OpenAI GPT-2
         # (openai/gpt-2, src/model.py; в HF GPT2Config — activation_function="gelu_new")

@@ -86,7 +86,8 @@ result    = ffn_out + out
 | `num_heads` | 4 | число attention-голов |
 | `num_layers` | 4 | число блоков `Gpt2Decoder` |
 | `max_position_embeddings` | 128 | максимальная длина последовательности |
-| `dropout` | 0.1 | dropout в attention и FFN |
+| `dropout` | 0.1 | dropout на эмбеддингах и на выходах attention и FFN перед residual |
+| `attention_dropout` | (нет в примере) | необязательный dropout на весах внимания после softmax, по умолчанию `0.0`; в HF — `attn_pdrop = 0.1` |
 | `initializer_range` | (нет в примере) | необязательное стандартное отклонение начальных весов, по умолчанию `0.02` |
 
 ### Инициализация весов

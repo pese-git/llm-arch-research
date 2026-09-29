@@ -1,6 +1,6 @@
 """
 Tests for config validation in every model: head_size from the config, divisibility of
-embed_dim by the number of heads, GQA head groups, MoE top-k, rms_norm_eps and rope_theta.
+embed_dim by the number of heads, GQA head groups, MoE top-k, rms_norm_eps, rope_theta and attention_dropout.
 
 A wrong config must fail in the constructor with a clear ValueError instead of silently
 shrinking the attention space or crashing in the first forward.
@@ -215,3 +215,12 @@ def test_rope_theta_changes_output_not_weights(name):
 def test_rope_theta_must_exceed_one(theta):
     with pytest.raises(ValueError, match="base"):
         build("mistral", rope_theta=theta)
+
+
+@pytest.mark.parametrize("name", ["gpt", "gpt2"])
+@pytest.mark.parametrize("value", [None, 0.1])
+def test_attention_dropout_reaches_every_layer(name, value):
+    """attention_dropout (attn_pdrop в GPT-1/GPT-2) доходит до внимания каждого блока; по умолчанию 0."""
+    model = build(name) if value is None else build(name, attention_dropout=value)
+    probabilities = {decoder._heads._attn_dropout.p for decoder in model._decoders}
+    assert probabilities == {0.0 if value is None else value}
