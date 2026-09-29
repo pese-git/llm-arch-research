@@ -3,7 +3,7 @@
 Экспериментальный пакет, который оборачивает модели и токенизаторы библиотеки [`llm`](../llm/README.md) в интерфейсы HuggingFace Transformers: `PreTrainedModel`, `PretrainedConfig`, HF-подобный токенизатор. Это позволяет использовать собственные модели с `transformers.Trainer` и сохранять их в HF-формате.
 
 > ⚠️ **Поддерживается только модель `GPT`** (`llm.models.gpt.GPT`). GPT-2, LLaMA, Mistral, Mixtral и Gemma через hf-proxy не работают.
-> Загрузить предобученные веса с HuggingFace Hub (например, `mistralai/Mistral-7B-v0.1`) в модели `llm` нельзя.
+> Предобученные веса с HuggingFace Hub в модели `llm` загружаются не через hf-proxy, а функцией `convert_hf_state_dict` из пакета нужной модели (`llm.models.gpt`, `llm.models.llama`, `llm.models.mistral`, `llm.models.mixtral`, `llm.models.gemma`) — см. раздел «Загрузка весов HuggingFace» в [документе архитектуры](../docs/README.md).
 > API экспериментальный и может меняться; совместимость с будущими версиями Transformers не гарантируется.
 
 Зависимости: `torch>=2.3.0`, `transformers>=4.44.0`, `datasets>=2.20.0`.
