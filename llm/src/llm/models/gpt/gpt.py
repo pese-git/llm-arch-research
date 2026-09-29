@@ -301,10 +301,10 @@ class GPT(BaseModel):
                 # создаём маску: True, если токен НЕ в topk_indices
                 mask = torch.ones_like(
                     logits_scaled,
-                    dtype=torch.bool if hasattr(torch, "bool") else torch.uint8,
+                    dtype=torch.bool,
                 )
                 mask.scatter_(
-                    1, topk_indices, False if hasattr(torch, "bool") else 0
+                    1, topk_indices, False
                 )  # False там, где top-k индексы
                 masked_logits[mask] = float("-inf")
 
@@ -326,7 +326,7 @@ class GPT(BaseModel):
                 # 5. Преобразуем маску обратно в оригинальный порядок:
                 # Создаём полную маску из False
                 mask = torch.zeros_like(
-                    probs, dtype=torch.bool if hasattr(torch, "bool") else torch.uint8
+                    probs, dtype=torch.bool
                 )
                 # Устанавливаем True в местах нужных токенов
                 mask.scatter_(dim=1, index=sorted_indices, src=sorted_mask)

@@ -128,7 +128,7 @@ class GroupedQueryAttention(nn.Module):
         # Создание causal маски
         mask = self._create_sliding_window_mask(max_seq_len, self._window_size)
         self.register_buffer(
-            "_tril_mask", mask.bool() if hasattr(torch, "bool") else mask.byte()
+            "_tril_mask", mask.bool()
         )
         
         self._layer = nn.Linear(head_size * self._num_heads, emb_size)

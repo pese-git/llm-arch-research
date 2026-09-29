@@ -117,7 +117,7 @@ class MultiQueryAttention(nn.Module):
         # Создание causal маски
         mask = torch.tril(torch.ones(max_seq_len, max_seq_len))
         self.register_buffer(
-            "_tril_mask", mask.bool() if hasattr(torch, "bool") else mask.byte()
+            "_tril_mask", mask.bool()
         )
         
         self._layer = nn.Linear(num_q_heads * head_size, emb_size)

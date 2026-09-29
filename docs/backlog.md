@@ -103,7 +103,7 @@
 
 - Закомментированный старый `generate` в конце `gpt.py`.
 - Неиспользуемые импорты: `Optional`, `Dict` в `gpt.py` (`math` в `feed_forward.py` удалён).
-- Мёртвые проверки `hasattr(torch, "bool")` (актуальны только для PyTorch < 1.2).
+- ~~Мёртвые проверки `hasattr(torch, "bool")`~~ — удалены в ветке `refactor/remove-dead-bool-checks` (см. пункт 32).
 - Сравнения `do_sample == True`, `top_k != None` вместо `if do_sample`, `is not None`.
 
 ## GPT-2
@@ -118,7 +118,7 @@
 - **8** — `use_cache=True` по умолчанию и нет `no_grad`.
 - **9** — dtype в `FeedForward` (исправлен).
 - **10** — интерфейс `BaseModel`.
-- **12** — мёртвые проверки `hasattr(torch, "bool")` и сравнения `== True` / `!= None`.
+- **12** — сравнения `== True` / `!= None` (мёртвые `hasattr(torch, "bool")` удалены).
 
 ### Отклонения от GPT-2
 
@@ -192,7 +192,7 @@
 - **49** — top-p отбрасывает пограничный токен (**4**, валидация аргументов `generate`, исправлен для всех моделей).
 - **8** — `use_cache=True` по умолчанию и нет `no_grad`. В `eval()` логиты имеют `requires_grad=True`.
 - **10** — интерфейс `BaseModel`.
-- **12** — мёртвые проверки `hasattr(torch, "bool")` (в `generate` LLaMA — тройные тернарники прямо в строках) и сравнения `== True` / `!= None`.
+- **12** — сравнения `== True` / `!= None` (мёртвые `hasattr(torch, "bool")` удалены).
 - **17** — `_tril_mask` в `state_dict`: `MultiHeadAttention` общий.
 - **18** — дублирование `generate`.
 - **19** — `top_k=100` при `vocab_size=50` падает с `RuntimeError: selected index k out of range`.
@@ -256,7 +256,7 @@
 - **49** — top-p отбрасывает пограничный токен (**4**, валидация аргументов `generate`, исправлен для всех моделей).
 - **8** — `use_cache=True` по умолчанию и нет `no_grad`. В `eval()` логиты имеют `requires_grad=True`.
 - **10** — интерфейс `BaseModel`.
-- **12** — мёртвые проверки `hasattr(torch, "bool")` и сравнения `== True` / `!= None`.
+- **12** — сравнения `== True` / `!= None` (мёртвые `hasattr(torch, "bool")` удалены).
 - **18** — дублирование `generate`.
 - **19** — `top_k=100` при `vocab_size=50` падает с `RuntimeError: selected index k out of range`.
 - **22** — `**kwargs` в `generate`: `max_lenght=5` проглатывается без ошибки.
@@ -321,6 +321,7 @@
 - **Где:** `GroupedQueryAttention.__init__` (`mask.bool() if hasattr(torch, "bool") else mask.byte()`), `~self._tril_mask[...]` в `forward`, top-k/top-p в `Mistral.generate`, `assert x.ndim == 4` в `RoPE.forward`.
 - **Что:** на torch ≥ 1.2 `hasattr(torch, "bool")` всегда истинно, и uint8-ветка никогда не выполняется, то есть не тестируется. На torch < 1.2 она, скорее всего, логически верна: там `~` над `ByteTensor` было логическим НЕ (побитовым стало в 1.2, PyTorch PR #22326), а uint8-маски допустимы в `masked_fill` и индексации. На современном torch та же ветка сломалась бы (`~` для uint8 даёт `[254, 255, …]`), но выполниться там не может. Вероятнее ломает старый стенд другое: атрибута `Tensor.ndim` в torch 1.1, по всей видимости, ещё нет (не проверено запуском). Внешний стенд с torch < 1.2 прошла только версия на float-масках с `== 0`.
 - **Исправление:** выбрать одно. Либо перейти на float-маски и `masked_fill(mask == 0, ...)` во всём коде и заменить `x.ndim` на `x.dim()`, либо отказаться от поддержки torch < 1.2 и убрать все `hasattr(torch, "bool")` (см. пункт 12).
+- **Статус:** выбран второй вариант — поддержка torch < 1.2 в коде библиотеки не заявляется (`pyproject.toml` требует `torch>=2.3`), все 36 проверок `hasattr(torch, "bool")` удалены в ветке `refactor/remove-dead-bool-checks`. Выходы `forward`/`generate` всех шести моделей побитово совпадают с прежними. Код для стенда со старым torch переносится отдельно и использует float-маски.
 
 #### 33. Документация и мусор — P3
 
@@ -345,7 +346,7 @@
 - **1** — падение `generate` за `max_position_embeddings`. Воспроизведено с `max_position_embeddings=16`, промптом 10 и `max_new_tokens=10`: с кэшем `RuntimeError: shape '[1, 1, 1, 4]' is invalid for input of size 0` из `RoPE.forward`.
 - **3**, **22** — `attention_mask` и `**kwargs` в `generate` игнорируются (**4**, валидация аргументов, исправлен).
 - **8** — `use_cache=True` по умолчанию и нет `no_grad`. Воспроизведено: в `train()` `forward` возвращает кэш; `Trainer` вызывает `self.model(input_ids)` и собирает K/V всех слоёв на каждом шаге.
-- **10**, **12**, **18**, **19** — интерфейс `BaseModel`, мёртвые `hasattr(torch, "bool")`, дублирование `generate`, пограничные случаи top-k.
+- **10**, **12**, **18**, **19** — интерфейс `BaseModel`, сравнения `== True` / `!= None`, дублирование `generate`, пограничные случаи top-k.
 - **23**, **24** — SwiGLU с `4·d` и bias во всех `Linear`. У Mixtral 8x7B эксперт — `hidden_dim = 14336` при `dim = 4096`, все проекции, включая роутер, без bias.
 - **25** — RoPE-буферы в `state_dict` по копии на слой.
 - **27** — нет маски при кэше и `seq_len > 1`. Воспроизведено на Mixtral: префилл 6 + 8 токенов через кэш расходится с полным forward на 0.27–0.35 по логитам при `window_size=5`.
@@ -441,7 +442,7 @@
 - **3** — игнорируется `attention_mask`. `Gemma.forward` его не принимает, `generate` принимает: `attention_mask` из нулей даёт тот же результат, что и без маски. Параметр `mask` в `GemmaDecoder.forward` и `MultiQueryAttention.forward` тоже не используется.
 - **49** — top-p отбрасывает пограничный токен (**4**, валидация аргументов `generate`, исправлен для всех моделей).
 - **8** — `use_cache=True` по умолчанию и нет `no_grad`. В `eval()` логиты имеют `requires_grad=True`, кэш возвращается по умолчанию.
-- **10**, **12**, **18** — интерфейс `BaseModel`, мёртвые `hasattr(torch, "bool")` и сравнения `== True` / `!= None`, дублирование `generate`.
+- **10**, **12**, **18** — интерфейс `BaseModel`, сравнения `== True` / `!= None`, дублирование `generate`.
 - **19** — `top_k=100` при `vocab_size=50` падает с `RuntimeError: selected index k out of range`.
 - **20** — проверка делимости. Воспроизведено: `embed_dim=34, num_q_heads=4` принимается, Q-проекция на 32 измерения. При нечётном `head_size` — `assert` в `RoPE.__init__` без упоминания `embed_dim` и `num_q_heads`.
 - **22** — `**kwargs` в `generate`: `max_lenght=5` проглатывается без ошибки.
