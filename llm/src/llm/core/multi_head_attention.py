@@ -126,12 +126,18 @@ class MultiHeadAttention(nn.Module):
 
         # Создание causal маски
         mask = torch.tril(torch.ones(max_seq_len, max_seq_len))
-        self.register_buffer(
-            "_tril_mask", mask.bool()
-        )
+        # persistent=False: маска вычисляется из max_seq_len и не нужна в чекпоинте —
+        # иначе она хранилась бы в каждом слое и привязывала бы чекпоинт к max_seq_len
+        self.register_buffer("_tril_mask", mask.bool(), persistent=False)
         
         self._layer = nn.Linear(head_size * num_heads, emb_size)
         self._dropout = nn.Dropout(dropout)
+
+    def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs):
+        # Чекпоинты, сохранённые до persistent=False, содержат маску; она строится
+        # в __init__, поэтому ключ отбрасывается, и такие чекпоинты грузятся и со strict=True
+        state_dict.pop(prefix + "_tril_mask", None)
+        super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
 
     def forward(
         self,

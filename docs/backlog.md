@@ -160,6 +160,7 @@
 - **Что:** буфер `max_seq_len × max_seq_len` persistent: попадает в каждый чекпоинт по одному на слой и привязывает чекпоинт к `max_seq_len`.
 - **Воспроизведено:** ключи `_decoders.{i}._heads._tril_mask` в `state_dict`. При `max_position_embeddings=1024` это 1 МБ на слой.
 - **Исправление:** `register_buffer(..., persistent=False)`. Старые чекпоинты при этом загружаются только с `strict=False` или после удаления ключей.
+- **Статус:** исправлено в ветке `fix/nonpersistent-buffers` (вместе с 25, 31, 47): `register_buffer(..., persistent=False)`. Старые чекпоинты с этими ключами по-прежнему загружаются и со `strict=True`: `_load_from_state_dict` модуля отбрасывает устаревшие ключи. Проверено: чекпоинт, сохранённый прежним кодом, даёт побитово те же логиты (`test_state_dict.py`).
 
 #### 18. `generate` скопирован в шесть моделей — P2
 
@@ -200,7 +201,7 @@
 - **4**, **49** — валидация аргументов `generate` и top-p (исправлены).
 - **8** — `use_cache=True` по умолчанию и нет `no_grad` (исправлен).
 - **10** — интерфейс `BaseModel` (исправлен).
-- **17** — `_tril_mask` в `state_dict`: `MultiHeadAttention` общий.
+- **17** — `_tril_mask` в `state_dict` (исправлен).
 - **18** — дублирование `generate` (исправлен).
 - **19** — пограничные случаи `generate`: `top_k` больше словаря, остановка по `eos_token_id` (исправлен).
 - **20** — проверка делимости. Воспроизведено: `embed_dim=100, num_heads=6` принимается, Q/K/V — 96 измерений. При нечётном `head_size` (`embed_dim=30, num_heads=4`) падает `assert` в `RoPE.__init__` с сообщением «head_size должен быть четным» — без упоминания `embed_dim` и `num_heads`.
@@ -243,6 +244,7 @@
 - **Что:** буферы persistent, и `state_dict` содержит их под `num_layers + 1` ключами: `_position_embeddings.cos_matrix`, `_decoders.{i}._heads._rope.cos_matrix` и т.д. Чекпоинт хранит одни и те же таблицы многократно и привязан к `max_position_embeddings` — увеличить контекст без правки `state_dict` нельзя.
 - **Воспроизведено:** при `num_layers=2` — три ключа `*.cos_matrix` и три `*.sin_matrix`.
 - **Исправление:** `persistent=False` (как в пункте 17). Затрагивает все модели с RoPE: Mistral, Mixtral, Gemma.
+- **Статус:** исправлено в ветке `fix/nonpersistent-buffers`: `cos_matrix` и `sin_matrix` с `persistent=False`, в `state_dict` их больше нет. Чекпоинт моделей с RoPE теперь загружается и в модель с большим `max_position_embeddings`. Старые чекпоинты с этими ключами по-прежнему загружаются и со `strict=True`: `_load_from_state_dict` модуля отбрасывает устаревшие ключи. Проверено: чекпоинт, сохранённый прежним кодом, даёт побитово те же логиты (`test_state_dict.py`).
 
 #### 26. Документация и мусор — P3
 
@@ -268,7 +270,7 @@
 - **19** — пограничные случаи `generate`: `top_k` больше словаря, остановка по `eos_token_id` (исправлен).
 - **22** — `**kwargs` в `generate` (исправлен).
 - **24** — bias во всех `Linear`: у Mistral 7B проекции тоже без bias. Воспроизведено: `_heads._q.bias is not None`, `_linear.bias is not None`.
-- **25** — RoPE-буферы в `state_dict` по копии на слой.
+- **25** — RoPE-буферы в `state_dict` по копии на слой (исправлен).
 
 ### Баги
 
@@ -322,6 +324,7 @@
 - **Что:** то же, что пункт 17, но в `GroupedQueryAttention`, поэтому исправление в `MultiHeadAttention` его не закроет. Маска `max_seq_len × max_seq_len` хранится в каждом слое и привязывает чекпоинт к `max_seq_len` и `window_size`.
 - **Воспроизведено:** ключи `_decoders.{i}._heads._tril_mask` в `state_dict`.
 - **Исправление:** `persistent=False`, либо строить маску на лету по позициям (заодно закрывает пункт 27).
+- **Статус:** исправлено в ветке `fix/nonpersistent-buffers` (как пункт 17).
 
 #### 32. Совместимость с PyTorch < 1.2 сделана наполовину — P3
 
@@ -355,12 +358,13 @@
 - **8** — `use_cache=True` по умолчанию и нет `no_grad` (исправлен).
 - **10**, **18**, **19** — интерфейс `BaseModel`, дублирование `generate`, пограничные случаи top-k (исправлены).
 - **23**, **24** — SwiGLU с `4·d` и bias во всех `Linear`. У Mixtral 8x7B эксперт — `hidden_dim = 14336` при `dim = 4096`, все проекции, включая роутер, без bias.
-- **25** — RoPE-буферы в `state_dict` по копии на слой.
+- **25** — RoPE-буферы в `state_dict` по копии на слой (исправлен).
 - **27** — нет маски при кэше и `seq_len > 1` (исправлен). До исправления префилл 6 + 8 токенов через кэш расходился с полным forward на 0.27–0.35 по логитам при `window_size=5`.
 - **49** — top-p отбрасывает пограничный токен (исправлен).
 - **50**, **51** — `eps` RMSNorm не задаётся из конфига, dropout в attention (в Mixtral 8x7B его нет).
 - **28** — ключ `head_size` игнорируется. В [`mixtral_train.json`](../experiments/llm_only/configs/mixtral_train.json) `"head_size": 64` совпадает с `256 // 4` случайно.
-- **29**, **31**, **32**, **33** — проверки голов, `_tril_mask` в `state_dict`, половинчатая совместимость с torch < 1.2, мусор в `GroupedQueryAttention` (неиспользуемый `mask`).
+- **29**, **33** — проверки голов, мусор в `GroupedQueryAttention` (неиспользуемый `mask`).
+- **31**, **32** — `_tril_mask` в `state_dict`, совместимость с torch < 1.2 (исправлены).
 
 ### Баги
 
@@ -453,7 +457,7 @@
 - **19** — пограничные случаи `generate`: `top_k` больше словаря, остановка по `eos_token_id` (исправлен).
 - **20** — проверка делимости. Воспроизведено: `embed_dim=34, num_q_heads=4` принимается, Q-проекция на 32 измерения. При нечётном `head_size` — `assert` в `RoPE.__init__` без упоминания `embed_dim` и `num_q_heads`.
 - **22** — `**kwargs` в `generate` (исправлен).
-- **25** — RoPE-буферы в `state_dict` по копии на слой. Воспроизведено: при `num_layers=2` три ключа `*.cos_matrix`.
+- **25** — RoPE-буферы в `state_dict` по копии на слой (исправлен).
 - **28** — ключ `head_size` игнорируется. Воспроизведено: `"head_size": 16` при `embed_dim=32, num_q_heads=4` даёт `head_size=8`. См. также [неиспользуемые ключи конфига](gemma.md#неиспользуемые-ключи-конфига).
 - **32** — половинчатая совместимость с torch < 1.2 в top-k/top-p `generate` и в `_tril_mask`. Версия Gemma на float-масках с `== 0` прошла внешний стенд 2026-09-28.
 - **35** — докстринг `Gemma` обещает `save(path)/load(path, device)`, методов нет. Воспроизведено: `hasattr(Gemma, "save")` — `False`.
@@ -517,6 +521,7 @@
 - **Что:** то же, что пункты 17 и 31, но в `MultiQueryAttention`, поэтому их исправление его не закроет.
 - **Воспроизведено:** ключи `_decoders.{i}._heads._tril_mask` в `state_dict`.
 - **Исправление:** `persistent=False`.
+- **Статус:** исправлено в ветке `fix/nonpersistent-buffers` (как пункт 17).
 
 #### 48. Документация и мусор — P3
 

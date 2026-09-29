@@ -134,9 +134,18 @@ class RoPE(nn.Module):
         # Внешнее произведение: m * θ_i для всех позиций и частот
         freq_matrix = positions.unsqueeze(1) * freqs.unsqueeze(0)
 
-        # Предвычисление матриц косинусов и синусов
-        self.register_buffer("cos_matrix", torch.cos(freq_matrix))
-        self.register_buffer("sin_matrix", torch.sin(freq_matrix))
+        # Предвычисление матриц косинусов и синусов. persistent=False: таблицы вычисляются
+        # из head_size и max_seq_len, а один объект RoPE зарегистрирован в модели и в каждом
+        # слое attention — иначе чекпоинт хранил бы их num_layers + 1 раз
+        self.register_buffer("cos_matrix", torch.cos(freq_matrix), persistent=False)
+        self.register_buffer("sin_matrix", torch.sin(freq_matrix), persistent=False)
+
+    def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs):
+        # Чекпоинты, сохранённые до persistent=False, содержат таблицы cos/sin; они
+        # вычисляются в __init__, поэтому ключи отбрасываются (strict=True тоже работает)
+        state_dict.pop(prefix + "cos_matrix", None)
+        state_dict.pop(prefix + "sin_matrix", None)
+        super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
 
     def forward(self, x: torch.Tensor, start_pos: int = 0) -> torch.Tensor:
         """
