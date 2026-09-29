@@ -86,7 +86,7 @@ def test_unsupported_padding_raises(model, tokens, zeros):
 
 def test_mask_with_zeros_and_cache_raises(model, tokens):
     with torch.no_grad():
-        _, cache = model(tokens[:, :4])
+        _, cache = model(tokens[:, :4], use_cache=True)
         # Mask over the new tokens only and over cache + new tokens are both accepted when all ones
         model(tokens[:, 4:], cache=cache, attention_mask=torch.ones(2, REAL_LEN - 4))
         model(tokens[:, 4:], cache=cache, attention_mask=torch.ones(2, REAL_LEN))

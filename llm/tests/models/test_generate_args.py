@@ -1,5 +1,6 @@
 """
-Tests for generate() argument handling (temperature, top_k, top_p) in every model.
+Tests for generate() in every model: argument handling (temperature, top_k, top_p,
+eos_token_id, unknown keys), stopping and the shared implementation in BaseModel.
 """
 
 import pytest
@@ -135,10 +136,9 @@ def test_plain_sampling_differs_from_greedy(model, prompt):
 
 
 def nucleus(probs, top_p):
-    """Множество токенов top-p для строки вероятностей (самый вероятный — всегда)."""
+    """Ядро top-p: минимальный набор самых вероятных токенов с суммой вероятностей ≥ top_p."""
     sorted_probs, sorted_indices = torch.sort(probs, descending=True)
-    keep = torch.cumsum(sorted_probs, dim=-1) <= top_p
-    keep[0] = True
+    keep = torch.cumsum(sorted_probs, dim=-1) - sorted_probs < top_p
     return set(sorted_indices[keep].tolist())
 
 
@@ -166,3 +166,83 @@ def test_default_temperature_is_one(model, prompt):
         explicit = model.generate(prompt, max_new_tokens=6, do_sample=True, temperature=1.0)
 
     assert torch.equal(default, explicit)
+
+
+def test_top_k_larger_than_vocab_is_plain_sampling(model, prompt):
+    """top_k больше словаря означает весь словарь, а не ошибку torch.topk."""
+    with torch.no_grad():
+        torch.manual_seed(5)
+        plain = model.generate(prompt, max_new_tokens=6, do_sample=True)
+        torch.manual_seed(5)
+        clamped = model.generate(
+            prompt, max_new_tokens=6, do_sample=True, top_k=BASE_CONFIG["vocab_size"] + 50
+        )
+
+    assert torch.equal(clamped, plain)
+
+
+def test_unknown_keyword_raises(model, prompt):
+    """Опечатки и аргументы из других API не проглатываются молча."""
+    with pytest.raises(TypeError, match="max_lenght"):
+        model.generate(prompt, max_new_tokens=2, do_sample=False, max_lenght=5)
+
+
+def test_generate_builds_no_autograd_graph(model, prompt):
+    """generate не строит граф autograd, даже если вызывающий не обернул его в no_grad."""
+    logits_require_grad = []
+    hook = model.register_forward_hook(
+        lambda module, inputs, output: logits_require_grad.append(output[0].requires_grad)
+    )
+    model.generate(prompt, max_new_tokens=2, do_sample=False)
+    hook.remove()
+
+    assert logits_require_grad == [False, False]
+    assert torch.is_grad_enabled()
+
+
+def test_forward_returns_cache_only_on_request(model, prompt):
+    logits, cache = model(prompt)
+    assert cache is None
+    _, cache = model(prompt, use_cache=True)
+    assert len(cache) == BASE_CONFIG["num_layers"]
+
+
+def greedy_tokens(model, prompt, steps):
+    with torch.no_grad():
+        return model.generate(prompt, max_new_tokens=steps, do_sample=False)[:, prompt.size(1):]
+
+
+def test_eos_stops_when_all_rows_finish(model, prompt):
+    free = greedy_tokens(model, prompt, 6)
+    # eos — токен, который строка 0 генерирует на третьем шаге
+    eos = free[0, 2].item()
+    with torch.no_grad():
+        out = model.generate(prompt, max_new_tokens=6, do_sample=False, eos_token_id=eos)
+    new = out[:, prompt.size(1):]
+
+    finished_at = []
+    for row in range(2):
+        hits = (free[row] == eos).nonzero()
+        finished_at.append(hits[0].item() if len(hits) else None)
+    # Генерация идёт, пока не закончат все строки
+    expected_len = 6 if None in finished_at else max(finished_at) + 1
+    assert new.size(1) == expected_len
+    for row, end in enumerate(finished_at):
+        stop = expected_len if end is None else end + 1
+        assert torch.equal(new[row, :stop], free[row, :stop])
+        # После eos строка заполняется pad (по умолчанию — самим eos)
+        assert (new[row, stop:] == eos).all()
+
+
+def test_pad_token_fills_finished_rows(model, prompt):
+    free = greedy_tokens(model, prompt, 6)
+    eos = free[0, 0].item()
+    pad = (eos + 1) % BASE_CONFIG["vocab_size"]
+    with torch.no_grad():
+        out = model.generate(
+            prompt, max_new_tokens=6, do_sample=False, eos_token_id=eos, pad_token_id=pad
+        )
+    new = out[:, prompt.size(1):]
+    assert new[0, 0].item() == eos
+    if new.size(1) > 1:
+        assert (new[0, 1:] == pad).all()

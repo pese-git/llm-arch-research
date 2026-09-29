@@ -9,6 +9,7 @@ from llm.core.generation import (
     cache_start_pos,
     check_sequence_length,
     next_generation_input,
+    sample_next_token,
     validate_sampling_args,
 )
 
@@ -73,3 +74,40 @@ def test_next_generation_input():
     # Past max_seq_len: last max_seq_len tokens, cache dropped
     x_input, new_cache = next_generation_input(x, cache, True, 8)
     assert torch.equal(x_input, x[:, -8:]) and new_cache is None
+
+
+def allowed_tokens(logits, **kwargs):
+    """Токены, которые sample_next_token выбирает хотя бы раз за 200 сэмплов."""
+    torch.manual_seed(0)
+    batch = logits.expand(200, -1)
+    return set(sample_next_token(batch, True, **kwargs).flatten().tolist())
+
+
+PROBS = torch.tensor([[0.5, 0.3, 0.15, 0.05]])
+
+
+@pytest.mark.parametrize(
+    "top_p, expected",
+    [(0.4, {0}), (0.5, {0}), (0.7, {0, 1}), (0.8, {0, 1}), (0.81, {0, 1, 2}), (1.0, {0, 1, 2, 3})],
+)
+def test_top_p_keeps_token_crossing_threshold(top_p, expected):
+    """В ядро входит и токен, на котором сумма вероятностей переходит порог."""
+    assert allowed_tokens(PROBS.log(), top_p=top_p) == expected
+
+
+@pytest.mark.parametrize("top_k, expected", [(1, {0}), (2, {0, 1}), (10, {0, 1, 2, 3})])
+def test_top_k(top_k, expected):
+    assert allowed_tokens(PROBS.log(), top_k=top_k) == expected
+
+
+def test_greedy_is_argmax():
+    logits = torch.tensor([[0.1, 2.0, -1.0], [3.0, 0.0, 0.5]])
+    assert sample_next_token(logits, False).tolist() == [[1], [0]]
+
+
+def test_sample_next_token_does_not_modify_logits():
+    logits = torch.randn(2, 10)
+    original = logits.clone()
+    sample_next_token(logits, True, temperature=0.5, top_p=0.5)
+    sample_next_token(logits, True, top_k=3)
+    assert torch.equal(logits, original)

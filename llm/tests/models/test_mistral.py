@@ -23,7 +23,7 @@ def model(config):
 
 def test_forward_basic(model):
     x = torch.randint(0, 100, (2, 8))
-    logits, cache = model(x)
+    logits, cache = model(x, use_cache=True)
     assert logits.shape == (2, 8, 100)
     assert isinstance(cache, list)
     assert len(cache) == model._decoders.__len__()

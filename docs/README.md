@@ -60,7 +60,6 @@ input_ids            attention_mask
 Общие для всех архитектур:
 
 - **`attention_mask`: поддерживается только правый паддинг** в `forward`; левый паддинг и генерация батчем промптов разной длины не поддерживаются (`NotImplementedError`), см. [Маски](#attention_mask-и-паддинг).
-- **Интерфейс `BaseModel` расходится с моделями.** Базовый класс объявляет `forward(input_ids, attention_mask) -> Tensor` и `generate(input_ids, max_length)`, а модели реализуют `forward(x, use_cache, cache) -> (logits, cache)` и общую сигнатуру `generate`, описанную в [gpt.md](gpt.md#генерация).
 - **Ключ `head_size` в конфигах не читается** ни одной моделью: размер головы всегда `embed_dim // <число голов>`.
 
 Специфичные для архитектуры:

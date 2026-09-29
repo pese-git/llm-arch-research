@@ -1,15 +1,12 @@
 import torch
 from torch import nn
 from torch import Tensor
-import torch.nn.functional as F
 from math import sqrt
 from llm.core.base_model import BaseModel
 from llm.core.generation import (
     cache_start_pos,
     check_attention_mask,
     check_sequence_length,
-    next_generation_input,
-    validate_sampling_args,
 )
 from llm.core.token_embeddings import TokenEmbeddings
 from llm.core.rope import RoPE
@@ -55,7 +52,7 @@ class Mixtral(BaseModel):
 
     Основные методы:
     ----------------
-    - forward(x, use_cache=True, cache=None) — прямой проход, поддерживает batched вход, caching.
+    - forward(x, use_cache=False, cache=None) — прямой проход, поддерживает batched вход, caching.
     - generate(...) — авторегрессивная генерация с разными стратегиями sampling и ускорением через cache.
     - save(path)/load(path, device) — сохранение и восстановление обученной модели.
 
@@ -164,7 +161,7 @@ class Mixtral(BaseModel):
     def forward(
         self,
         x: torch.Tensor,
-        use_cache: bool = True,
+        use_cache: bool = False,
         cache: list = None,
         attention_mask: torch.Tensor = None,
     ) -> tuple:
@@ -178,7 +175,7 @@ class Mixtral(BaseModel):
         ----------
         x : torch.Tensor
             Двумерный входной тензор shape [batch_size, seq_len], где каждое значение — ID токена.
-        use_cache : bool, по умолчанию True
+        use_cache : bool, по умолчанию False
             Если True — в режиме генерации модель возвращает обновлённый список кэшей attention для ускорения последовательного инференса.
             Если False — attention cache не используется.
         cache : list, optional
@@ -239,143 +236,3 @@ class Mixtral(BaseModel):
             return (logits, new_cache)
         else:
             return (logits, None)
-
-    def generate(
-        self,
-        x: torch.Tensor,
-        max_new_tokens: int,
-        do_sample: bool,
-        temperature: float = 1.0,
-        top_k: int = None,
-        top_p: float = None,
-        use_cache: bool = True,
-        attention_mask: torch.Tensor = None,
-        **kwargs
-    ) -> torch.Tensor:
-        """
-        Авторегрессивная генерация токенов с поддержкой greedy, temperature, top-k/top-p sampling
-        и ускорением через attention-кэш (KV-cache, важно для inference на длинных текстах).
-
-        Аргументы:
-            x (torch.Tensor): Входной тензор с токенами shape [batch_size, seq_len].
-            max_new_tokens (int): Максимальное количество новых токенов для генерации.
-            do_sample (bool): Если True — вероятность/случайность (random sampling); если False — жадная генерация (argmax).
-            temperature (float): Температура (>0, по умолчанию 1.0); >1.0 — более случайные выборы, <1.0 — более строгие.
-            top_k (int, optional): top-k sampling; при сэмплировании выбираются только top_k наиболее вероятных токенов.
-            top_p (float, optional): nucleus (top-p) sampling; выбираются токены с накопленной вероятностью ≤ top_p.
-            use_cache (bool, по умолчанию True): Использовать ускорение через KV attention cache для autoregressive режима.
-            attention_mask (torch.Tensor, опц.): маска промпта [batch, seq_len]. Допускается только
-                маска из единиц: генерация после паддинга не поддерживается (NotImplementedError).
-
-        Возвращает:
-            torch.Tensor: Последовательность индексов токенов shape [batch_size, seq_len + max_new_tokens].
-
-        Исключения:
-            ValueError: Если x длиннее max_seq_len модели.
-            ValueError: Если do_sample=True и temperature ≤ 0.
-            ValueError: Если do_sample=True и одновременно заданы top_k и top_p.
-            ValueError: Если do_sample=True и top_k ≤ 0.
-            ValueError: Если do_sample=True и top_p не в диапазоне (0, 1].
-
-        Примеры:
-            >>> # Жадная генерация
-            >>> out = model.generate(input_ids, max_new_tokens=16, do_sample=False)
-            >>> # Сэмплирование с температурой
-            >>> out = model.generate(input_ids, max_new_tokens=16, do_sample=True, temperature=0.8)
-            >>> # Top-k sampling
-            >>> out = model.generate(input_ids, max_new_tokens=16, do_sample=True, top_k=50)
-            >>> # Top-p (nucleus) sampling
-            >>> out = model.generate(input_ids, max_new_tokens=16, do_sample=True, top_p=0.92)
-            >>> # Температура + top-k
-            >>> out = model.generate(input_ids, max_new_tokens=16, do_sample=True, temperature=1.0, top_k=100)
-
-        Примечания:
-            - Одновременно использовать top_k и top_p нельзя.
-            - Параметры temperature, top_k, top_p работают только при do_sample=True.
-            - Для полного воспроизведения результата зафиксируйте seed через torch.manual_seed.
-            - Метод всегда возвращает только индексы токенов; для получения логитов используйте forward.
-
-        Ссылки:
-            - Holtzman et al., "The Curious Case of Neural Text Degeneration" (nucleus/top-p sampling): https://arxiv.org/abs/1904.09751
-            - Mistral: https://arxiv.org/abs/2310.06825
-        """
-        validate_sampling_args(do_sample, temperature, top_k, top_p)
-        check_attention_mask(attention_mask, x, generating=True)
-
-        cache = None
-
-        for _ in range(max_new_tokens):
-            # С кэшем подаём только последний токен; за пределами max_seq_len берём
-            # последние max_seq_len токенов и пересчитываем без кэша.
-            x_input, cache = next_generation_input(x, cache, use_cache, self._max_seq_len)
-            
-            # Прямой проход с кэшем
-            logits, new_cache = self.forward(x_input, use_cache=use_cache, cache=cache)
-            
-            # Обновляем кэш для следующей итерации
-            if use_cache:
-                cache = new_cache
-
-            last_logits = logits[:, -1, :]  # [batch_size, vocab_size]
-
-            # Масштабируем логиты температурой
-            if temperature > 0:
-                logits_scaled = last_logits / temperature
-            else:
-                logits_scaled = last_logits
-
-            if do_sample == True and top_k != None:
-                _, topk_indices = torch.topk(logits_scaled, top_k, dim=-1)
-
-                # # Заменим все НЕ top-k логиты на -inf
-                masked_logits = logits_scaled.clone()
-                vocab_size = logits_scaled.size(-1)
-
-                # создаём маску: 1, если токен НЕ в topk_indices
-                mask = torch.ones_like(logits_scaled, dtype=torch.bool)
-                mask.scatter_(1, topk_indices, False)  # 0 там, где top-k индексы
-                masked_logits[mask.bool()] = float('-inf')
-
-                logits_scaled = masked_logits
-
-            if do_sample == True and top_p != None:
-                # 1. Применим softmax, чтобы получить вероятности:
-                probs = F.softmax(logits_scaled, dim=-1)  # [B, vocab_size]
-                # 2. Отсортируем токены по убыванию вероятностей:
-                sorted_probs, sorted_indices = torch.sort(probs, descending=True, dim=-1)
-                # 3. Посчитаем кумулятивную сумму вероятностей:
-                cum_probs = torch.cumsum(sorted_probs, dim=-1)  # [B, vocab_size]
-                # 4. Определим маску: оставить токены, пока сумма < top_p
-                sorted_mask = cum_probs <= top_p  # [B, vocab_size]
-                # Гарантируем, что хотя бы первый токен останется
-                sorted_mask[:, 0] = True
-                # 5. Преобразуем маску обратно в оригинальный порядок:
-                # Создаём полную маску из 0
-                mask = torch.zeros_like(probs, dtype=torch.bool)
-                # Устанавливаем 1 в местах нужных токенов
-                mask.scatter_(dim=1, index=sorted_indices, src=sorted_mask)
-                # 6. Зануляем логиты токенов вне топ-p:
-                logits_scaled[~mask] = float('-inf')
-
-            # 4. Применяем Softmax
-            probs = F.softmax(logits_scaled, dim=-1)  # [batch_size, vocab_size]
-
-
-            if do_sample == True:
-                # 5. Если do_sample равен True, то отбираем токен случайно с помощью torch.multinomial
-                next_token = torch.multinomial(probs, num_samples=1)  # [batch_size, 1]
-            else:
-                # 5. Если do_sample равен False, то выбираем токен с максимальной вероятностью
-                next_token = torch.argmax(probs, dim=-1, keepdim=True)  # [batch_size, 1]
-            
-            # 6. Добавляем его к последовательности
-            x = torch.cat([x, next_token], dim=1)  # [batch_size, seq_len+1]
-        return x
-
-    @property
-    def max_seq_len(self) -> int:
-        return self._max_seq_len
-
-
-
-

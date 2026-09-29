@@ -244,7 +244,6 @@ flowchart TB
 
 - **`attention_mask`: только правый паддинг.** Левый паддинг и генерация батчем промптов разной длины не поддерживаются — модели бросают `NotImplementedError` (см. [docs/README.md](docs/README.md#маски)).
 - **MoE обучается без load-balancing loss** — роутер может выродиться в несколько экспертов.
-- **Интерфейс `BaseModel`** (`forward(input_ids, attention_mask) -> Tensor`) не совпадает с фактическим интерфейсом моделей (`forward(x, use_cache, cache) -> (logits, cache)`).
 - **hf-proxy поддерживает только `GPT`.**
 - Модуль `llm.evaluation` пока пустой.
 

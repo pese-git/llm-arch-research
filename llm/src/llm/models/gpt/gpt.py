@@ -23,15 +23,12 @@
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from typing import Optional, Dict
 from llm.core.base_model import BaseModel
 from llm.core.generation import (
     cache_start_pos,
     check_attention_mask,
     check_sequence_length,
-    next_generation_input,
-    validate_sampling_args,
 )
 from llm.core.gpt_decoder import GptDecoder
 from llm.core.token_embeddings import TokenEmbeddings
@@ -139,13 +136,8 @@ class GPT(BaseModel):
         )
         self._linear = nn.Linear(config["embed_dim"], config["vocab_size"])
 
-    @property
-    def max_seq_len(self):
-        """Возвращает максимальную длину последовательности."""
-        return self._max_seq_len
-
     def forward(
-        self, x: torch.Tensor, attention_mask=None, use_cache: bool = True, cache: list = None
+        self, x: torch.Tensor, attention_mask=None, use_cache: bool = False, cache: list = None
     ) -> tuple:
         """
         Прямой проход для получения логитов по последовательности токенов.
@@ -207,157 +199,3 @@ class GPT(BaseModel):
             return (logits, new_cache)
         else:
             return (logits, None)
-
-    def generate(
-        self,
-        x: torch.Tensor,
-        max_new_tokens: int,
-        do_sample: bool,
-        temperature: float = 1.0,
-        top_k: int = None,
-        top_p: float = None,
-        use_cache: bool = True,
-        attention_mask: torch.Tensor = None,
-        **kwargs
-    ) -> torch.Tensor:
-        """
-        Авторегрессивная генерация текста с поддержкой жадного поиска (greedy), вероятностного сэмплирования с температурой,
-        top-k и nucleus (top-p) sampling.
-    
-        Аргументы:
-            x (torch.Tensor): Входной тензор с индексами токенов, форма [batch_size, seq_len].
-            max_new_tokens (int): Максимальное количество новых токенов для генерации.
-            do_sample (bool): Если True — вероятностное сэмплирование; если False — жадная генерация (argmax).
-            temperature (float): Температура для управления случайностью (>0, влияет только если do_sample=True).
-                                 >1.0 — более случайно, <1.0 — более детерминированно.
-            top_k (int, опц.): При do_sample=True ограничивает выбор top_k самых вероятных токенов (top-k sampling).
-            top_p (float, опц.): При do_sample=True включает top-p (nucleus) sampling: кумулятивная вероятность ≤ top_p.
-                                 Должно быть в (0, 1].
-            attention_mask (torch.Tensor, опц.): маска промпта [batch, seq_len]. Допускается только
-                маска из единиц: генерация после паддинга не поддерживается (NotImplementedError).
-            **kwargs: Игнорируются.
-    
-        Возвращает:
-            torch.Tensor: Последовательность токенов [batch_size, seq_len + max_new_tokens].
-    
-        Исключения:
-            ValueError: Если x длиннее max_seq_len модели.
-            ValueError: Если do_sample=True и temperature ≤ 0.
-            ValueError: Если do_sample=True и одновременно заданы top_k и top_p.
-            ValueError: Если do_sample=True и top_k ≤ 0.
-            ValueError: Если do_sample=True и top_p вне диапазона (0, 1].
-    
-        Примеры:
-            >>> # Жадная (детерминированная) генерация
-            >>> output = model.generate(input_ids, max_new_tokens=12, do_sample=False)
-            >>> # Вероятностная генерация с температурой
-            >>> output = model.generate(input_ids, max_new_tokens=12, do_sample=True, temperature=0.8)
-            >>> # Top-k сэмплирование
-            >>> output = model.generate(input_ids, max_new_tokens=12, do_sample=True, top_k=50)
-            >>> # Top-p (nucleus) sampling
-            >>> output = model.generate(input_ids, max_new_tokens=12, do_sample=True, top_p=0.92)
-            >>> # Комбинация температуры и top-k
-            >>> output = model.generate(input_ids, max_new_tokens=12, do_sample=True, temperature=1.0, top_k=100)
-    
-        Примечания:
-            - Для детерминированных выборок зафиксируйте random seed через torch.manual_seed.
-            - Параметры temperature, top_k, top_p применимы только если do_sample=True.
-            - Одновременное использование top_k и top_p не допускается.
-            - Модель всегда возвращает тензор индексов токенов; для получения логитов используйте прямой вызов forward.
-    
-        Ссылки:
-            - Holtzman et al., "The Curious Case of Neural Text Degeneration" (nucleus sampling): https://arxiv.org/abs/1904.09751
-            - Оригинальный GPT-2: https://cdn.openai.com/better-language-models/language-models.pdf
-        """
-        validate_sampling_args(do_sample, temperature, top_k, top_p)
-        check_attention_mask(attention_mask, x, generating=True)
-
-        cache = None
-        
-        for _ in range(max_new_tokens):
-            # С кэшем подаём только последний токен; за пределами max_seq_len берём
-            # последние max_seq_len токенов и пересчитываем без кэша.
-            x_input, cache = next_generation_input(x, cache, use_cache, self._max_seq_len)
-
-            # 2. Передаем последовательность в метод forward класса GPT и полуаем логиты.
-            # Прямой проход с кэшем
-            logits, new_cache = self.forward(x_input, use_cache=use_cache, cache=cache)
-
-            # Обновляем кэш для следующей итерации
-            if use_cache:
-                cache = new_cache
-
-            # 3. Берем логиты для последнего токена
-            last_logits = logits[:, -1, :]  # [batch_size, vocab_size]
-
-            # Масштабируем логиты температурой
-            if temperature > 0:
-                logits_scaled = last_logits / temperature
-            else:
-                logits_scaled = last_logits
-
-            if do_sample == True and top_k != None:
-                _, topk_indices = torch.topk(logits_scaled, top_k, dim=-1)
-
-                # # Заменим все НЕ top-k логиты на -inf
-                masked_logits = logits_scaled.clone()
-                vocab_size = logits_scaled.size(-1)
-
-                # создаём маску: True, если токен НЕ в topk_indices
-                mask = torch.ones_like(
-                    logits_scaled,
-                    dtype=torch.bool,
-                )
-                mask.scatter_(
-                    1, topk_indices, False
-                )  # False там, где top-k индексы
-                masked_logits[mask] = float("-inf")
-
-                logits_scaled = masked_logits
-
-            if do_sample == True and top_p != None:
-                # 1. Применим softmax, чтобы получить вероятности:
-                probs = F.softmax(logits_scaled, dim=-1)  # [B, vocab_size]
-                # 2. Отсортируем токены по убыванию вероятностей:
-                sorted_probs, sorted_indices = torch.sort(
-                    probs, descending=True, dim=-1
-                )
-                # 3. Посчитаем кумулятивную сумму вероятностей:
-                cum_probs = torch.cumsum(sorted_probs, dim=-1)  # [B, vocab_size]
-                # 4. Определим маску: оставить токены, пока сумма < top_p
-                sorted_mask = cum_probs <= top_p  # [B, vocab_size]
-                # Гарантируем, что хотя бы первый токен останется
-                sorted_mask[:, 0] = True
-                # 5. Преобразуем маску обратно в оригинальный порядок:
-                # Создаём полную маску из False
-                mask = torch.zeros_like(
-                    probs, dtype=torch.bool
-                )
-                # Устанавливаем True в местах нужных токенов
-                mask.scatter_(dim=1, index=sorted_indices, src=sorted_mask)
-                # 6. Зануляем логиты токенов вне топ-p:
-                logits_scaled[~mask] = float("-inf")
-
-            # 4. Применяем Softmax
-            probs = F.softmax(logits_scaled, dim=-1)  # [batch_size, vocab_size]
-
-            if do_sample == True:
-                # 5. Если do_sample равен True, то отбираем токен случайно с помощью torch.multinomial
-                next_token = torch.multinomial(probs, num_samples=1)  # [batch_size, 1]
-            else:
-                # 5. Если do_sample равен False, то выбираем токен с максимальной вероятностью
-                next_token = torch.argmax(
-                    probs, dim=-1, keepdim=True
-                )  # [batch_size, 1]
-
-            # 6. Добавляем его к последовательности
-            x = torch.cat([x, next_token], dim=1)  # [batch_size, seq_len+1]
-        return x
-
-
-#    def generate(self, input_ids, max_length=50):
-#        for _ in range(max_length):
-#            logits = self.forward(input_ids)
-#            next_token = torch.argmax(logits[:, -1, :], dim=-1, keepdim=True)
-#            input_ids = torch.cat([input_ids, next_token], dim=1)
-#        return input_ids
