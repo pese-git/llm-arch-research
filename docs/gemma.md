@@ -89,7 +89,7 @@ result    = ffn_out + out
 | Скрытый слой GeGLU | 8·d на каждую из `gate`/`up` (16384 при d = 2048) | 4·d (44) |
 | Attention | 2B — MQA, 7B — MHA с 16 головами и `head_dim = 256` ≠ d / heads | всегда MQA; `head_size` задаётся в конфиге, но число K/V-голов — всегда одна (45) |
 | RMSNorm | вес с нуля, множитель `(1 + w)`, вычисление во float32 | вес с единиц, множитель `w`, dtype входа (46) |
-| Dropout | нет | после эмбеддингов, в attention и в GeGLU (55) |
+| Dropout | нет | после эмбеддингов, в attention и в GeGLU (55); `dropout: 0` убирает его полностью |
 
 Активация GeGLU — tanh-аппроксимация GELU — совпадает с оригиналом (`gelu_pytorch_tanh` в HF).
 
@@ -106,7 +106,7 @@ result    = ffn_out + out
 | `max_position_embeddings` | 512 | ✅ |
 | `rms_norm_eps` | (нет в примере) | ✅ необязательный `eps` всех RMSNorm, по умолчанию `1e-6` — как в Gemma |
 | `rope_theta` | (нет в примере) | ✅ необязательная база частот RoPE, по умолчанию `10000` — как в Gemma; см. [llama.md](llama.md#скорости-вращения-и-база-rope_theta) |
-| `dropout` | 0.1 | ✅ |
+| `dropout` | 0.1 | ✅ после эмбеддингов, в attention и GeGLU; в Gemma dropout нет — для соответствия оригиналу `0` |
 | `head_size` | 64 | ✅ необязательный; по умолчанию `embed_dim // num_q_heads` |
 
 Числа K/V-голов в конфиге нет: `MultiQueryAttention` всегда использует одну K/V-голову. Ключи Mixtral (`num_kv_heads`, `num_experts`, `top_k_experts`, `window_size`), которые раньше были в этом конфиге и моделью не читались, удалены.
