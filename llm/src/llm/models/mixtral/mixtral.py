@@ -141,7 +141,9 @@ class Mixtral(BaseModel):
         )
         self._position_embeddings = RoPE(
             head_size=head_size,
-            max_seq_len=config["max_position_embeddings"]
+            max_seq_len=config["max_position_embeddings"],
+            # база частот RoPE: 10 000 по умолчанию; у Mixtral 8x7B — 1e6 (задаётся в конфиге)
+            base=config.get("rope_theta", 10_000),
         )
         self._dropout = nn.Dropout(config["dropout"])
         self._decoders = nn.ModuleList([MixtralDecoder(

@@ -1,6 +1,6 @@
 """
 Tests for config validation in every model: head_size from the config, divisibility of
-embed_dim by the number of heads, GQA head groups, MoE top-k and rms_norm_eps.
+embed_dim by the number of heads, GQA head groups, MoE top-k, rms_norm_eps and rope_theta.
 
 A wrong config must fail in the constructor with a clear ValueError instead of silently
 shrinking the attention space or crashing in the first forward.
@@ -12,6 +12,7 @@ import torch
 from llm.core.config_checks import resolve_head_size
 from llm.core.moe import MoE
 from llm.core.rms_norm import RMSNorm
+from llm.core.rope import RoPE
 from llm.models.gemma import Gemma
 from llm.models.gpt import GPT, GPT2
 from llm.models.llama import Llama
@@ -172,3 +173,45 @@ def test_rms_norm_eps_changes_output_not_weights(name):
 def test_rms_norm_eps_must_be_positive(eps):
     with pytest.raises(ValueError, match="eps"):
         build("llama", rms_norm_eps=eps)
+
+
+ROPE_MODELS = RMS_NORM_MODELS  # те же четыре модели: LLaMA, Mistral, Mixtral, Gemma
+
+
+def rope_modules(model):
+    return [module for module in model.modules() if isinstance(module, RoPE)]
+
+
+def expected_cos(base, head_size=8):
+    freqs = 1.0 / (base ** (2 * torch.arange(head_size // 2).float() / head_size))
+    positions = torch.arange(BASE_CONFIG["max_position_embeddings"]).float()
+    return torch.cos(positions.unsqueeze(1) * freqs.unsqueeze(0))
+
+
+@pytest.mark.parametrize("name", ROPE_MODELS)
+@pytest.mark.parametrize("theta", [None, 1e6])
+def test_rope_theta_reaches_every_attention_layer(name, theta):
+    """rope_theta задаёт базу частот единственного объекта RoPE, общего для всех слоёв."""
+    model = build(name) if theta is None else build(name, rope_theta=theta)
+    ropes = rope_modules(model)
+    assert len({id(r) for r in ropes}) == 1
+    assert torch.allclose(ropes[0].cos_matrix, expected_cos(10_000 if theta is None else theta))
+
+
+@pytest.mark.parametrize("name", ROPE_MODELS)
+def test_rope_theta_changes_output_not_weights(name):
+    torch.manual_seed(0)
+    default = build(name)
+    torch.manual_seed(0)
+    long_context = build(name, rope_theta=1e6)
+    assert default.state_dict().keys() == long_context.state_dict().keys()
+
+    tokens = torch.randint(0, BASE_CONFIG["vocab_size"], (2, 8))
+    with torch.no_grad():
+        assert not torch.allclose(default(tokens)[0], long_context(tokens)[0])
+
+
+@pytest.mark.parametrize("theta", [1, 0.5, 0, -10])
+def test_rope_theta_must_exceed_one(theta):
+    with pytest.raises(ValueError, match="base"):
+        build("mistral", rope_theta=theta)

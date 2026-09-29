@@ -86,6 +86,8 @@ class Llama(BaseModel):
         self._position_embeddings = RoPE(
             head_size=head_size,
             max_seq_len=config["max_position_embeddings"],
+            # база частот RoPE: 10 000 по умолчанию — как в LLaMA
+            base=config.get("rope_theta", 10_000),
         )
 
         self._dropout = nn.Dropout(config["dropout"])
