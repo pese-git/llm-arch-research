@@ -51,6 +51,7 @@ class GptDecoder(nn.Module):
         head_size: int,
         max_seq_len: int,
         dropout: float = 0.1,
+        attention_dropout: float = 0.0,
         activation: str = "gelu_tanh",
     ):
         """
@@ -68,6 +69,8 @@ class GptDecoder(nn.Module):
             Максимальная длина последовательности (важно для mask)
         dropout: float, default=0.1
             Dropout после внимания и FFN
+        attention_dropout: float, default=0.0
+            Dropout на весах внимания после softmax (в GPT-1 — 0.1)
         activation: str, default="gelu_tanh"
             Активация в FeedForward ("gelu_tanh", "gelu", "relu").
             "gelu_tanh" — tanh-аппроксимация GELU, как в оригинальном коде GPT-1;
@@ -87,6 +90,7 @@ class GptDecoder(nn.Module):
             head_size=head_size,
             max_seq_len=max_seq_len,
             dropout=dropout,
+            attention_dropout=attention_dropout,
         )
         # По умолчанию GELU (tanh-аппроксимация), а не ReLU (дефолт FeedForward), т.к. GPT-1 использует GELU:
         # "For the activation function, we used the Gaussian Error Linear Unit (GELU)"

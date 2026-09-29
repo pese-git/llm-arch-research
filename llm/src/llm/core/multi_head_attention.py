@@ -74,6 +74,7 @@ class MultiHeadAttention(nn.Module):
         max_seq_len: int,
         rope: RoPE = None,
         dropout: float = 0.1,
+        attention_dropout: float = 0.0,
     ):
         """
         Конструктор многоголового внимания (MultiHeadAttention).
@@ -100,7 +101,10 @@ class MultiHeadAttention(nn.Module):
             Объект Rotary Positional Encoding (если хотите привнести продвинутое позиционное кодирование в attention).
             Не обязателен, но нужен для современных LLM (Llama, Mistral и пр.).
         dropout : float, по умолчанию 0.1
-            Величина dropout (регуляризации) — помогает борьбе с переобучением. Чем больше, тем сильнее регуляризация.
+            Dropout на выходе после проекции W_O (resid_pdrop в GPT-1/GPT-2).
+        attention_dropout : float, по умолчанию 0.0
+            Dropout на весах внимания после softmax (attn_pdrop в GPT-1/GPT-2, в статьях 0.1):
+            случайно выключает связи «токен → токен». 0.0 — без dropout на весах.
 
         Внутри конструктора происходит:
         -------------------------------
@@ -131,6 +135,8 @@ class MultiHeadAttention(nn.Module):
         
         self._layer = nn.Linear(head_size * num_heads, emb_size)
         self._dropout = nn.Dropout(dropout)
+        # Dropout весов внимания; при p=0 ничего не делает и не расходует генератор случайных чисел
+        self._attn_dropout = nn.Dropout(attention_dropout)
 
     def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs):
         # Чекпоинты, сохранённые до persistent=False, содержат маску; она строится
@@ -235,7 +241,7 @@ class MultiHeadAttention(nn.Module):
         scores = scores.masked_fill(~causal_mask, float("-inf"))
 
         # Применить к матрице внимания (построчно) функцию Softmax.
-        weights = F.softmax(scores, dim=-1)
+        weights = self._attn_dropout(F.softmax(scores, dim=-1))
 
         # Перемножим матрицу внимания и матрицу значения.
         x_out = weights @ v  # [B, T, hs]

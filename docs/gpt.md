@@ -171,7 +171,8 @@ result         = Norm2(ffn_out + out)
 | `head_size` | (нет в примере) | необязательный размер головы; по умолчанию `embed_dim // num_heads` (тогда `embed_dim` обязан делиться на `num_heads`). Если задан, `num_heads · head_size` может не совпадать с `embed_dim` |
 | `num_layers` | 4 | число блоков `GptDecoder` в стеке |
 | `max_position_embeddings` | 128 | максимальная длина последовательности (размер буфера позиционных эмбеддингов и causal-маски) |
-| `dropout` | 0.1 | dropout в attention и FFN |
+| `dropout` | 0.1 | dropout на эмбеддингах и на выходах attention и FFN перед residual (`embd_pdrop` и `resid_pdrop` в оригинале) |
+| `attention_dropout` | (нет в примере) | необязательный dropout на весах внимания после softmax (`attn_pdrop`), по умолчанию `0.0`; в статье — `0.1` |
 | `activation` | (нет в примере) | необязательный: активация FFN — `"gelu_tanh"` (по умолчанию, tanh-аппроксимация GELU, как в оригинальном коде OpenAI), `"gelu"` (точный GELU через erf) или `"relu"` |
 | `initializer_range` | (нет в примере) | необязательное стандартное отклонение начальных весов, по умолчанию `0.02` (см. ниже) |
 

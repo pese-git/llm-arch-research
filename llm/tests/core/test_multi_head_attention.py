@@ -172,3 +172,41 @@ class TestMultiHeadAttention:
 
         # With identical inputs and same parameters, outputs should be identical
         assert torch.allclose(output1, output2, rtol=1e-5)
+
+
+def test_attention_dropout_drops_attention_weights():
+    """attention_dropout прорежает веса внимания после softmax (attn_pdrop в GPT-1/GPT-2)."""
+    torch.manual_seed(0)
+    attention = MultiHeadAttention(
+        4, 32, 8, max_seq_len=64, dropout=0.0, attention_dropout=0.5
+    ).train()
+    weights = {}
+    attention._attn_dropout.register_forward_hook(
+        lambda module, inputs, output: weights.update(before=inputs[0], after=output)
+    )
+    attention(torch.randn(8, 32, 32))
+
+    allowed = weights["before"] > 0  # нули выше диагонали — causal-маска, а не dropout
+    dropped = (weights["after"][allowed] == 0).float().mean().item()
+    assert abs(dropped - 0.5) < 0.03
+    # оставшиеся веса масштабируются на 1 / (1 − p), как в nn.Dropout
+    kept = weights["after"][allowed] != 0
+    assert torch.allclose(weights["after"][allowed][kept], 2 * weights["before"][allowed][kept])
+
+
+def test_attention_dropout_only_in_training():
+    torch.manual_seed(0)
+    with_dropout = MultiHeadAttention(4, 32, 8, max_seq_len=64, dropout=0.0, attention_dropout=0.5)
+    torch.manual_seed(0)
+    without = MultiHeadAttention(4, 32, 8, max_seq_len=64, dropout=0.0)
+    x = torch.randn(2, 10, 32)
+
+    with torch.no_grad():
+        assert torch.equal(with_dropout.eval()(x)[0], without.eval()(x)[0])
+        with_dropout.train()
+        assert not torch.equal(with_dropout(x)[0], without(x)[0])
+
+
+def test_attention_dropout_defaults_to_zero():
+    attention = MultiHeadAttention(4, 32, 8, max_seq_len=64)
+    assert attention._attn_dropout.p == 0.0
