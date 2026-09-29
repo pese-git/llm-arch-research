@@ -379,7 +379,8 @@ class HFTokenizerAdapter:
 
         Args:
             pretrained_model_name_or_path: Путь к сохраненному токенизатору
-            **kwargs: Дополнительные параметры
+            **kwargs: Параметры HuggingFace (cache_dir, revision и т.п.);
+                принимаются для совместимости и игнорируются
 
         Returns:
             HFTokenizerAdapter: Загруженный адаптер
@@ -443,7 +444,7 @@ class HFTokenizerAdapter:
                         if token not in special_tokens
                     ]
 
-                return cls(llm_tokenizer, **kwargs)
+                return cls(llm_tokenizer)
             else:
                 raise ValueError(
                     f"Неподдерживаемый тип токенизатора: {llm_tokenizer_type}"
@@ -453,7 +454,7 @@ class HFTokenizerAdapter:
             # Пытаемся загрузить как файл llm токенизатора
             try:
                 llm_tokenizer = BPETokenizer.load(pretrained_model_name_or_path)
-                return cls(llm_tokenizer, **kwargs)
+                return cls(llm_tokenizer)
             except:
                 raise ValueError(
                     f"Не удалось загрузить токенизатор из {pretrained_model_name_or_path}"
