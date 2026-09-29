@@ -106,8 +106,13 @@ class MoE(nn.Module):
             их ответы агрегируются взвешенной суммой (softmax по роутерным логитам).
         """
         super().__init__()
-        if top_k_experts > num_experts:
-            raise ValueError(f"top_k_experts ({top_k_experts}) должен быть меньше или равен num_experts ({num_experts})!")
+        if num_experts < 1:
+            raise ValueError(f"num_experts должно быть ≥ 1, получено {num_experts}")
+        if not 1 <= top_k_experts <= num_experts:
+            # При top_k_experts=0 не выбирается ни один эксперт, и MoE молча возвращает нули
+            raise ValueError(
+                f"top_k_experts ({top_k_experts}) должен быть от 1 до num_experts ({num_experts})"
+            )
         self._num_experts = num_experts
         self._top_k_experts = top_k_experts
 

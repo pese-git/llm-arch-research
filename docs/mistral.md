@@ -107,14 +107,14 @@ result    = ffn_out + out
 | `vocab_size` | (из токенизатора) | размер словаря |
 | `embed_dim` | 256 | размерность эмбеддингов |
 | `num_q_heads` | 4 | число Query-голов |
-| `num_kv_heads` | 2 | число Key/Value-голов (≤ `num_q_heads`, обычно кратно) |
-| `head_size` | 64 | ❌ не читается: размер головы всегда `embed_dim // num_q_heads` |
+| `num_kv_heads` | 2 | число Key/Value-голов; `num_q_heads` должно делиться на него |
+| `head_size` | 64 | необязательный размер головы; по умолчанию `embed_dim // num_q_heads` (тогда `embed_dim` обязан делиться на `num_q_heads`). Если задан, `num_q_heads · head_size` может не совпадать с `embed_dim`; для RoPE — чётный |
 | `num_layers` | 4 | число блоков `MistralDecoder` |
 | `max_position_embeddings` | 512 | максимальная длина последовательности |
 | `window_size` | 16 | ширина скользящего окна внимания |
 | `dropout` | 0.1 | dropout в attention и FFN |
 
-Все ключи, кроме `head_size`, используются конструктором `Mistral.__init__`. `head_size` присутствует в конфиге, но модель его не читает и вычисляет размер головы как `embed_dim // num_q_heads` (в примере значения совпадают: 256 / 4 = 64). Чтобы изменить размер головы, меняйте `embed_dim` или `num_q_heads`.
+Все ключи используются конструктором `Mistral.__init__`. Неверные сочетания отклоняются с `ValueError` уже в конструкторе: `embed_dim`, не делящийся на `num_q_heads` без явного `head_size`, `num_q_heads`, не делящееся на `num_kv_heads`, нечётный `head_size`.
 
 ## Генерация
 

@@ -114,6 +114,13 @@ class GroupedQueryAttention(nn.Module):
             ...     max_seq_len=1024, window_size=256, dropout=0.1)
         """
         super().__init__()
+        if num_kv_heads < 1 or num_q_heads % num_kv_heads != 0:
+            # Каждая K/V-голова обслуживает группу из num_q_heads // num_kv_heads Q-голов;
+            # без делимости _repeat_kv_heads падал бы в первом forward с ошибкой reshape
+            raise ValueError(
+                f"num_q_heads={num_q_heads} должно делиться на num_kv_heads={num_kv_heads} "
+                "(каждая K/V-голова обслуживает одинаковую группу Q-голов)"
+            )
         self._num_heads = num_q_heads
         self._num_kv_heads = num_kv_heads
         self._head_size = head_size

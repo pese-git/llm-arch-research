@@ -3,6 +3,7 @@ from torch import nn
 from torch import Tensor
 from math import sqrt
 from llm.core.base_model import BaseModel
+from llm.core.config_checks import resolve_head_size
 from llm.core.generation import (
     cache_start_pos,
     check_attention_mask,
@@ -126,6 +127,9 @@ class Mixtral(BaseModel):
         - Все параметры, необходимые для построения MixtralDecoder, attention и MoE, берутся из config.
         """
         super().__init__(config)
+
+        # Размер головы: head_size из конфига или embed_dim // num_q_heads (с проверками)
+        head_size = resolve_head_size(config, "num_q_heads", rope=True)
         
         self._max_seq_len = config["max_position_embeddings"]
 
@@ -135,7 +139,7 @@ class Mixtral(BaseModel):
             emb_size=config["embed_dim"]
         )
         self._position_embeddings = RoPE(
-            head_size=config["embed_dim"] // config["num_q_heads"],
+            head_size=head_size,
             max_seq_len=config["max_position_embeddings"]
         )
         #self._position_embeddings = PositionalEmbeddings(
@@ -147,7 +151,7 @@ class Mixtral(BaseModel):
             num_q_heads=config["num_q_heads"],
             num_kv_heads=config["num_kv_heads"],
             emb_size=config["embed_dim"],
-            head_size=config["embed_dim"] // config["num_q_heads"],
+            head_size=head_size,
             max_seq_len=config["max_position_embeddings"],
             num_experts=config["num_experts"],
             top_k_experts=config["top_k_experts"],
