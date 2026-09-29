@@ -75,7 +75,9 @@ class Mistral(BaseModel):
         )
         self._position_embeddings = RoPE(
             head_size=head_size,
-            max_seq_len=config["max_position_embeddings"]
+            max_seq_len=config["max_position_embeddings"],
+            # база частот RoPE: 10 000 по умолчанию — как в Mistral 7B v0.1
+            base=config.get("rope_theta", 10_000),
         )
         self._dropout = nn.Dropout(config["dropout"])
         self._decoders = nn.ModuleList([MistralDecoder(
