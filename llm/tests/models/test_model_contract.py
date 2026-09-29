@@ -59,8 +59,13 @@ def test_output_depends_on_token_order(model_spec):
     (внимание суммирует по множеству ключей), поэтому перестановка двух
     первых токенов меняет логиты только при работающих позициях — обучаемых
     (GPT, GPT-2) или RoPE (остальные).
+
+    initializer_range=0.2 (читают только GPT и GPT-2): при N(0, 0.02) из статей у свежей
+    GPT-1 (post-LN) скалярные произведения Q·K почти нулевые, внимание почти равномерное,
+    и порядок токенов влияет на логиты лишь на уровне 1e-8 — это свойство инициализации,
+    а не отсутствие позиций.
     """
-    model = build(model_spec, num_layers=1)
+    model = build(model_spec, num_layers=1, initializer_range=0.2)
     original = torch.tensor([[3, 11, 25, 40]])
     swapped = torch.tensor([[11, 3, 25, 40]])
 

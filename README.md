@@ -258,6 +258,8 @@ flowchart TB
 - **GPT-1 и GPT-2: GELU по умолчанию — tanh-аппроксимация** ([#11](https://github.com/pese-git/llm-arch-research/pull/11)), как в оригинальном коде OpenAI. Старые чекпоинты загружаются, но логиты отличаются примерно на 1e-4. Точный GELU для GPT-1 — `"activation": "gelu"` в конфиге. Значение `"activation": "gelu_exact"` удалено (`ValueError`), вместо него — `"gelu_tanh"`.
 - **Top-p** ([#31](https://github.com/pese-git/llm-arch-research/pull/31)) теперь включает в ядро токен, на котором сумма вероятностей переходит порог (как в HuggingFace). При тех же весах и seed выборка с `top_p` может отличаться; greedy, температура и top-k не изменились.
 
+- **GPT-1 и GPT-2: инициализация весов из статей** ([#41](https://github.com/pese-git/llm-arch-research/pull/41)) — N(0, 0.02), у GPT-2 ещё и масштабирование residual-проекций. Меняет только обучение с нуля: у новой модели другие начальные веса, чекпоинты и их выход не затрагиваются. Стандартное отклонение — ключ `initializer_range`.
+
 ### Чекпоинты и конфиги
 
 - **Маски attention и таблицы RoPE не сохраняются в `state_dict`** ([#32](https://github.com/pese-git/llm-arch-research/pull/32)). Старые чекпоинты новым кодом загружаются, в том числе со `strict=True`. Обратное не работает: чекпоинт нового формата старый код со `strict=True` не загрузит (нет ключей `_tril_mask`, `cos_matrix`, `sin_matrix`); со `strict=False` загрузится, недостающие буферы старый код построит сам.
