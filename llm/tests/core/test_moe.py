@@ -59,3 +59,15 @@ def test_forward_no_dropout():
     y = moe(x)
     assert y.shape == x.shape
     assert not torch.isnan(y).any()
+
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16], ids=str)
+def test_half_precision_matches_float32(dtype):
+    # Буфер весов экспертов должен иметь dtype входа, иначе запись весов bf16/fp16 падает
+    torch.manual_seed(0)
+    moe = MoE(emb_size=16, num_experts=4, top_k_experts=2, dropout=0.0)
+    x = torch.randn(2, 5, 16)
+    expected = moe(x)
+
+    y = moe.to(dtype)(x.to(dtype))
+    assert y.dtype == dtype
+    assert torch.allclose(y.float(), expected, atol=5e-2)

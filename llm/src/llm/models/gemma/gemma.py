@@ -5,7 +5,13 @@ from torch import Tensor
 import torch.nn.functional as F
 from math import sqrt
 from llm.core.base_model import BaseModel
-from llm.core.generation import validate_sampling_args
+from llm.core.generation import (
+    cache_start_pos,
+    check_attention_mask,
+    check_sequence_length,
+    next_generation_input,
+    validate_sampling_args,
+)
 from llm.core.token_embeddings import TokenEmbeddings
 from llm.core.rope import RoPE
 from llm.core.rms_norm import RMSNorm
@@ -141,7 +147,13 @@ class Gemma(BaseModel):
         self._norm = RMSNorm(config["embed_dim"])
         self._linear = nn.Linear(config["embed_dim"], config["vocab_size"])
 
-    def forward(self, x: torch.Tensor, use_cache: bool = True, cache: list = None) -> tuple:
+    def forward(
+        self,
+        x: torch.Tensor,
+        use_cache: bool = True,
+        cache: list = None,
+        attention_mask: torch.Tensor = None,
+    ) -> tuple:
         """
         Прямой проход (forward) через полную модель Gemma.
 
@@ -157,6 +169,10 @@ class Gemma(BaseModel):
             Если False — кэш не используется.
         cache : list, optional
             (Необязательно) Список/None: с кэшами KV-матриц для каждого слоя (для режима генерации статей/диalogов).
+        attention_mask : torch.Tensor, optional
+            Маска [batch, seq_len] (1 — токен, 0 — паддинг). Поддерживается правый паддинг:
+            causal-маска и так скрывает от настоящих токенов стоящий после них паддинг.
+            На другие маски с нулями — NotImplementedError (см. docs/README.md, раздел «Маски»).
 
         Возвращает:
         -----------
@@ -177,9 +193,10 @@ class Gemma(BaseModel):
         - Если нужно только инференс last-token — используйте logits[:, -1, :].
         - При превышении x.shape[1] > max_seq_len выдаёт ValueError.
         """
-        # Проверка длины последовательности (только при отсутствии кэша)
-        if cache is None and x.size(1) > self._max_seq_len:
-            raise ValueError(f"Длина последовательности {x.size(1)} превышает максимальную {self.max_seq_len}")
+        # Длина с учётом кэша: позиции start_pos … start_pos + seq_len − 1 должны быть < max_seq_len.
+        # attention_mask допускается только такая, при которой causal-маски достаточно.
+        check_sequence_length(x.size(1), cache_start_pos(cache), self._max_seq_len)
+        check_attention_mask(attention_mask, x, cache)
         
         # Эмбеддинги токенов и позиций
         tok_out = self._token_embeddings(x)  # [batch, seq_len, emb_size]
@@ -242,6 +259,9 @@ class Gemma(BaseModel):
             Если задано — работают nucleus sampling: учитываются токены, суммарная вероятность которых не превышает top_p.
         use_cache : bool, default=True
             Если True — для ускорения использует и обновляет attention-кэши (KV-cache).
+        attention_mask : torch.Tensor, optional
+            Маска промпта [batch, seq_len]. Допускается только маска из единиц: генерация
+            после паддинга не поддерживается (NotImplementedError).
 
         Возвращает:
         -----------
@@ -270,16 +290,14 @@ class Gemma(BaseModel):
         """
 
         validate_sampling_args(do_sample, temperature, top_k, top_p)
+        check_attention_mask(attention_mask, x, generating=True)
 
         cache = None
 
         for _ in range(max_new_tokens):
-            if use_cache and cache is not None:
-                # Используем кэш - передаем только последний токен
-                x_input = x[:, -1:]  # [batch_size, 1]
-            else:
-                # Первая итерация или кэш отключен - передаем всю последовательность
-                x_input = x
+            # С кэшем подаём только последний токен; за пределами max_seq_len берём
+            # последние max_seq_len токенов и пересчитываем без кэша.
+            x_input, cache = next_generation_input(x, cache, use_cache, self._max_seq_len)
             
             # Прямой проход с кэшем
             logits, new_cache = self.forward(x_input, use_cache=use_cache, cache=cache)

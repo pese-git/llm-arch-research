@@ -144,7 +144,7 @@ out = model.generate(input_ids, max_new_tokens=50, do_sample=False)
 out = model.generate(input_ids, max_new_tokens=50, do_sample=True, temperature=0.8, top_p=0.9)
 ```
 
-`attention_mask` принимается для совместимости, но сейчас не используется.
+Когда последовательность становится длиннее `max_position_embeddings`, `generate` продолжает по последним `max_position_embeddings` токенам. `attention_mask` допускается только из единиц; `forward` принимает и правый паддинг (подробнее — [docs/README.md](../docs/README.md#маски)).
 
 ### Токенизатор и обучение
 
@@ -170,9 +170,7 @@ trainer.train()
 
 ## ⚠️ Известные ограничения
 
-- **Генерация дальше `max_position_embeddings`** в моделях с RoPE падает с `RuntimeError`.
-- **При переданном `cache` causal-маска не применяется** — корректно, только пока на вход подаётся по одному новому токену.
-- **`attention_mask` не используется.**
+- **`attention_mask`: только правый паддинг** — на левый паддинг и паддинг в `generate` бросается `NotImplementedError`.
 - **`MoE` без load-balancing loss.**
 - **`BaseModel`** объявляет `forward(input_ids, attention_mask) -> Tensor` и `generate(input_ids, max_length)`, но модели реализуют интерфейс, описанный выше.
 

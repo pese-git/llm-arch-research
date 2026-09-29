@@ -107,7 +107,9 @@ class HFGPTAdapter(PreTrainedModel):
         )
 
         # Основной forward pass
-        outputs = self.llm_model(input_ids)
+        # Маска передаётся в модель: правый паддинг модель обрабатывает (causal-маски достаточно),
+        # на неподдерживаемую маску (левый паддинг) — NotImplementedError вместо неверного результата
+        outputs = self.llm_model(input_ids, attention_mask=attention_mask)
         if isinstance(outputs, tuple):
             logits = outputs[0]
         else:

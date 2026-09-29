@@ -3,7 +3,13 @@ from torch import nn, Tensor
 import torch.nn.functional as F
 
 from llm.core.base_model import BaseModel
-from llm.core.generation import validate_sampling_args
+from llm.core.generation import (
+    cache_start_pos,
+    check_attention_mask,
+    check_sequence_length,
+    next_generation_input,
+    validate_sampling_args,
+)
 from llm.core.token_embeddings import TokenEmbeddings
 from llm.core.swi_glu import SwiGLU
 from llm.core.rms_norm import RMSNorm
@@ -100,7 +106,11 @@ class Llama(BaseModel):
         self._linear = nn.Linear(config["embed_dim"], config["vocab_size"])
 
     def forward(
-        self, x: torch.Tensor, use_cache: bool = True, cache: list = None
+        self,
+        x: torch.Tensor,
+        use_cache: bool = True,
+        cache: list = None,
+        attention_mask: torch.Tensor = None,
     ) -> tuple:
         """
         Прямой проход: возвращает logits (и возможно обновлённый cache) по входным токенам.
@@ -109,16 +119,18 @@ class Llama(BaseModel):
             x (torch.Tensor): [batch, seq_len] — индексы токенов, shape [batch, seq_len]
             use_cache (bool): использовать механизм KV cache (ускоряет autoregressive generation)
             cache (list or None): предыдущий кэш, если нужен
+            attention_mask (torch.Tensor, опц.): маска [batch, seq_len] (1 — токен, 0 — паддинг).
+                Поддерживается правый паддинг; на другие маски с нулями — NotImplementedError
+                (см. docs/README.md, раздел «Маски»).
 
         Returns:
             logits: torch.Tensor [batch, seq_len, vocab_size]
             new_cache: новый кэш attention (или None)
         """
-        # Проверка длины последовательности (только при отсутствии кэша)
-        if cache is None and x.size(1) > self._max_seq_len:
-            raise ValueError(
-                f"Длина последовательности {x.size(1)} превышает максимальную {self.max_seq_len}"
-            )
+        # Длина с учётом кэша: позиции start_pos … start_pos + seq_len − 1 должны быть < max_seq_len.
+        # attention_mask допускается только такая, при которой causal-маски достаточно.
+        check_sequence_length(x.size(1), cache_start_pos(cache), self._max_seq_len)
+        check_attention_mask(attention_mask, x, cache)
 
         # Вычисление start_pos из кэша (если кэш передан)
         # if cache is not None:
@@ -189,6 +201,8 @@ class Llama(BaseModel):
             top_k (int, опционально): Top-k сэмплирование (ограничение выбора k самыми вероятными токенами).
             top_p (float, опционально): Nucleus (top-p) sampling (срез по кумулятивной вероятности ≤ top_p, см. Holtzman et al., 2019).
             use_cache (bool, по умолчанию True): Использовать KV-кэш для ускорения генерации.
+            attention_mask (torch.Tensor, опц.): маска промпта [batch, seq_len]. Допускается только
+                маска из единиц: генерация после паддинга не поддерживается (NotImplementedError).
     
         Возвращает:
             torch.Tensor: Последовательность токенов shape [batch_size, seq_len + max_new_tokens].
@@ -223,16 +237,14 @@ class Llama(BaseModel):
             - LLaMA: https://arxiv.org/abs/2302.13971
         """
         validate_sampling_args(do_sample, temperature, top_k, top_p)
+        check_attention_mask(attention_mask, x, generating=True)
 
         cache = None
 
         for _ in range(max_new_tokens):
-            if use_cache and cache is not None:
-                # Используем кэш - передаем только последний токен
-                x_input = x[:, -1:]  # [batch_size, 1]
-            else:
-                # Первая итерация или кэш отключен - передаем всю последовательность
-                x_input = x
+            # С кэшем подаём только последний токен; за пределами max_seq_len берём
+            # последние max_seq_len токенов и пересчитываем без кэша.
+            x_input, cache = next_generation_input(x, cache, use_cache, self._max_seq_len)
 
             # Прямой проход с кэшем
             logits, new_cache = self.forward(x_input, use_cache=use_cache, cache=cache)

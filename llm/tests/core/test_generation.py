@@ -1,10 +1,16 @@
 """
-Tests for validate_sampling_args.
+Tests for shared forward/generate helpers in llm.core.generation.
 """
 
 import pytest
+import torch
 
-from llm.core.generation import validate_sampling_args
+from llm.core.generation import (
+    cache_start_pos,
+    check_sequence_length,
+    next_generation_input,
+    validate_sampling_args,
+)
 
 
 @pytest.mark.parametrize(
@@ -34,3 +40,36 @@ def test_invalid_sampling_args(temperature, top_k, top_p, message):
 
 def test_greedy_skips_validation():
     validate_sampling_args(False, 0.0, 0, 5.0)
+
+
+def test_cache_start_pos():
+    k = torch.zeros(1, 2, 5, 4)
+    assert cache_start_pos(None) == 0
+    # MHA/MQA: (K, V) — position is the cached length
+    assert cache_start_pos([(k, k)]) == 5
+    # GQA: (K, V, next_pos) — K is trimmed to the window, position is stored separately
+    assert cache_start_pos([(k, k, 12)]) == 12
+
+
+def test_check_sequence_length():
+    check_sequence_length(seq_len=4, start_pos=12, max_seq_len=16)
+    with pytest.raises(ValueError, match="кэш 12"):
+        check_sequence_length(seq_len=5, start_pos=12, max_seq_len=16)
+
+
+def test_next_generation_input():
+    x = torch.arange(10).unsqueeze(0)
+    cache = ["kv"]
+
+    # First step or no cache: the whole sequence
+    assert next_generation_input(x, None, True, 16)[0] is x
+    x_input, new_cache = next_generation_input(x, cache, False, 16)
+    assert x_input is x and new_cache is None
+
+    # With cache: only the last token
+    x_input, new_cache = next_generation_input(x, cache, True, 16)
+    assert torch.equal(x_input, x[:, -1:]) and new_cache is cache
+
+    # Past max_seq_len: last max_seq_len tokens, cache dropped
+    x_input, new_cache = next_generation_input(x, cache, True, 8)
+    assert torch.equal(x_input, x[:, -8:]) and new_cache is None

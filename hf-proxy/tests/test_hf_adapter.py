@@ -51,6 +51,21 @@ class TestHFGPTAdapter:
             actual = adapter(input_ids).logits
         assert torch.allclose(actual, expected)
 
+    def test_forward_passes_attention_mask(self, pretrained_config, gpt_model, input_ids):
+        """Правый паддинг (как в коллаторе токенизатора) принимается, левый — отклоняется."""
+        adapter = HFGPTAdapter(pretrained_config, gpt_model)
+        mask = torch.ones_like(input_ids)
+        mask[1, 5:] = 0
+        with torch.no_grad():
+            expected = adapter(input_ids).logits
+            actual = adapter(input_ids, attention_mask=mask).logits
+        assert torch.equal(actual, expected)
+
+        mask = torch.ones_like(input_ids)
+        mask[1, :2] = 0
+        with pytest.raises(NotImplementedError):
+            adapter(input_ids, attention_mask=mask)
+
     def test_forward_with_labels_computes_shifted_loss(
         self, pretrained_config, gpt_model, input_ids
     ):

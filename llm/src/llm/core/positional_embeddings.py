@@ -92,8 +92,11 @@ class PositionalEmbeddings(nn.Module):
             >>> pos = PositionalEmbeddings(512, 128)
             >>> p = pos(10)  # [10, 128]
         """
-        if seq_len < 1 or seq_len > self.max_seq_len:
-            raise IndexError(f"Длина {seq_len} должна быть от 1 до {self.max_seq_len}")
+        if seq_len < 1 or start_pos + seq_len > self.max_seq_len:
+            raise IndexError(
+                f"Длина {seq_len} должна быть от 1 до {self.max_seq_len - start_pos} "
+                f"(start_pos={start_pos}, max_seq_len={self.max_seq_len})"
+            )
         if start_pos == 0:
             positions = torch.arange(seq_len, device=self.embedding.weight.device)
         else:

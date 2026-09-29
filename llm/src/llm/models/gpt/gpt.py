@@ -26,7 +26,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Optional, Dict
 from llm.core.base_model import BaseModel
-from llm.core.generation import validate_sampling_args
+from llm.core.generation import (
+    cache_start_pos,
+    check_attention_mask,
+    check_sequence_length,
+    next_generation_input,
+    validate_sampling_args,
+)
 from llm.core.gpt_decoder import GptDecoder
 from llm.core.token_embeddings import TokenEmbeddings
 from llm.core.positional_embeddings import PositionalEmbeddings
@@ -152,22 +158,23 @@ class GPT(BaseModel):
             Использовать ли кэш attention (ускоряет инференс, важно для генерации)
         cache : list, optional
             Список старых KV (key/value)-кэшей
+        attention_mask : torch.Tensor, optional
+            Маска [batch, seq_len] (1 — токен, 0 — паддинг). Поддерживается правый паддинг:
+            causal-маска и так скрывает от настоящих токенов стоящий после них паддинг.
+            На другие маски с нулями — NotImplementedError (см. docs/README.md, раздел «Маски»).
 
         Returns:
         --------
         logits: [batch, seq_len, vocab_size]   (логиты для softmax по словарю)
         new_cache: кэш KV после прохода
         """
-        # Проверка длины последовательности
-        if x.size(1) > self._max_seq_len:
-            raise ValueError(
-                f"Длина последовательности {x.size(1)} превышает максимальную {self._max_seq_len}"
-            )
+        # Длина с учётом кэша: позиции start_pos … start_pos + seq_len − 1 должны быть < max_seq_len.
+        # attention_mask допускается только такая, при которой causal-маски достаточно.
+        start_pos = cache_start_pos(cache)
+        check_sequence_length(x.size(1), start_pos, self._max_seq_len)
+        check_attention_mask(attention_mask, x, cache)
 
-        # Позиция первого нового токена = длина уже закэшированной последовательности.
-        # Кэш — список по слоям из (K, V), K: [batch, num_heads, cached_len, head_size]
         seq_len = x.size(1)
-        start_pos = cache[0][0].size(2) if cache is not None else 0
 
         # Эмбеддинги токенов и позиций
         tok_out = self._token_embeddings(x)  # [batch, seq_len, emb_size]
@@ -226,7 +233,8 @@ class GPT(BaseModel):
             top_k (int, опц.): При do_sample=True ограничивает выбор top_k самых вероятных токенов (top-k sampling).
             top_p (float, опц.): При do_sample=True включает top-p (nucleus) sampling: кумулятивная вероятность ≤ top_p.
                                  Должно быть в (0, 1].
-            attention_mask (torch.Tensor, опц.): Внешняя маска внимания (для совместимости с HuggingFace).
+            attention_mask (torch.Tensor, опц.): маска промпта [batch, seq_len]. Допускается только
+                маска из единиц: генерация после паддинга не поддерживается (NotImplementedError).
             **kwargs: Игнорируются.
     
         Возвращает:
@@ -262,17 +270,14 @@ class GPT(BaseModel):
             - Оригинальный GPT-2: https://cdn.openai.com/better-language-models/language-models.pdf
         """
         validate_sampling_args(do_sample, temperature, top_k, top_p)
+        check_attention_mask(attention_mask, x, generating=True)
 
         cache = None
         
         for _ in range(max_new_tokens):
-            # 1. Обрезаем вход, если последовательность слишком длинная
-            if use_cache and cache is not None:
-                # Используем кэш - передаем только последний токен
-                x_input = x[:, -1:]  # [batch_size, 1]
-            else:
-                # Первая итерация или кэш отключен - передаем всю последовательность
-                x_input = x
+            # С кэшем подаём только последний токен; за пределами max_seq_len берём
+            # последние max_seq_len токенов и пересчитываем без кэша.
+            x_input, cache = next_generation_input(x, cache, use_cache, self._max_seq_len)
 
             # 2. Передаем последовательность в метод forward класса GPT и полуаем логиты.
             # Прямой проход с кэшем
