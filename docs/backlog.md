@@ -254,7 +254,7 @@
 - Докстринг `CachedDecoder` описывает LayerNorm и GELU, хотя для LLaMA блок собирается с `RMSNorm` и `SwiGLU`.
 - Комментарий к форме выхода в `RoPE.forward` — `[batch_size, seq_len, head_size]`, фактически 4D `[batch, num_heads, seq_len, head_size]`.
 - В [README.md](README.md) устарели пометки «⚠️ без GQA, вопреки докстрингу» в таблице и пункт «LLaMA — нет GQA, вопреки докстрингу» в известных ограничениях: докстринг уже исправлен, расхождения больше нет.
-- Нет `save`/`load` ни в `Llama`, ни в `BaseModel`, хотя версия для внешнего стенда их требует.
+- ~~Нет `save`/`load` ни в `Llama`, ни в `BaseModel`~~ — есть в `BaseModel` (пункт 35).
 - [`tests/models/test_llama.py`](../llm/tests/models/test_llama.py) проверяет только формы. Кэшированная генерация по одному токену сверяется с полным forward в [`test_kv_cache.py`](../llm/tests/models/test_kv_cache.py) для всех моделей, там же — префилл кусками и генерация за `max_position_embeddings` (пункты 1, 2). Какие токены оставляют top-k/top-p, проверяет `test_generation.py` (пункт 49).
 
 ## Mistral
@@ -345,7 +345,7 @@
 - Неиспользуемые импорты: `sqrt`, `Tensor` в `mistral.py` (`vocab_size` в `generate` ушёл вместе с копиями `generate`, пункт 18) (`k_seq_len` в `GroupedQueryAttention.forward` удалён вместе с исправлением пункта 27).
 - Комментарии в `GroupedQueryAttention.forward`: сбитая нумерация шагов («Шаг 2», «3.», «5.», «8.», снова «3.», «4.») и неверные размерности (`# [B, T, hs]` там, где `[B, H, T, hs]`).
 - Кэш пересобирается через `torch.cat` и срез на каждом шаге. Для учебного кода это приемлемо, но настоящего rolling buffer (запись по индексу `pos % W`) нет, хотя документация так его называет.
-- Нет `save`/`load` в `Mistral`, хотя версия для внешнего стенда их требует.
+- ~~Нет `save`/`load` в `Mistral`~~ — есть в `BaseModel` (пункт 35).
 - [`tests/models/test_mistral.py`](../llm/tests/models/test_mistral.py) проверяет только формы; генерация по одному токену с кэшем покрыта [`test_kv_cache.py`](../llm/tests/models/test_kv_cache.py). Там же — префилл кусками и генерация за `max_position_embeddings` (пункты 1, 27). Нет тестов на проверки из пункта 29 и на чтение `head_size` из конфига (пункт 28).
 
 ## Mixtral
@@ -385,6 +385,7 @@
 - **Что:** методов нет ни в `Mixtral`, ни в `BaseModel`.
 - **Воспроизведено:** `hasattr(Mixtral, "save")`, `hasattr(Mixtral, "load")` — `False`.
 - **Исправление:** реализовать в `BaseModel` (`state_dict` + `config`, `load` как `classmethod`) — закроет и Mistral, и LLaMA. Версия для внешнего стенда уже содержит рабочий вариант с полным набором аргументов конструктора.
+- **Статус:** исправлено в ветке `feat/save-load` для всех шести моделей: `model.save(path)` пишет один файл с классом модели, конфигом и `state_dict` (без вычисляемых буферов, пункты 17, 25), `Model.load(path, device)` — `classmethod`, создаёт модель по сохранённому конфигу и возвращает её в режиме `eval`. Файл читается с `weights_only=True`; файл другой модели или голый `state_dict` дают `ValueError`.
 
 #### 36. `top_k_experts=0` принимается — P3
 
@@ -464,7 +465,7 @@
 - **25** — RoPE-буферы в `state_dict` по копии на слой (исправлен).
 - **28** — ключ `head_size` игнорировался (исправлен).
 - **32** — половинчатая совместимость с torch < 1.2 в top-k/top-p `generate` и в `_tril_mask`. Версия Gemma на float-масках с `== 0` прошла внешний стенд 2026-09-28.
-- **35** — докстринг `Gemma` обещает `save(path)/load(path, device)`, методов нет. Воспроизведено: `hasattr(Gemma, "save")` — `False`.
+- **35** — `save`/`load`, обещанные докстрингом (исправлен).
 
 ### Баги
 

@@ -52,7 +52,7 @@ class Gemma(BaseModel):
     ----------------
     - forward(x, use_cache=False, cache=None): выдает батч логитов по токенам, возвращает при необходимости обновленный cache.
     - generate(...): автотекстогенерация с greedy, temperature, top-k/p sampling, поддержкой кэша (ускорение inference).
-    - save(path)/load(path, device): сохранение и загрузка предобученных весов, параметров и состояния.
+    - save(path) / Gemma.load(path, device): сохранение и загрузка весов вместе с конфигом (из BaseModel).
 
     Пример:
     -------
