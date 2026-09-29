@@ -43,6 +43,10 @@ class MoE(nn.Module):
         Сколько экспертов активировать и агрегировать на каждом токене (обычно 2-8).
     dropout : float, по умолчанию 0.1
         Dropout к выходу агрегатора.
+    hidden_dim : int, опционально
+        Скрытый размер каждого эксперта SwiGLU, по умолчанию 4 * emb_size (у Mixtral 8x7B — 14336 = 3.5 * 4096).
+    bias : bool, по умолчанию True
+        Есть ли bias у роутера и матриц экспертов (в Mixtral его нет).
 
     Пример использования:
     ---------------------
@@ -63,6 +67,8 @@ class MoE(nn.Module):
         num_experts: int,
         top_k_experts: int,
         dropout: float = 0.1,
+        hidden_dim: int = None,
+        bias: bool = True,
     ):
         """
         Конструктор слоя MoE (Mixture of Experts).
@@ -118,12 +124,14 @@ class MoE(nn.Module):
         self._num_experts = num_experts
         self._top_k_experts = top_k_experts
 
-        self._router = nn.Linear(emb_size, num_experts)
+        self._router = nn.Linear(emb_size, num_experts, bias=bias)
         # Эксперты без собственного dropout: он один — на выходе MoE. Иначе выход эксперта
         # прорежался бы дважды, и эффективная вероятность была бы выше заданной
         self._experts = nn.ModuleList([SwiGLU(
             emb_size=emb_size,
             dropout=0.0,
+            hidden_dim=hidden_dim,
+            bias=bias,
         ) for _ in range(num_experts)])
         self._dropout = nn.Dropout(dropout)
 

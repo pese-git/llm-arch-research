@@ -244,7 +244,7 @@
 - **Воспроизведено:** `m._decoders[0]._heads._q.bias is not None`, `m._linear.bias is not None`.
 - **Последствия:** веса Meta/HF LLaMA напрямую не загружаются (лишние ключи `*.bias`). Для загрузки весов HF, помимо bias, нужна перестановка строк `q_proj`/`k_proj`: HF использует `rotate_half` (половины вектора), а здесь, как у Meta, — чередующиеся пары `(2i, 2i+1)`.
 - **Исправление:** флаг `bias` в конфиге (по умолчанию `False` для LLaMA) с пробросом в `MultiHeadAttention` и `SwiGLU`.
-- **Статус:** исправлено для LLaMA в ветке `feat/llama-hf-parity`: ключ `bias` (по умолчанию `true`, прежнее поведение) пробрасывается в `MultiHeadAttention`, `CachedDecoder`, `SwiGLU` и голову. Веса HF загружаются через `convert_hf_state_dict` (`models/llama/hf_weights.py`) с перестановкой строк `q_proj`/`k_proj` под RoPE на чередующихся парах; сверено с пятью моделями (`nickypro/tinyllama-*`, `JackFram/llama-68m/160m`): логиты до 1.1e-4, greedy с KV-кэшем совпадает. Для Mistral и Mixtral bias остаётся (у `GroupedQueryAttention` флага пока нет).
+- **Статус:** исправлено для LLaMA в ветке `feat/llama-hf-parity`: ключ `bias` (по умолчанию `true`, прежнее поведение) пробрасывается в `MultiHeadAttention`, `CachedDecoder`, `SwiGLU` и голову. Веса HF загружаются через `convert_hf_state_dict` (`models/llama/hf_weights.py`) с перестановкой строк `q_proj`/`k_proj` под RoPE на чередующихся парах; сверено с пятью моделями (`nickypro/tinyllama-*`, `JackFram/llama-68m/160m`): логиты до 1.1e-4, greedy с KV-кэшем совпадает. Для Mistral и Mixtral — в ветке `feat/mistral-mixtral-hf-parity` (см. пункт 30).
 
 ### Качество кода
 
@@ -316,6 +316,7 @@
 #### 30. Размер скрытого слоя SwiGLU — P3
 
 - **Что:** Mistral 7B использует `hidden_dim = 14336` при `dim = 4096` (3.5·d, `intermediate_size` в HF). Здесь `4·d` в каждой из трёх матриц, то есть FFN примерно на 14% тяжелее. Исправление общее с пунктом 23: параметр `hidden_dim` в `SwiGLU`, для Mistral — из конфига.
+- **Статус:** исправлено в ветке `feat/mistral-mixtral-hf-parity`: `Mistral` и `Mixtral` читают ключ `intermediate_size` (по умолчанию прежние `4 · embed_dim`, старые чекпоинты загружаются); у Mixtral он задаёт размер каждого эксперта (`MoE(hidden_dim=...)`). Вместе с ним ключ `bias` (по умолчанию `true`) убирает bias из Q/K/V, выхода attention (`GroupedQueryAttention(bias=...)`), SwiGLU, роутера и головы — это закрывает остаток пункта 24 для Mistral и Mixtral. Веса `MistralForCausalLM`/`MixtralForCausalLM` загружаются через `convert_hf_state_dict` (общий с LLaMA, K переставляется по `num_key_value_heads`); сверено со случайными моделями HF: логиты до 1e-5, greedy с KV-кэшем дольше окна совпадает.
 
 #### 50. `eps` в RMSNorm зашит как 1e-6 — P3
 
@@ -431,7 +432,7 @@
 - **Где:** `Mixtral.__init__` передаёт `window_size=config["window_size"]` в `GroupedQueryAttention`.
 - **Что:** Mixtral 8x7B использует плотное внимание на весь контекст 32k («fully dense context length of 32k tokens» в статье; `sliding_window=None` в HF `MixtralConfig`). SWA — черта Mistral 7B v0.1, в Mixtral её нет. Здесь окно действует всегда.
 - **Исправление:** сделать `window_size` необязательным (`None` — без окна) и по умолчанию для Mixtral не задавать; убрать ключ из `mixtral_train.json`.
-- **Статус:** задокументировано в [mixtral.md](mixtral.md#отличия-от-mixtral-8x7b).
+- **Статус:** исправлено в ветке `feat/mistral-mixtral-hf-parity`: `window_size` необязателен в `GroupedQueryAttention`, `MistralDecoder`, `MixtralDecoder`, `Mistral` и `Mixtral`; `None` (ключа нет) — обычная causal-маска и кэш без обрезки. Ключ убран из `mixtral_train.json`. Конфиги с `window_size` работают как раньше. Сверено со случайной `MixtralForCausalLM` (`sliding_window=None`) и с `MistralForCausalLM` с окном и без; попутно тестом подтверждено, что окно здесь на позицию шире HF: `window_size = sliding_window − 1`.
 
 #### 53. База RoPE 10 000 вместо 1 000 000 — P3
 

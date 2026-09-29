@@ -7,7 +7,7 @@
 
 ## Обзор
 
-Mixtral 8x7B (Mistral AI, 2023, [arXiv:2401.04088](https://arxiv.org/abs/2401.04088)) — это [Mistral](mistral.md) с одним структурным изменением: плотный `SwiGLU`-FFN заменён на **Mixture-of-Experts** (MoE) — несколько параллельных SwiGLU-экспертов, из которых на каждый токен активируется только небольшое подмножество (top-k). Attention в оригинале — GQA + RoPE с плотным вниманием на весь контекст 32k: sliding window из Mistral 7B в Mixtral **не используется** (`sliding_window=None` в HF `MixtralConfig`). В этом репозитории Mixtral переиспользует `GroupedQueryAttention` вместе со скользящим окном — это отклонение от оригинала (см. [ниже](#отличия-от-mixtral-8x7b)).
+Mixtral 8x7B (Mistral AI, 2023, [arXiv:2401.04088](https://arxiv.org/abs/2401.04088)) — это [Mistral](mistral.md) с одним структурным изменением: плотный `SwiGLU`-FFN заменён на **Mixture-of-Experts** (MoE) — несколько параллельных SwiGLU-экспертов, из которых на каждый токен активируется только небольшое подмножество (top-k). Attention в оригинале — GQA + RoPE с плотным вниманием на весь контекст 32k: sliding window из Mistral 7B в Mixtral **не используется** (`sliding_window=None` в HF `MixtralConfig`). В этом репозитории Mixtral переиспользует `GroupedQueryAttention`; скользящее окно включается только ключом `window_size`, без него внимание плотное, как в оригинале.
 
 ## Архитектура блока декодера
 
@@ -19,7 +19,7 @@ flowchart TB
     subgraph Dec["MixtralDecoder × num_layers · pre-RMSNorm"]
         direction TB
         X(["x"]):::io --> N1["RMSNorm"]:::gray
-        N1 --> Attn["Grouped Query Attention<br/>sliding window (нет в оригинале)"]:::blue
+        N1 --> Attn["Grouped Query Attention<br/>sliding window — только с window_size"]:::blue
         R["RoPE<br/>cos/sin от позиции · без параметров<br/>один модуль на все слои"]:::rope
         R -. "поворот Q и K" .-> Attn
         Attn --> A1(("+")):::add
@@ -158,7 +158,7 @@ aux = E · Σ_k Σ_i f_{k,i} · P_i        по всем слоям MoE и вс�
 `MixtralDecoder.forward` — та же pre-LN схема, что у `MistralDecoder`, с заменой FFN на MoE:
 ```
 norm1_out = RMSNorm1(x)
-attn_out  = GQA(norm1_out)           # с RoPE и sliding-window маской (в оригинале окна нет)
+attn_out  = GQA(norm1_out)           # с RoPE; causal-маска, окно — только с window_size
 out       = attn_out + x
 norm2_out = RMSNorm2(out)
 ffn_out   = MoE(norm2_out)           # top-k из num_experts SwiGLU-блоков
@@ -171,10 +171,10 @@ result    = ffn_out + out
 
 | | Mixtral 8x7B | Здесь |
 |---|---|---|
-| Внимание | плотное на весь контекст 32k | скользящее окно `window_size` (52) |
+| Внимание | плотное на весь контекст 32k | так же без ключа `window_size`; с ним — скользящее окно, как в Mistral 7B v0.1 (52) |
 | База RoPE (`rope_theta`) | 1 000 000 | 10 000 по умолчанию, задаётся ключом `rope_theta` (53) |
-| Скрытый слой эксперта | `hidden_dim = 14336` при `dim = 4096` (3.5·d) | 4·d в каждой из трёх матриц SwiGLU (23, 30) |
-| Bias | нет ни в одной проекции, включая роутер | во всех `Linear`, включая роутер (24, 40) |
+| Скрытый слой эксперта | `hidden_dim = 14336` при `dim = 4096` (3.5·d) | 4·d по умолчанию; `intermediate_size: 14336` — как в оригинале (23, 30) |
+| Bias | нет ни в одной проекции, включая роутер | во всех `Linear`, включая роутер, по умолчанию; `bias: false` — как в оригинале (24, 40) |
 | Load-balancing loss | в HF-реализации при обучении (`output_router_logits=True`) | есть, ключ `router_aux_loss_coef`, по умолчанию выключен (37) |
 | Dropout | нет | после эмбеддингов, в attention и один на выходе MoE (эксперты без собственного, 38); `dropout: 0` убирает его полностью |
 | Softmax роутера | во float32 (HF, эталон Mistral) | так же, явно во float32 с приведением к dtype входа (54) |
@@ -197,8 +197,35 @@ result    = ffn_out + out
 | `router_aux_loss_coef` | (нет в примере) | необязательный коэффициент [load-balancing loss](#load-balancing-loss) роутера, по умолчанию `0` — выключен; в HF при включении — `0.001` |
 | `num_experts` | 8 | общее число экспертов MoE на слой |
 | `top_k_experts` | 2 | сколько экспертов активируется на токен |
-| `window_size` | 16 | ширина скользящего окна внимания (в Mixtral 8x7B окна нет, здесь ключ обязателен) |
+| `window_size` | (нет в примере) | необязательная ширина скользящего окна внимания, как в [Mistral](mistral.md#ширина-окна-w--1); без ключа окна нет — как в Mixtral 8x7B |
+| `intermediate_size` | (нет в примере) | необязательный скрытый размер каждого эксперта SwiGLU, по умолчанию `4 · embed_dim`; у Mixtral 8x7B — `14336` |
+| `bias` | (нет в примере) | необязательный: bias во всех `Linear`, включая роутер и экспертов, по умолчанию `true`; в Mixtral 8x7B — `false` |
 | `dropout` | 0.1 | dropout после эмбеддингов, в attention и на выходе MoE (эксперты без собственного); в Mixtral 8x7B dropout нет — для соответствия оригиналу `0` |
+
+## Загрузка весов HuggingFace
+
+С ключами `intermediate_size` и `"bias": false` загружаются веса `MixtralForCausalLM` — той же функцией `convert_hf_state_dict`, что у [LLaMA](llama.md#загрузка-весов-huggingface) (реэкспорт в `llm.models.mixtral`); строки `q_proj` переставляются по `num_attention_heads`, `k_proj` — по `num_key_value_heads`; роутер `block_sparse_moe.gate` становится `_ff._router`, эксперты `w1`/`w3`/`w2` — `_gate`/`_up`/`_down`.
+
+```python
+from transformers import MixtralForCausalLM
+from llm.models.mixtral import Mixtral, convert_hf_state_dict
+
+hf = MixtralForCausalLM.from_pretrained(...)
+c = hf.config
+config = {"vocab_size": c.vocab_size, "embed_dim": c.hidden_size, "num_q_heads": c.num_attention_heads,
+          "num_kv_heads": c.num_key_value_heads, "head_size": c.head_dim or c.hidden_size // c.num_attention_heads,
+          "num_layers": c.num_hidden_layers, "max_position_embeddings": c.max_position_embeddings,
+          "num_experts": c.num_local_experts, "top_k_experts": c.num_experts_per_tok,
+          "dropout": 0.0, "rms_norm_eps": c.rms_norm_eps, "rope_theta": c.rope_theta,
+          "intermediate_size": c.intermediate_size, "bias": False}
+if c.sliding_window is not None:
+    config["window_size"] = c.sliding_window - 1  # окно здесь на позицию шире, см. «Ширина окна: W + 1»
+model = Mixtral(config)
+model.load_state_dict(convert_hf_state_dict(hf.state_dict(), num_heads=c.num_attention_heads,
+                                            num_kv_heads=c.num_key_value_heads))
+```
+
+Сверено со случайными `MixtralForCausalLM` из `transformers` (GQA, 4 эксперта, top-2, без окна): логиты совпадают до ~1e-5, greedy-генерация с KV-кэшем дольше окна — токен в токен (`llm/tests/models/test_mistral_mixtral_hf_parity.py`). Настоящие веса (Mixtral 8x7B — около 90 ГБ) для проверки слишком велики.
 
 ## Генерация
 

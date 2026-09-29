@@ -93,6 +93,8 @@ class MixtralDecoder(nn.Module):
         rope: RoPE,
         dropout: float = 0.1,
         norm_eps: float = 1e-6,
+        intermediate_size: int = None,
+        bias: bool = True,
     ):
         """
         Конструктор декодерного блока MixtralDecoder.
@@ -118,14 +120,18 @@ class MixtralDecoder(nn.Module):
             Количество экспертов в слое MoE (размер пула SwiGLU-экспертов).
         top_k_experts : int
             Сколько экспертов по роутингу активируется на 1 токен (разреженность — эффективная экономия вычислений).
-        window_size : int
-            Размер окна для attention (может использоваться для ограничения receptive field, как в Mistral).
+        window_size : int или None
+            Размер скользящего окна attention, как в Mistral 7B v0.1; None — окна нет (как в Mixtral 8x7B).
         rope : RoPE
             Объект позиционного кодирования RoPE (Rotary Positional Embedding), необходим для архитектуры внимания.
         dropout : float, по умолчанию 0.1
             Вероятность зануляции выходных значений для регуляризации и борьбы с переобучением.
         norm_eps : float, по умолчанию 1e-6
             eps обеих RMSNorm.
+        intermediate_size : int, опционально
+            Скрытый размер SwiGLU каждого эксперта, по умолчанию 4 * emb_size (у Mixtral 8x7B — 14336 = 3.5 * 4096).
+        bias : bool, по умолчанию True
+            Есть ли bias у всех Linear блока (в Mixtral 8x7B его нет).
 
         Пример:
         -------
@@ -152,13 +158,16 @@ class MixtralDecoder(nn.Module):
             max_seq_len=max_seq_len,
             window_size=window_size,
             rope=rope,
-            dropout=dropout
+            dropout=dropout,
+            bias=bias,
         )
         self._ff = MoE(
             emb_size=emb_size, 
             num_experts=num_experts,
             top_k_experts=top_k_experts,
-            dropout=dropout
+            dropout=dropout,
+            hidden_dim=intermediate_size,
+            bias=bias,
         )
         self._norm1 = RMSNorm(emb_size, eps=norm_eps)
         self._norm2 = RMSNorm(emb_size, eps=norm_eps)

@@ -60,6 +60,8 @@ class MistralDecoder(nn.Module):
         rope: RoPE,
         dropout: float = 0.1,
         norm_eps: float = 1e-6,
+        intermediate_size: int = None,
+        bias: bool = True,
     ):
         """
         Инициализация блока MistralDecoder.
@@ -76,14 +78,18 @@ class MistralDecoder(nn.Module):
             Размер одного attention head (num_q_heads * head_size может отличаться от emb_size).
         max_seq_len : int
             Максимально обрабатываемая длина последовательности.
-        window_size : int
-            Размер окна для sliding window attention.
+        window_size : int или None
+            Размер окна для sliding window attention (Mistral 7B v0.1 — 4096); None — окна нет (Mistral v0.2+).
         rope : RoPE
             Rotary Positional Embedding для Q/K.
         dropout : float, опционально
             Dropout на каждом attention/FFN (по умолчанию 0.1).
         norm_eps : float, по умолчанию 1e-6
             eps обеих RMSNorm (у Mistral 7B — 1e-5).
+        intermediate_size : int, опционально
+            Скрытый размер SwiGLU, по умолчанию 4 * emb_size (у Mistral 7B — 14336 = 3.5 * 4096).
+        bias : bool, по умолчанию True
+            Есть ли bias у всех Linear блока (в Mistral 7B его нет).
 
         Внутри:
         -------
@@ -98,9 +104,10 @@ class MistralDecoder(nn.Module):
             max_seq_len=max_seq_len,
             window_size=window_size,
             rope=rope,
-            dropout=dropout
+            dropout=dropout,
+            bias=bias,
         )
-        self._ff = SwiGLU(emb_size=emb_size, dropout=dropout)
+        self._ff = SwiGLU(emb_size=emb_size, dropout=dropout, hidden_dim=intermediate_size, bias=bias)
         self._norm1 = RMSNorm(emb_size, eps=norm_eps)
         self._norm2 = RMSNorm(emb_size, eps=norm_eps)
 
