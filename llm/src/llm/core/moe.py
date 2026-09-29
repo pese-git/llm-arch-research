@@ -89,7 +89,8 @@ class MoE(nn.Module):
 
         dropout : float, по умолчанию 0.1
             Вероятность зануления значений на выходе после агрегации откликов экспертов.
-            Используется для регуляризации (борьбы с переобучением).
+            Используется для регуляризации (борьбы с переобучением). Это единственный dropout
+            слоя: эксперты создаются без собственного.
 
         Пример:
         -------
@@ -118,9 +119,11 @@ class MoE(nn.Module):
         self._top_k_experts = top_k_experts
 
         self._router = nn.Linear(emb_size, num_experts)
+        # Эксперты без собственного dropout: он один — на выходе MoE. Иначе выход эксперта
+        # прорежался бы дважды, и эффективная вероятность была бы выше заданной
         self._experts = nn.ModuleList([SwiGLU(
             emb_size=emb_size,
-            dropout=dropout,
+            dropout=0.0,
         ) for _ in range(num_experts)])
         self._dropout = nn.Dropout(dropout)
 

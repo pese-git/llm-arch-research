@@ -110,3 +110,13 @@ def test_router_softmax_in_float32(dtype, monkeypatch):
 
     assert softmax_input_dtypes == [torch.float32]
     assert y.dtype == dtype
+
+def test_single_dropout_at_moe_output():
+    # Dropout один — на выходе MoE; эксперты без своего, иначе выход прорежался бы дважды
+    torch.manual_seed(0)
+    moe = MoE(emb_size=64, num_experts=4, top_k_experts=2, dropout=0.5).train()
+    assert all(expert._dropout.p == 0.0 for expert in moe._experts)
+
+    x = torch.randn(8, 64, 64)
+    zero_fraction = sum((moe(x) == 0).float().mean().item() for _ in range(20)) / 20
+    assert abs(zero_fraction - 0.5) < 0.02  # было ≈ 0.625 = 0.5 + 0.5 · 0.5² для двух экспертов
