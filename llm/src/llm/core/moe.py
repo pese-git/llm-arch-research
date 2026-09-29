@@ -167,70 +167,35 @@ class MoE(nn.Module):
 
         """
         batch_size, seq_len, emb_size = x.shape
-        
-        # 1. Пропускаем через роутер
-        router_logits = self._router(x)  # [batch_size, seq_len, num_experts]
-        
-        # 2. Отбираем топ-k экспертов для каждого токена
+        # Токены батча обрабатываются одинаково, поэтому удобнее плоский вид [N, emb_size]
+        x_flat = x.reshape(-1, emb_size)  # [N, emb_size], N = batch_size * seq_len
+
+        # 1. Логиты роутера и top-k экспертов для каждого токена
+        router_logits = self._router(x_flat)  # [N, num_experts]
         topk_logits, topk_indices = torch.topk(
-            router_logits, 
-            k=self._top_k_experts, 
-            dim=-1
-        )  # topk_logits: [batch_size, seq_len, top_k]
-           # topk_indices: [batch_size, seq_len, top_k]
-        
-        # 3. Получаем веса через softmax и нормируем
-        topk_weights = F.softmax(topk_logits, dim=-1)  # [batch_size, seq_len, top_k]
-        
-        # 4. Создаём нулевой тензор для результата
-        output = torch.zeros_like(x)  # [batch_size, seq_len, emb_size]   
+            router_logits, k=self._top_k_experts, dim=-1
+        )  # [N, top_k]
 
-        # 5. Проходим по всем экспертам
+        # 2. Веса выбранных экспертов: softmax только по top-k логитам
+        topk_weights = F.softmax(topk_logits, dim=-1)  # [N, top_k]
+
+        # 3. Каждый эксперт обрабатывает только свои токены, результат с весом
+        # добавляется в строки этих токенов
+        output = torch.zeros_like(x_flat)  # [N, emb_size]
         for expert_id in range(self._num_experts):
-            # Шаг 1: Создаём маску - где находится текущий эксперт в топ-k
-            expert_mask = (topk_indices == expert_id)  # [batch_size, seq_len, top_k]
-            # Шаг 2: Проверяем, выбран ли эксперт хотя бы одним токеном
-            if not expert_mask.any():
-                continue  # Эксперт никем не выбран, переходим к следующему
+            # Пары (токен, позиция в top-k), где выбран этот эксперт; в top-k эксперты
+            # не повторяются, поэтому каждый токен встречается не больше одного раза
+            token_idx, k_idx = torch.where(topk_indices == expert_id)
+            if token_idx.numel() == 0:
+                continue  # эксперт никем не выбран — не считается вовсе
 
-            # Шаг 3: Находим токены, которые выбрали этого эксперта
-            # (хотя бы в одной из top_k позиций)
-            token_mask = expert_mask.any(dim=-1)  # [batch_size, seq_len]
-
-            # Шаг 4: Отбираем токены из x
-            # Отбираем токены для этого эксперта
-            expert_input = x[token_mask]
-
-            # Пропускаем через эксперта
-            # Добавляем batch dimension для SwiGLU и затем убираем
+            # SwiGLU ждёт [batch, seq, emb]: выбранные токены — одна «последовательность»
             expert_output = self._experts[expert_id](
-                expert_input.unsqueeze(0)
-            ).squeeze(0)
+                x_flat[token_idx].unsqueeze(0)
+            ).squeeze(0)  # [n_selected, emb_size]
+            weights = topk_weights[token_idx, k_idx].unsqueeze(-1)  # [n_selected, 1]
+            output.index_add_(0, token_idx, weights * expert_output)
 
-            # Получаем веса для этого эксперта
-            # Для каждого токена может быть несколько весов (если эксперт в топ-k несколько раз)
-            # Но на практике каждый эксперт появляется максимум 1 раз в топ-k
-            # Находим веса: где expert_mask == True, берём соответствующий вес
-            # dtype как у входа: иначе буфер float32, и запись весов bf16/fp16 в него падает
-            weights_for_expert = torch.zeros(
-                batch_size, seq_len, device=x.device, dtype=x.dtype
-            )
-
-            # Для каждой позиции в топ-k
-            for k in range(self._top_k_experts):
-                mask_k = topk_indices[:, :, k] == expert_id
-                weights_for_expert[mask_k] = topk_weights[:, :, k][mask_k]
-
-            # Отбираем только веса для выбранных токенов
-            selected_weights = weights_for_expert[token_mask]  # [num_selected_tokens]
-
-
-            # Перемножьте выход эксперта на веса текущего эксперта.
-            weighted_output = selected_weights.unsqueeze(-1) * expert_output
-
-            # Помещаем результат на своё место в выходном тензоре
-            output[token_mask] += weighted_output
-    
-        out = self._dropout(output)
+        out = self._dropout(output.reshape(batch_size, seq_len, emb_size))
 
         return out
