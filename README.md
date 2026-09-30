@@ -2,7 +2,11 @@
 
 Исследовательский проект: реализация «с нуля» на PyTorch, обучение и сравнительный разбор архитектур больших языковых моделей — **GPT, GPT-2, LLaMA, Mistral, Mixtral, Gemma**. Код написан в учебных целях: каждый блок небольшой, самодостаточный и подробно задокументирован.
 
-**[Учебное пособие](docs/README.md)** в `docs/` объясняет каждый механизм — токенизацию, эмбеддинги, позиционное кодирование, attention, нормализацию, FFN, MoE, обучение и генерацию — с научным обоснованием, формулами, схемами и ссылками на статьи, а затем разбирает каждую из шести архитектур и её реализацию в коде.
+**[Документация](docs/README.md)** состоит из трёх разделов:
+
+- **[Учебное пособие](docs/textbook/README.md)** — для тех, кто хочет понять, как устроены LLM: каждый механизм — токенизация, эмбеддинги, позиционное кодирование, attention, нормализация, FFN, MoE, обучение и генерация — с научным обоснованием, формулами, схемами и ссылками на статьи, затем разбор каждой из шести архитектур и её реализации в коде.
+- **[Руководство пользователя](docs/guide/README.md)** — для исследователей, которые обучают и запускают модели: установка, конфиги, данные, обучение, генерация, загрузка весов HuggingFace.
+- **[Для разработчиков](docs/dev/README.md)** — устройство репозитория, добавление модели, тесты, соглашения, бэклог.
 
 ## 🏗️ Архитектура проекта
 
@@ -12,8 +16,8 @@
 - **`hf-proxy`** — экспериментальный адаптер к HuggingFace Transformers. **Поддерживает только модель `GPT`** (см. [hf-proxy/README.md](hf-proxy/README.md)).
 - **`experiments`** — скрипты обучения и генерации: без HF (`llm_only`) и через hf-proxy (`hf_integration`).
 - **`notebooks`** — ноутбуки с пошаговым разбором каждой архитектуры и BPE.
-- **`docs`** — учебное пособие: основы трансформеров (часть I) и разбор архитектур (часть II).
-- **`site`** — сайт пособия из `docs/` на Astro + Starlight: формулы, диаграммы, поиск (см. [site/README.md](site/README.md)).
+- **`docs`** — документация: учебное пособие (`textbook/`), руководство пользователя (`guide/`), документация для разработчиков (`dev/`).
+- **`site`** — сайт документации из `docs/` на Astro + Starlight: формулы, диаграммы, поиск (см. [site/README.md](site/README.md)).
 
 ## 📁 Структура проекта
 
@@ -21,8 +25,9 @@
 llm-arch-research/
 ├── pyproject.toml              # корневой workspace-конфиг
 ├── uv.lock
-├── docs/                       # учебное пособие: главы об основах и об архитектурах
-├── site/                       # сайт пособия (Astro + Starlight), собирается из docs/
+├── CHANGELOG.md                # несовместимые изменения
+├── docs/                       # документация: textbook/ (пособие), guide/ (пользователям), dev/ (разработчикам)
+├── site/                       # сайт документации (Astro + Starlight), собирается из docs/
 │
 ├── llm/                        # основная библиотека
 │   ├── src/llm/
@@ -117,7 +122,7 @@ logits, _ = mistral(input_ids, use_cache=False)
 generated = mistral.generate(input_ids, max_new_tokens=20, do_sample=True, temperature=0.8, top_k=50)
 ```
 
-Ключи конфига различаются между моделями — см. раздел «Конфигурация» в документе нужной архитектуры в [docs/](docs/README.md).
+Ключи конфига различаются между моделями — см. [Модели и конфиги](docs/guide/models.md).
 
 Интеграция с HuggingFace (только `GPT`):
 
@@ -183,7 +188,7 @@ flowchart TB
 
 **Обучение:** собственный BPE-токенизатор, `Trainer` (AdamW, линейный warmup, gradient clipping). `Trainer` чекпоинты не сохраняет: модель сохраняется в один файл с конфигом методом `model.save(path)` и загружается `Model.load(path)` (скрипт `run_llm_experiment.py` пока хранит веса и конфиг отдельными файлами).
 
-**Веса HuggingFace:** во все шесть моделей загружаются веса соответствующих моделей HF (`openai-community/openai-gpt`, `openai-community/gpt2`, `LlamaForCausalLM`, `MistralForCausalLM`, `MixtralForCausalLM`, `GemmaForCausalLM`) функцией `convert_hf_state_dict` из пакета модели. Для этого в конфиге включаются ключи, приближающие модель к оригиналу (`tie_word_embeddings`, `bias`, `intermediate_size`, `rms_norm_eps`, `rope_theta`, …); логиты совпадают с HF с точностью ~1e-5–1e-4, greedy-генерация — токен в токен. Пример и список ключей — в разделе «Загрузка весов HuggingFace» документа архитектуры в [docs/](docs/README.md).
+**Веса HuggingFace:** во все шесть моделей загружаются веса соответствующих моделей HF (`openai-community/openai-gpt`, `openai-community/gpt2`, `LlamaForCausalLM`, `MistralForCausalLM`, `MixtralForCausalLM`, `GemmaForCausalLM`) функцией `convert_hf_state_dict` из пакета модели. Для этого в конфиге включаются ключи, приближающие модель к оригиналу (`tie_word_embeddings`, `bias`, `intermediate_size`, `rms_norm_eps`, `rope_theta`, …); логиты совпадают с HF с точностью ~1e-5–1e-4, greedy-генерация — токен в токен. Рецепты для всех шести моделей — в [Загрузке весов HuggingFace](docs/guide/hf-weights.md).
 
 **hf-proxy:** модель `GPT` оборачивается в `PreTrainedModel`, собственный токенизатор — в HF-совместимый интерфейс; обучение через `transformers.Trainer`, сохранение и загрузка в HF-формате. Сценарии — в [experiments/README.md](experiments/README.md#-hf_integration-через-hf-proxy).
 
@@ -194,40 +199,11 @@ flowchart TB
 - **hf-proxy поддерживает только `GPT`.**
 - Модуль `llm.evaluation` пока пустой.
 
-Подробности по каждой архитектуре — в [docs/README.md](docs/README.md#известные-ограничения).
+Полный список — в [Ограничениях](docs/guide/limitations.md).
 
 ## 💥 Несовместимые изменения
 
-Изменения, после которых старый код, конфиги или чекпоинты могут вести себя иначе. Форма весов и состав слоёв ни в одной модели не менялись: чекпоинты, сохранённые до этих изменений, загружаются.
-
-### Результат модели
-
-- **GPT-1 и GPT-2: GELU по умолчанию — tanh-аппроксимация** ([#11](https://github.com/pese-git/llm-arch-research/pull/11)), как в оригинальном коде OpenAI. Старые чекпоинты загружаются, но логиты отличаются примерно на 1e-4. Точный GELU для GPT-1 — `"activation": "gelu"` в конфиге. Значение `"activation": "gelu_exact"` удалено (`ValueError`), вместо него — `"gelu_tanh"`.
-- **Top-p** ([#31](https://github.com/pese-git/llm-arch-research/pull/31)) теперь включает в ядро токен, на котором сумма вероятностей переходит порог (как в HuggingFace). При тех же весах и seed выборка с `top_p` может отличаться; greedy, температура и top-k не изменились.
-
-- **GPT-1 и GPT-2: инициализация весов из статей** ([#41](https://github.com/pese-git/llm-arch-research/pull/41)) — N(0, 0.02), у GPT-2 ещё и масштабирование residual-проекций. Меняет только обучение с нуля: у новой модели другие начальные веса, чекпоинты и их выход не затрагиваются. Стандартное отклонение — ключ `initializer_range`.
-- **Weight decay только на матрицах** ([#58](https://github.com/pese-git/llm-arch-research/pull/58), пункт 61 [бэклога](docs/backlog.md)): `get_optimizer` и `Trainer` больше не затухают bias и веса LayerNorm/RMSNorm — только веса `Linear` и эмбеддинги, как в GPT-1 и HF `Trainer`. `get_optimizer(..., optimizer_type="sgd")` теперь применяет `weight_decay` (по умолчанию `0.01`), раньше молча его игнорировал. При тех же seed и данных обучение идёт немного иначе; готовые чекпоинты не затрагиваются.
-- **LLaMA, Mistral, Mixtral и Gemma: инициализация весов как в HF** ([#57](https://github.com/pese-git/llm-arch-research/pull/57), пункт 62 [бэклога](docs/backlog.md)) — `Linear` и `Embedding` из N(0, 0.02), bias — нули; раньше оставалась инициализация PyTorch по умолчанию (эмбеддинги N(0, 1)). Меняет только обучение с нуля: у новой модели другие начальные веса, чекпоинты и их выход не затрагиваются. Стандартное отклонение — ключ `initializer_range`.
-- **RMSNorm в float16/bfloat16 считается во float32** ([#48](https://github.com/pese-git/llm-arch-research/pull/48)), как в HuggingFace. LLaMA, Mistral, Mixtral и Gemma в половинной точности дают немного другие (более точные) логиты, а во float16 больше не переполняются на больших активациях. Во float32 результат побитово прежний.
-
-### Чекпоинты и конфиги
-
-- **Маски attention и таблицы RoPE не сохраняются в `state_dict`** ([#32](https://github.com/pese-git/llm-arch-research/pull/32)). Старые чекпоинты новым кодом загружаются, в том числе со `strict=True`. Обратное не работает: чекпоинт нового формата старый код со `strict=True` не загрузит (нет ключей `_tril_mask`, `cos_matrix`, `sin_matrix`); со `strict=False` загрузится, недостающие буферы старый код построит сам.
-- **`head_size` читается из конфига** ([#33](https://github.com/pese-git/llm-arch-research/pull/33)). Раньше ключ игнорировался и размер головы всегда был `embed_dim // <число голов>`. Если в конфиге `head_size` с этим не совпадает, модель соберётся с другими размерами и старый чекпоинт не подойдёт — уберите ключ или исправьте значение.
-- **Неверный конфиг — `ValueError` в конструкторе** ([#33](https://github.com/pese-git/llm-arch-research/pull/33)): `embed_dim`, не делящийся на число голов (без явного `head_size`); `num_q_heads`, не делящееся на `num_kv_heads`; нечётный `head_size` в моделях с RoPE (раньше `AssertionError`); `top_k_experts` вне `1 … num_experts`. Раньше такие конфиги принимались и работали неверно или падали в `forward`.
-
-### API
-
-- **`forward` по умолчанию не возвращает кэш** ([#31](https://github.com/pese-git/llm-arch-research/pull/31)): `model(x)` → `(logits, None)`. Кэш — `model(x, use_cache=True)`.
-- **`generate` не принимает лишних аргументов** ([#31](https://github.com/pese-git/llm-arch-research/pull/31)): неизвестный именованный аргумент (например, опечатка `max_lenght`) — `TypeError`, а не молчаливое игнорирование. Появились `eos_token_id` и `pad_token_id`.
-- **`attention_mask` с любым паддингом** ([#50](https://github.com/pese-git/llm-arch-research/pull/50)): левый паддинг и нули в середине строки в `forward` и `generate` больше не дают `NotImplementedError` — маскируются ключи и сдвигаются позиции (см. [docs/masks.md](docs/masks.md#attention_mask-и-паддинг)). Правый паддинг в `generate` — `ValueError` (генерация продолжилась бы с pad-токена). С кэшем маска должна покрывать кэш: `[batch, cache_len + seq_len]`, иначе `ValueError` — теперь и для маски из одних единиц (раньше с кэшем принималась и `[batch, seq_len]`). При правом паддинге в `forward` меняется выход pad-позиций (pad-токен теперь видит только себя); выход настоящих токенов тот же.
-- **`BPETokenizer.encode` без `<unk>` в словаре** ([#56](https://github.com/pese-git/llm-arch-research/pull/56), пункт 59 [бэклога](docs/backlog.md)): символ, которого нет в словаре, у токенизатора, обученного без `<unk>` в `special_tokens`, теперь даёт `ValueError`, а не `None` в списке id.
-- **`BPETokenizer.encode` применяет слияния по порядку ранга** ([#55](https://github.com/pese-git/llm-arch-research/pull/55), пункт 58 [бэклога](docs/backlog.md)), как BPE в GPT-2 и HuggingFace, а не жадный поиск самого длинного токена словаря. Словарь и id не изменились, но слово, которое при обучении токенизатора не слилось в один токен, может разбиться иначе (`nest`: было `ne s t`, стало `n est`). Модели, обученные со старым кодированием, увидят такие слова непривычно разбитыми. Токенизатор без сохранённых слияний (старые файлы) кодирует по-прежнему жадным поиском. `HFTokenizerAdapter.save_pretrained` теперь сохраняет слияния.
-- **Паддинг не входит в loss** ([#53](https://github.com/pese-git/llm-arch-research/pull/53), пункт 57 [бэклога](docs/backlog.md)): датасеты `llm/datasets` возвращают ещё и `attention_mask`, а `labels` на pad-позициях — `-100` (раньше `labels` были точной копией `input_ids`, и `Trainer` учил модель предсказывать паддинг). Loss при обучении и валидации на данных с паддингом стал выше — это честная величина, а не ухудшение; прежние значения с новыми не сравнимы. `Trainer` передаёт `attention_mask` из батча в модель, а своя модель без этого аргумента по-прежнему вызывается как `model(input_ids)`, если в батче нет маски.
-- **`attention_mask`** ([#29](https://github.com/pese-git/llm-arch-research/pull/29)): раньше игнорировалась. Правый паддинг в `forward` работал; левый паддинг и любые нули в `generate` давали `NotImplementedError` — до #50 (см. выше).
-- **Длина с учётом кэша** ([#29](https://github.com/pese-git/llm-arch-research/pull/29)): `forward` с кэшем, у которого кэш + новые токены длиннее `max_position_embeddings`, — `ValueError`. `generate` в этом случае продолжает по последним `max_position_embeddings` токенам.
-- **Кэш слоя Gemma — `(K, V, next_pos)`** ([#48](https://github.com/pese-git/llm-arch-research/pull/48)), как у Mistral и Mixtral: блок Gemma построен на `GroupedQueryAttention` вместо `MultiQueryAttention`. Результат, `generate` и передача кэша из одного `forward` в другой не изменились; разница видна, только если разбирать кэш вручную.
-- **Параметр `mask` удалён** из `forward` модулей attention (`MultiHeadAttention`, `GroupedQueryAttention`, `MultiQueryAttention`) и декодеров, параметр `rope` — из `Gpt2Decoder` ([#35](https://github.com/pese-git/llm-arch-research/pull/35)). Они принимались и не использовались; передача теперь — `TypeError`.
+Изменения, после которых старый код, конфиги или чекпоинты ведут себя иначе, — в [CHANGELOG.md](CHANGELOG.md).
 
 ## 🛠️ Технологический стек
 
@@ -237,9 +213,11 @@ flowchart TB
 
 ## 🔧 Разработка
 
+Как устроен репозиторий, как добавить модель, как писать тесты и какие соглашения приняты — в [документации для разработчиков](docs/dev/README.md).
+
 ```bash
-# Тесты библиотеки llm
-cd llm && uv run pytest
+# Все тесты (llm и hf-proxy)
+uv run pytest
 
 # Линтинг и форматирование
 uv run ruff check .
@@ -252,10 +230,12 @@ cd llm && uv add package-name
 
 ## 🤝 Вклад в проект
 
-1. Создайте feature-ветку
-2. Внесите изменения и добавьте тесты
-3. Убедитесь, что `uv run pytest` в каталоге `llm/` проходит
+1. Создайте ветку от `master` с префиксом типа изменения (`fix/`, `feat/`, `docs/`, …)
+2. Внесите изменения, добавьте тесты и обновите документацию
+3. Убедитесь, что `uv run pytest` из корня проходит
 4. Создайте pull request
+
+Подробнее — в [Соглашениях](docs/dev/conventions.md).
 
 ## 📄 Лицензия
 
