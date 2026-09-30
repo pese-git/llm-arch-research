@@ -2,8 +2,8 @@
 
 Часть I · [← Эмбеддинги](embeddings.md) · [Оглавление](README.md) · [Attention →](attention.md)
 
-> Реализация: [`core/positional_embeddings.py`](../llm/src/llm/core/positional_embeddings.py) · класс `PositionalEmbeddings` (GPT-1, GPT-2);
-> [`core/rope.py`](../llm/src/llm/core/rope.py) · класс `RoPE` (LLaMA, Mistral, Mixtral, Gemma)
+> Реализация: [`core/positional_embeddings.py`](../../llm/src/llm/core/positional_embeddings.py) · класс `PositionalEmbeddings` (GPT-1, GPT-2);
+> [`core/rope.py`](../../llm/src/llm/core/rope.py) · класс `RoPE` (LLaMA, Mistral, Mixtral, Gemma)
 
 ## Что вы узнаете
 
@@ -143,7 +143,7 @@ X^{(0)}_{t} = E[x_t] + P[t], \qquad t = 0, 1, \dots, T-1
 
 ### Реализация: `PositionalEmbeddings`
 
-Класс [`PositionalEmbeddings`](../llm/src/llm/core/positional_embeddings.py) — обёртка над `nn.Embedding(max_seq_len, emb_size)`: его матрица весов и есть $`P`$. Метод `forward(seq_len, start_pos=0, positions=None)` возвращает строки матрицы $`P`$ с номерами `start_pos … start_pos + seq_len − 1` формы `[seq_len, emb_size]`, а с `positions` формы `[batch, seq_len]` — строки с этими номерами, `[batch, seq_len, emb_size]`:
+Класс [`PositionalEmbeddings`](../../llm/src/llm/core/positional_embeddings.py) — обёртка над `nn.Embedding(max_seq_len, emb_size)`: его матрица весов и есть $`P`$. Метод `forward(seq_len, start_pos=0, positions=None)` возвращает строки матрицы $`P`$ с номерами `start_pos … start_pos + seq_len − 1` формы `[seq_len, emb_size]`, а с `positions` формы `[batch, seq_len]` — строки с этими номерами, `[batch, seq_len, emb_size]`:
 
 ```python
 if positions is not None:          # паддинг: своя позиция у каждой строки
@@ -155,7 +155,7 @@ positions = torch.arange(start=start_pos, end=start_pos + seq_len, device=...)
 return self.embedding(positions)
 ```
 
-В моделях [`GPT`](../llm/src/llm/models/gpt/gpt.py) и [`GPT2`](../llm/src/llm/models/gpt/gpt2.py) сложение выглядит так (`forward`):
+В моделях [`GPT`](../../llm/src/llm/models/gpt/gpt.py) и [`GPT2`](../../llm/src/llm/models/gpt/gpt2.py) сложение выглядит так (`forward`):
 
 ```python
 tok_out = self._token_embeddings(x)                              # [batch, seq_len, emb_size]
@@ -166,13 +166,13 @@ else:
 out = self._dropout(tok_out + pos_out)                           # broadcast по батчу без паддинга
 ```
 
-Без паддинга `unsqueeze(0)` превращает `[seq_len, emb_size]` в `[1, seq_len, emb_size]`, и одна и та же матрица позиций прибавляется ко всем примерам батча. С паддингом в `attention_mask` позиции у строк разные: позиция токена — его номер среди настоящих токенов строки, `cumsum(mask) − 1` (у строки `[pad, pad, a, b]` токен `a` — на позиции 0). Их считает `padding_from_attention_mask` из [`core/padding.py`](../llm/src/llm/core/padding.py) и передаёт в `positions`; подробно — в [masks.md](masks.md#attention_mask-и-паддинг). Веса $`P`$ инициализируются вместе с остальными `Embedding`/`Linear` нормальным распределением ($`\mathcal{N}(0, 0.02^2)`$ по умолчанию, `init_normal_` в [`core/weight_init.py`](../llm/src/llm/core/weight_init.py)). При загрузке весов OpenAI/HF матрица приходит из ключа `wpe.weight` (GPT-2) или `positions_embed.weight` (GPT-1), см. [`models/gpt/hf_weights.py`](../llm/src/llm/models/gpt/hf_weights.py).
+Без паддинга `unsqueeze(0)` превращает `[seq_len, emb_size]` в `[1, seq_len, emb_size]`, и одна и та же матрица позиций прибавляется ко всем примерам батча. С паддингом в `attention_mask` позиции у строк разные: позиция токена — его номер среди настоящих токенов строки, `cumsum(mask) − 1` (у строки `[pad, pad, a, b]` токен `a` — на позиции 0). Их считает `padding_from_attention_mask` из [`core/padding.py`](../../llm/src/llm/core/padding.py) и передаёт в `positions`; подробно — в [masks.md](masks.md#attention_mask-и-паддинг). Веса $`P`$ инициализируются вместе с остальными `Embedding`/`Linear` нормальным распределением ($`\mathcal{N}(0, 0.02^2)`$ по умолчанию, `init_normal_` в [`core/weight_init.py`](../../llm/src/llm/core/weight_init.py)). При загрузке весов OpenAI/HF матрица приходит из ключа `wpe.weight` (GPT-2) или `positions_embed.weight` (GPT-1), см. [`models/gpt/hf_weights.py`](../../llm/src/llm/models/gpt/hf_weights.py).
 
 Докстринг `PositionalEmbeddings` упоминает и синусоидальный вариант, но реализован только обучаемый: синусоидального кодирования в репозитории нет.
 
 ### `start_pos` и KV-кэш
 
-При генерации с KV-кэшем ([generation.md](generation.md)) модель на каждом шаге получает только новый токен, `seq_len = 1`. Его позиция — не 0, а число уже обработанных токенов. Эту позицию считает функция `cache_start_pos` в [`core/generation.py`](../llm/src/llm/core/generation.py): для кэша слоёв MHA она равна длине закэшированной последовательности `K`. Модель передаёт её в `PositionalEmbeddings` как `start_pos` и сначала проверяет `check_sequence_length`: если `start_pos + seq_len > max_position_embeddings`, выбрасывается `ValueError`.
+При генерации с KV-кэшем ([generation.md](generation.md)) модель на каждом шаге получает только новый токен, `seq_len = 1`. Его позиция — не 0, а число уже обработанных токенов. Эту позицию считает функция `cache_start_pos` в [`core/generation.py`](../../llm/src/llm/core/generation.py): для кэша слоёв MHA она равна длине закэшированной последовательности `K`. Модель передаёт её в `PositionalEmbeddings` как `start_pos` и сначала проверяет `check_sequence_length`: если `start_pos + seq_len > max_position_embeddings`, выбрасывается `ValueError`.
 
 Что будет, если забыть `start_pos`? Каждый новый токен получит $`P[0]`$ — модель будет «думать», что каждое следующее слово стоит в начале текста.
 
@@ -591,7 +591,7 @@ print(torch.allclose(q_rot.norm(dim=-1), torch.tensor(6.0).sqrt()))  # True: н�
 
 Проверим для пары 0: $`\tilde x_0 = x_0\cos m\theta_0 + (-x_1)\sin m\theta_0`$, $`\tilde x_1 = x_1\cos m\theta_0 + x_0\sin m\theta_0`$ — ровно формулы поворота. Стоимость — $`O(d_h)`$ на вектор, а таблицы $`\cos`$ и $`\sin`$ для всех позиций можно посчитать заранее.
 
-В [`RoPE.forward`](../llm/src/llm/core/rope.py) то же записано чуть иначе — через раздельные чётные и нечётные координаты, без повторения частот:
+В [`RoPE.forward`](../../llm/src/llm/core/rope.py) то же записано чуть иначе — через раздельные чётные и нечётные координаты, без повторения частот:
 
 ```python
 x_even = x[..., 0::2]                          # x₀, x₂, x₄, …   [B, H, T, d_h/2]
@@ -618,7 +618,7 @@ x_rotated = torch.stack([x_rotated_even, x_rotated_odd], dim=-1).flatten(-2)  # 
 
 **Следствие для весов.** Модель, обученная с одним вариантом, не работает с другим: её $`W_q`$, $`W_k`$ выучены так, что пары частот лежат в определённых координатах. Но перестановку можно «впечатать» в веса: переставить выходы (столбцы $`W_q`$, $`W_k`$ в нашей записи $`xW`$) — тогда проекция сразу выдаёт векторы в нужном порядке.
 
-Функция `_hf_to_meta_rows` в [`models/llama/hf_weights.py`](../llm/src/llm/models/llama/hf_weights.py) делает именно это. В PyTorch `nn.Linear` хранит вес формы `[out, in]`, то есть $`W^\top`$, поэтому переставляются **строки** тензора веса. Внутри каждой головы $`h`$ для $`i = 0, \dots, d_h/2 - 1`$ и $`s \in \{0, 1\}`$:
+Функция `_hf_to_meta_rows` в [`models/llama/hf_weights.py`](../../llm/src/llm/models/llama/hf_weights.py) делает именно это. В PyTorch `nn.Linear` хранит вес формы `[out, in]`, то есть $`W^\top`$, поэтому переставляются **строки** тензора веса. Внутри каждой головы $`h`$ для $`i = 0, \dots, d_h/2 - 1`$ и $`s \in \{0, 1\}`$:
 
 ```math
 W^{\text{здесь}}\big[h\,d_h + 2i + s,\ :\big] = W^{\text{HF}}\big[h\,d_h + s \cdot \tfrac{d_h}{2} + i,\ :\big]
@@ -700,7 +700,7 @@ RoFormer (раздел 3.4.3) отмечает ещё одно свойство 
 
 ### Расширение контекста
 
-Что будет, если подать модели позицию больше той, на которой её обучали? Быстрые пары при этом не видят ничего нового — их углы давно прошли все значения на окружности. А медленные пары получают углы, которых модель никогда не видела, и оценки внимания становятся непредсказуемыми. Chen et al. ([2023](https://arxiv.org/abs/2306.15595)) показали, что прямая экстраполяция LLaMA за длину обучения быстро разрушает качество. Известные способы расширить контекст готовой модели (в репозитории их **нет**: конфига `rope_scaling` не существует, и [`hf_weights.py`](../llm/src/llm/models/llama/hf_weights.py) рассчитан на модели без него):
+Что будет, если подать модели позицию больше той, на которой её обучали? Быстрые пары при этом не видят ничего нового — их углы давно прошли все значения на окружности. А медленные пары получают углы, которых модель никогда не видела, и оценки внимания становятся непредсказуемыми. Chen et al. ([2023](https://arxiv.org/abs/2306.15595)) показали, что прямая экстраполяция LLaMA за длину обучения быстро разрушает качество. Известные способы расширить контекст готовой модели (в репозитории их **нет**: конфига `rope_scaling` не существует, и [`hf_weights.py`](../../llm/src/llm/models/llama/hf_weights.py) рассчитан на модели без него):
 
 - **Position Interpolation** (Chen et al., 2023): позиции сжимаются, $`m \to m \cdot L / L'`$, где $`L`$ — длина обучения, $`L'`$ — новая длина. Все углы остаются в знакомом диапазоне, но становятся дробными. После короткого дообучения (порядка 1000 шагов) LLaMA работает с контекстом до 32 768.
 - **Увеличение базы** («NTK-aware»-масштабирование, описано в [YaRN, Peng et al., 2023](https://arxiv.org/abs/2309.00071)): вместо равномерного сжатия увеличивается база. Быстрые пары почти не меняются (ближние расстояния кодируются как раньше), медленные замедляются сильнее.
@@ -776,7 +776,7 @@ flowchart TB
 
 ## Реализация RoPE в репозитории
 
-Класс [`RoPE`](../llm/src/llm/core/rope.py) — модуль без обучаемых параметров. Один экземпляр создаётся в `__init__` модели (`Llama`, `Mistral`, `Mixtral`, `Gemma`) и под именем `_position_embeddings` передаётся во все слои attention:
+Класс [`RoPE`](../../llm/src/llm/core/rope.py) — модуль без обучаемых параметров. Один экземпляр создаётся в `__init__` модели (`Llama`, `Mistral`, `Mixtral`, `Gemma`) и под именем `_position_embeddings` передаётся во все слои attention:
 
 ```python
 self._position_embeddings = RoPE(
@@ -798,7 +798,7 @@ def __init__(self, head_size: int, max_seq_len: int, base: float = 10_000):
 ```
 
 - **База больше 1.** При $`\text{base} = 1`$ все частоты равны 1 — все пары вращаются одинаково быстро, и медленных «стрелок» нет. При $`\text{base} < 1`$ частоты растут, а не убывают. Оба случая — почти наверняка ошибка в конфиге.
-- **Чётный `head_size`.** Поворачиваются пары координат, одна координата осталась бы без пары. Модели проверяют это ещё раньше, при разборе конфига: `resolve_head_size(config, ..., rope=True)` в [`core/config_checks.py`](../llm/src/llm/core/config_checks.py).
+- **Чётный `head_size`.** Поворачиваются пары координат, одна координата осталась бы без пары. Модели проверяют это ещё раньше, при разборе конфига: `resolve_head_size(config, ..., rope=True)` в [`core/config_checks.py`](../../llm/src/llm/core/config_checks.py).
 
 ```python
 freqs = 1.0 / (base ** (2 * torch.arange(head_size // 2).float() / head_size))  # θᵢ, [d_h/2]
@@ -846,7 +846,7 @@ else:
 
 ### Где вызывается
 
-В [`MultiHeadAttention`](../llm/src/llm/core/multi_head_attention.py) (LLaMA) и [`GroupedQueryAttention`](../llm/src/llm/core/group_query_attention.py) (Mistral, Mixtral, Gemma) — после разбиения на головы и **до** склейки с кэшем:
+В [`MultiHeadAttention`](../../llm/src/llm/core/multi_head_attention.py) (LLaMA) и [`GroupedQueryAttention`](../../llm/src/llm/core/group_query_attention.py) (Mistral, Mixtral, Gemma) — после разбиения на головы и **до** склейки с кэшем:
 
 ```python
 positions = padding.positions if padding is not None else None

@@ -54,7 +54,7 @@ class MixtralDecoder(nn.Module):
         Сколько одновременно экспертов активируется для одного токена.
     window_size : int
         Размер скользящего окна внимания. В Mixtral 8x7B окна нет (плотное внимание на 32k),
-        здесь оно унаследовано от Mistral — см. docs/mixtral.md.
+        здесь оно унаследовано от Mistral — см. docs/textbook/mixtral.md.
     rope : RoPE
         Реализация позиционного кодирования RoPE.
     dropout : float

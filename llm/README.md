@@ -2,7 +2,7 @@
 
 Модульная учебная библиотека на PyTorch: строительные блоки трансформера и шесть собранных из них моделей — **GPT, GPT-2, LLaMA, Mistral, Mixtral, Gemma**. Зависит только от `torch` и `numpy`.
 
-Теория, формулы и разбор каждой архитектуры — в [учебном пособии](../docs/README.md).
+Как пользоваться библиотекой — в [руководстве пользователя](../docs/guide/README.md); теория, формулы и разбор каждой архитектуры — в [учебном пособии](../docs/textbook/README.md); как её развивать — в [документации для разработчиков](../docs/dev/README.md).
 
 ## 🏗️ Структура
 
@@ -74,7 +74,7 @@ src/llm/
 
 ## 🧩 Ключевые компоненты
 
-Краткая памятка; вывод формул и обоснование — в главах пособия: [RoPE](../docs/positional-encoding.md), [attention](../docs/attention.md), [RMSNorm](../docs/normalization.md), [SwiGLU и GeGLU](../docs/feed-forward.md), [MoE](../docs/mixture-of-experts.md).
+Краткая памятка; вывод формул и обоснование — в главах пособия: [RoPE](../docs/textbook/positional-encoding.md), [attention](../docs/textbook/attention.md), [RMSNorm](../docs/textbook/normalization.md), [SwiGLU и GeGLU](../docs/textbook/feed-forward.md), [MoE](../docs/textbook/mixture-of-experts.md).
 
 ### CachedDecoder (`core/cached_decoder.py`)
 **Универсальный декодер** с поддержкой dependency injection и кэширования KV-памяти.
@@ -154,7 +154,7 @@ out = model.generate(input_ids, max_new_tokens=50, do_sample=False)
 out = model.generate(input_ids, max_new_tokens=50, do_sample=True, temperature=0.8, top_p=0.9)
 ```
 
-Когда последовательность становится длиннее `max_position_embeddings`, `generate` продолжает по последним `max_position_embeddings` токенам. Промпты разной длины генерируются одним батчем с левым паддингом: `generate(padded, attention_mask=mask, ...)`; каждая строка даёт то же, что её промпт отдельно. `forward` принимает паддинг в любом месте строки (подробнее — [docs/masks.md](../docs/masks.md#attention_mask-и-паддинг)).
+Когда последовательность становится длиннее `max_position_embeddings`, `generate` продолжает по последним `max_position_embeddings` токенам. Промпты разной длины генерируются одним батчем с левым паддингом: `generate(padded, attention_mask=mask, ...)`; каждая строка даёт то же, что её промпт отдельно. `forward` принимает паддинг в любом месте строки (подробнее — [docs/textbook/masks.md](../docs/textbook/masks.md#attention_mask-и-паддинг)).
 
 ### Сохранение и загрузка
 
@@ -214,7 +214,7 @@ Attention(Q, K, V) = softmax(Q·Kᵀ/√d_k)·V
 - Поворот сохраняет норму векторов
 - Нет обучаемых параметров; `V` не поворачивается
 
-За пределы `max_position_embeddings` без изменения базы и дообучения RoPE не экстраполирует. Подробно — в [../docs/llama.md](../docs/llama.md#attention-с-rope).
+За пределы `max_position_embeddings` без изменения базы и дообучения RoPE не экстраполирует. Подробно — в [../docs/textbook/llama.md](../docs/textbook/llama.md#attention-с-rope).
 
 ### RMSNorm vs LayerNorm
 **RMSNorm** нормирует только масштаб: не вычитает среднее и не имеет сдвига. Это дешевле LayerNorm, а по качеству, по данным статьи ([Zhang & Sennrich, 2019](https://arxiv.org/abs/1910.07467)), сопоставимо.

@@ -2,8 +2,8 @@
 
 Часть II · [← Генерация текста](generation.md) · [Оглавление](README.md) · [GPT-2 →](gpt2.md)
 
-> Реализация: [`llm/src/llm/models/gpt/gpt.py`](../llm/src/llm/models/gpt/gpt.py) · класс `GPT`
-> Ноутбук: [`notebooks/gpt.ipynb`](../notebooks/gpt.ipynb)
+> Реализация: [`llm/src/llm/models/gpt/gpt.py`](../../llm/src/llm/models/gpt/gpt.py) · класс `GPT`
+> Ноутбук: [`notebooks/gpt.ipynb`](../../notebooks/gpt.ipynb)
 
 Место в линейке: **GPT-1** → [GPT-2](gpt2.md) → [LLaMA](llama.md) → [Mistral](mistral.md) → [Mixtral](mixtral.md) · [Gemma](gemma.md)
 
@@ -265,7 +265,7 @@ flowchart TB
     classDef dim fill:#f5f5f5,stroke:#bbbbbb,color:#999999,stroke-dasharray:4 3;
 ```
 
-В коде ([`core/multi_head_attention.py`](../llm/src/llm/core/multi_head_attention.py), `MultiHeadAttention.forward`): `scores = q @ k.transpose(-2, -1) / self._head_size ** 0.5` — дробь под softmax; `scores.masked_fill(~causal_mask, float('-inf'))` — прибавление $`M`$ (маска — нижнетреугольный буфер `_tril_mask`); `weights @ v` — умножение на $`V_i`$ для всех голов сразу, потому что Q, K, V имеют форму `[batch, num_heads, seq_len, head_size]`.
+В коде ([`core/multi_head_attention.py`](../../llm/src/llm/core/multi_head_attention.py), `MultiHeadAttention.forward`): `scores = q @ k.transpose(-2, -1) / self._head_size ** 0.5` — дробь под softmax; `scores.masked_fill(~causal_mask, float('-inf'))` — прибавление $`M`$ (маска — нижнетреугольный буфер `_tril_mask`); `weights @ v` — умножение на $`V_i`$ для всех голов сразу, потому что Q, K, V имеют форму `[batch, num_heads, seq_len, head_size]`.
 
 ### Feed Forward
 
@@ -278,7 +278,7 @@ flowchart TB
 - $`W_1 \in \mathbb{R}^{d \times d_{ff}}`$, $`b_1 \in \mathbb{R}^{d_{ff}}`$ — расширяющий слой; $`W_2 \in \mathbb{R}^{d_{ff} \times d}`$, $`b_2 \in \mathbb{R}^{d}`$ — сжимающий;
 - $`d_{ff} = 4d`$ — в коде зашито (`emb_size * 4`); для GPT-1 это 3072, как в статье.
 
-GELU по умолчанию — tanh-аппроксимация (`activation="gelu_tanh"`, класс `GELU` в [`core/gelu.py`](../llm/src/llm/core/gelu.py)), как в оригинальном коде OpenAI:
+GELU по умолчанию — tanh-аппроксимация (`activation="gelu_tanh"`, класс `GELU` в [`core/gelu.py`](../../llm/src/llm/core/gelu.py)), как в оригинальном коде OpenAI:
 
 ```math
 \mathrm{GELU}(z) \approx \tfrac{1}{2} z \left(1 + \tanh\!\left(\sqrt{2/\pi}\,\big(z + 0{,}044715\, z^3\big)\right)\right)
@@ -329,12 +329,12 @@ flowchart LR
 
 | Компонент | Класс | Файл |
 |---|---|---|
-| Токен-эмбеддинги | `TokenEmbeddings` | [`core/token_embeddings.py`](../llm/src/llm/core/token_embeddings.py) |
-| Позиционные эмбеддинги | `PositionalEmbeddings` (обучаемые, абсолютные) | [`core/positional_embeddings.py`](../llm/src/llm/core/positional_embeddings.py) |
-| Attention | `MultiHeadAttention` (стандартный causal MHA, без RoPE/GQA) | [`core/multi_head_attention.py`](../llm/src/llm/core/multi_head_attention.py) |
-| FFN | `FeedForward` (2-слойный MLP, tanh-аппроксимация GELU — `activation="gelu_tanh"`, как в оригинальном коде OpenAI; меняется ключом `activation` в конфиге) | [`core/feed_forward.py`](../llm/src/llm/core/feed_forward.py) |
-| Блок декодера | `GptDecoder` (**post-LN**) | [`core/gpt_decoder.py`](../llm/src/llm/core/gpt_decoder.py) |
-| Модель целиком | `GPT` | [`models/gpt/gpt.py`](../llm/src/llm/models/gpt/gpt.py) |
+| Токен-эмбеддинги | `TokenEmbeddings` | [`core/token_embeddings.py`](../../llm/src/llm/core/token_embeddings.py) |
+| Позиционные эмбеддинги | `PositionalEmbeddings` (обучаемые, абсолютные) | [`core/positional_embeddings.py`](../../llm/src/llm/core/positional_embeddings.py) |
+| Attention | `MultiHeadAttention` (стандартный causal MHA, без RoPE/GQA) | [`core/multi_head_attention.py`](../../llm/src/llm/core/multi_head_attention.py) |
+| FFN | `FeedForward` (2-слойный MLP, tanh-аппроксимация GELU — `activation="gelu_tanh"`, как в оригинальном коде OpenAI; меняется ключом `activation` в конфиге) | [`core/feed_forward.py`](../../llm/src/llm/core/feed_forward.py) |
+| Блок декодера | `GptDecoder` (**post-LN**) | [`core/gpt_decoder.py`](../../llm/src/llm/core/gpt_decoder.py) |
+| Модель целиком | `GPT` | [`models/gpt/gpt.py`](../../llm/src/llm/models/gpt/gpt.py) |
 
 `GptDecoder.forward`:
 ```
@@ -379,9 +379,9 @@ L · блок          = 12 · 7 087 872          =  85 054 464
 итого                                          116 534 784
 ```
 
-Это совпадает с числом параметров HF-модели `openai-community/openai-gpt`, записанным в [backlog.md](backlog.md). Блоки — 73 % параметров, эмбеддинги — 27 %. Без tying добавляется $`V d + V = 31\,127\,582`$, итого 147 662 366. В самой статье GPT-1 число параметров не приводится; в статье GPT-2 (табл. 2) самая маленькая модель, 117M, названа эквивалентной исходному GPT.
+Это совпадает с числом параметров HF-модели `openai-community/openai-gpt`, записанным в [backlog.md](../dev/backlog.md). Блоки — 73 % параметров, эмбеддинги — 27 %. Без tying добавляется $`V d + V = 31\,127\,582`$, итого 147 662 366. В самой статье GPT-1 число параметров не приводится; в статье GPT-2 (табл. 2) самая маленькая модель, 117M, названа эквивалентной исходному GPT.
 
-**Учебный конфиг** [`gpt_train.json`](../experiments/llm_only/configs/gpt_train.json) ($`d = 256`$, $`L = 4`$, $`T_{\max} = 128`$; `vocab_size` берётся из токенизатора, при `bpe_vocab_size = 1000` возьмём $`V = 1000`$), по умолчанию без tying:
+**Учебный конфиг** [`gpt_train.json`](../../experiments/llm_only/configs/gpt_train.json) ($`d = 256`$, $`L = 4`$, $`T_{\max} = 128`$; `vocab_size` берётся из токенизатора, при `bpe_vocab_size = 1000` возьмём $`V = 1000`$), по умолчанию без tying:
 
 ```
 V·d = 256 000;  T_max·d = 32 768;  блок = 12·256² + 13·256 = 789 760;  4 блока = 3 159 040
@@ -403,7 +403,7 @@ print(sum(p.numel() for p in GPT(cfg).parameters()))  # 116534784
 
 ## Конфигурация
 
-Пример из [`experiments/llm_only/configs/gpt_train.json`](../experiments/llm_only/configs/gpt_train.json):
+Пример из [`experiments/llm_only/configs/gpt_train.json`](../../experiments/llm_only/configs/gpt_train.json):
 
 | Параметр | Значение в примере | Значение в GPT-1 | Смысл |
 |---|---|---|---|
@@ -421,7 +421,7 @@ print(sum(p.numel() for p in GPT(cfg).parameters()))  # 116534784
 
 ### Инициализация весов
 
-Как в статье (разд. 4.1) и коде OpenAI, веса `Linear` и `Embedding` инициализируются $`\mathcal{N}(0,\ 0{,}02^2)`$, bias — нулями, `LayerNorm` — весом 1 и нулевым сдвигом (функция `init_normal_` в [`core/weight_init.py`](../llm/src/llm/core/weight_init.py)). Инициализация PyTorch по умолчанию даёт эмбеддинги $`\mathcal{N}(0, 1)`$ и веса `Linear` с std ≈ $`1/\sqrt{3 \cdot \text{fan\_in}}`$; с $`\mathcal{N}(0,\ 0{,}02^2)`$ логиты свежей модели близки к нулю, и начальный loss — около $`\ln V`$, как у равномерного распределения. Например, у свежей модели учебного конфига с $`V = 1000`$ loss на случайных токенах ≈ 6,9, а $`\ln 1000 \approx 6{,}91`$. Инициализация важна только при обучении с нуля: загрузка чекпоинта её перезаписывает.
+Как в статье (разд. 4.1) и коде OpenAI, веса `Linear` и `Embedding` инициализируются $`\mathcal{N}(0,\ 0{,}02^2)`$, bias — нулями, `LayerNorm` — весом 1 и нулевым сдвигом (функция `init_normal_` в [`core/weight_init.py`](../../llm/src/llm/core/weight_init.py)). Инициализация PyTorch по умолчанию даёт эмбеддинги $`\mathcal{N}(0, 1)`$ и веса `Linear` с std ≈ $`1/\sqrt{3 \cdot \text{fan\_in}}`$; с $`\mathcal{N}(0,\ 0{,}02^2)`$ логиты свежей модели близки к нулю, и начальный loss — около $`\ln V`$, как у равномерного распределения. Например, у свежей модели учебного конфига с $`V = 1000`$ loss на случайных токенах ≈ 6,9, а $`\ln 1000 \approx 6{,}91`$. Инициализация важна только при обучении с нуля: загрузка чекпоинта её перезаписывает.
 
 Из-за post-LN и малых весов у свежей модели скалярные произведения Q·K почти нулевые и внимание почти равномерное — модель начинает учитывать порядок токенов по мере обучения. Общая теория инициализации — в [training.md](training.md).
 
@@ -429,11 +429,11 @@ print(sum(p.numel() for p in GPT(cfg).parameters()))  # 116534784
 
 В GPT-1 логиты считаются умножением скрытого состояния на ту же матрицу, что хранит токенные эмбеддинги: $`Z = H^{(L)} E^{\top}`$, без bias. Это **weight tying** (связывание весов). Оно видно в формуле (2) статьи — $`P(u) = \mathrm{softmax}(h_n W_e^{\top})`$, где $`W_e`$ — матрица эмбеддингов токенов, — и в оригинальном коде OpenAI (`finetune-transformer-lm/train.py`: `tf.matmul(h, we, transpose_b=True)`), и в HuggingFace (`OpenAIGPTLMHeadModel`). Зачем это нужно и почему это разумно, разобрано в [embeddings.md](embeddings.md).
 
-Здесь tying включается ключом `"tie_word_embeddings": true` (функция `output_projection` в [`core/token_embeddings.py`](../llm/src/llm/core/token_embeddings.py)): `_linear.weight` — тот же параметр, что `_token_embeddings._embedding.weight`, и градиенты от входа и от выхода складываются в нём. Модель становится меньше на `vocab_size · embed_dim + vocab_size` параметров. По умолчанию ключ выключен, чтобы загружались чекпоинты, сохранённые раньше: в них есть отдельные `_linear.weight` и `_linear.bias`. Чекпоинт одного вида в модель другого не загружается.
+Здесь tying включается ключом `"tie_word_embeddings": true` (функция `output_projection` в [`core/token_embeddings.py`](../../llm/src/llm/core/token_embeddings.py)): `_linear.weight` — тот же параметр, что `_token_embeddings._embedding.weight`, и градиенты от входа и от выхода складываются в нём. Модель становится меньше на `vocab_size · embed_dim + vocab_size` параметров. По умолчанию ключ выключен, чтобы загружались чекпоинты, сохранённые раньше: в них есть отдельные `_linear.weight` и `_linear.bias`. Чекпоинт одного вида в модель другого не загружается.
 
 `nn.Linear` хранит вес в форме `[out, in]` и считает $`x W^{\top} + b`$. У выходной проекции `weight` имеет форму `[V, d]` — ровно как таблица эмбеддингов, поэтому связывание — это просто один и тот же тензор в двух модулях, без транспонирования.
 
-С `tie_word_embeddings` загружаются веса [`openai-community/openai-gpt`](https://huggingface.co/openai-community/openai-gpt) — через `convert_hf_state_dict` из [`models/gpt/hf_weights.py`](../llm/src/llm/models/gpt/hf_weights.py):
+С `tie_word_embeddings` загружаются веса [`openai-community/openai-gpt`](https://huggingface.co/openai-community/openai-gpt) — через `convert_hf_state_dict` из [`models/gpt/hf_weights.py`](../../llm/src/llm/models/gpt/hf_weights.py):
 
 ```python
 from transformers import OpenAIGPTLMHeadModel
@@ -461,11 +461,11 @@ model.load_state_dict(convert_hf_state_dict(hf.state_dict()))
 
 ### `GPT.__init__`
 
-[`models/gpt/gpt.py`](../llm/src/llm/models/gpt/gpt.py), класс `GPT` (наследник `BaseModel` из [`core/base_model.py`](../llm/src/llm/core/base_model.py), который даёт `generate`, `save`, `load`):
+[`models/gpt/gpt.py`](../../llm/src/llm/models/gpt/gpt.py), класс `GPT` (наследник `BaseModel` из [`core/base_model.py`](../../llm/src/llm/core/base_model.py), который даёт `generate`, `save`, `load`):
 
 | Строка кода | Что создаёт | В формулах |
 |---|---|---|
-| `head_size = resolve_head_size(config, "num_heads")` | размер головы с проверкой делимости ([`core/config_checks.py`](../llm/src/llm/core/config_checks.py)) | $`d_h`$ |
+| `head_size = resolve_head_size(config, "num_heads")` | размер головы с проверкой делимости ([`core/config_checks.py`](../../llm/src/llm/core/config_checks.py)) | $`d_h`$ |
 | `self._max_seq_len = config["max_position_embeddings"]` | предел длины для проверок и `generate` | $`T_{\max}`$ |
 | `self._token_embeddings = TokenEmbeddings(...)` | `nn.Embedding(V, d)` | $`E`$ |
 | `self._position_embeddings = PositionalEmbeddings(...)` | `nn.Embedding(T_max, d)` | $`P`$ |
@@ -474,7 +474,7 @@ model.load_state_dict(convert_hf_state_dict(hf.state_dict()))
 | `self._linear = output_projection(...)` | `Linear(d, V)`; при tying — без bias и с общим весом | $`W_{\text{out}}, b_{\text{out}}`$ |
 | `self.apply(partial(init_normal_, std=...))` | инициализация $`\mathcal{N}(0,\ 0{,}02^2)`$ | |
 
-`GptDecoder.__init__` ([`core/gpt_decoder.py`](../llm/src/llm/core/gpt_decoder.py)) создаёт `_heads = MultiHeadAttention(...)`, `_ff = FeedForward(..., activation=activation)`, `_norm1`, `_norm2 = nn.LayerNorm(emb_size)`. Отдельный класс `GptDecoder` нужен именно из-за post-LN: остальные блоки декодера в репозитории — pre-LN.
+`GptDecoder.__init__` ([`core/gpt_decoder.py`](../../llm/src/llm/core/gpt_decoder.py)) создаёт `_heads = MultiHeadAttention(...)`, `_ff = FeedForward(..., activation=activation)`, `_norm1`, `_norm2 = nn.LayerNorm(emb_size)`. Отдельный класс `GptDecoder` нужен именно из-за post-LN: остальные блоки декодера в репозитории — pre-LN.
 
 ### `GPT.forward`
 
@@ -566,7 +566,7 @@ flowchart LR
 
 Генерация одинакова для всех моделей репозитория и подробно разобрана в главе [generation.md](generation.md). Кратко:
 
-- `generate(x, max_new_tokens, do_sample, temperature=1.0, top_k=None, top_p=None, use_cache=True, attention_mask=None, eos_token_id=None, pad_token_id=None)` — один метод `BaseModel.generate` ([`core/base_model.py`](../llm/src/llm/core/base_model.py)); выбор токена — `sample_next_token` в [`core/generation.py`](../llm/src/llm/core/generation.py): greedy (`do_sample=False`), sampling с температурой, top-k, top-p.
+- `generate(x, max_new_tokens, do_sample, temperature=1.0, top_k=None, top_p=None, use_cache=True, attention_mask=None, eos_token_id=None, pad_token_id=None)` — один метод `BaseModel.generate` ([`core/base_model.py`](../../llm/src/llm/core/base_model.py)); выбор токена — `sample_next_token` в [`core/generation.py`](../../llm/src/llm/core/generation.py): greedy (`do_sample=False`), sampling с температурой, top-k, top-p.
 - С `eos_token_id` законченные строки дополняются `pad_token_id` (по умолчанию тем же `eos_token_id`); генерация останавливается, когда закончены все строки. Градиенты не считаются; неизвестный именованный аргумент — `TypeError`.
 - С KV-кэшем в `forward` подаётся только новый токен, а его позиция берётся из длины кэша (`cache_start_pos`); при паддинге — из `attention_mask`: номер токена среди настоящих токенов строки.
 - Когда последовательность становится длиннее `max_position_embeddings`, `generate` берёт последние `max_position_embeddings` токенов и пересчитывает их без кэша: при сдвиге окна абсолютные позиции всех токенов меняются, и закэшированные K/V больше не годятся.

@@ -9,7 +9,7 @@
 - Как устроен градиент по матрице эмбеддингов и почему на шаге обучения меняются только строки встреченных токенов.
 - Как выходная проекция (LM head) превращает скрытое состояние в логиты и что такое weight tying.
 - Зачем эмбеддинги иногда умножают на $`\sqrt{d}`$ и какую долю параметров модели они занимают.
-- Как всё это реализовано в [`core/token_embeddings.py`](../llm/src/llm/core/token_embeddings.py) и в моделях репозитория.
+- Как всё это реализовано в [`core/token_embeddings.py`](../../llm/src/llm/core/token_embeddings.py) и в моделях репозитория.
 
 ## Предварительные знания
 
@@ -313,7 +313,7 @@ p − y                     ≈ [0.301, 0.202, −0.503]
 
 ### Реализация: `output_projection` и `tie_word_embeddings`
 
-Выходную проекцию создаёт функция `output_projection` в [`core/token_embeddings.py`](../llm/src/llm/core/token_embeddings.py):
+Выходную проекцию создаёт функция `output_projection` в [`core/token_embeddings.py`](../../llm/src/llm/core/token_embeddings.py):
 
 ```python
 def output_projection(token_embeddings, tie_weights=False) -> nn.Linear:
@@ -366,7 +366,7 @@ print(tied._linear.weight is tied._token_embeddings._embedding.weight)  # True
 X^{(0)}_{t,:} = \sqrt{d} \cdot E_{x_t,:}
 ```
 
-где $`d`$ — размерность модели, $`E_{x_t,:}`$ — эмбеддинг токена на позиции $`t`$. Gemma делает то же самое (Gemma Team, 2024; в HF — множитель `normalizer`/`embed_scale`, см. [бэклог, пункт 42](backlog.md#42-эмбеддинги-не-масштабируются-на-d--p2)). В статье трансформера причина не объясняется; ниже — обоснование через нормы векторов, которое обычно приводят.
+где $`d`$ — размерность модели, $`E_{x_t,:}`$ — эмбеддинг токена на позиции $`t`$. Gemma делает то же самое (Gemma Team, 2024; в HF — множитель `normalizer`/`embed_scale`, см. [бэклог, пункт 42](../dev/backlog.md#42-эмбеддинги-не-масштабируются-на-d--p2)). В статье трансформера причина не объясняется; ниже — обоснование через нормы векторов, которое обычно приводят.
 
 ### Почему: нормы при связанных весах
 
@@ -394,7 +394,7 @@ X^{(0)}_{t,:} = \sqrt{d} \cdot E_{x_t,:}
 
 ### Реализация: `scale_embeddings`
 
-В репозитории масштабирование есть только у `Gemma` и включается ключом `scale_embeddings` (по умолчанию `false`). В конструкторе [`models/gemma/gemma.py`](../llm/src/llm/models/gemma/gemma.py):
+В репозитории масштабирование есть только у `Gemma` и включается ключом `scale_embeddings` (по умолчанию `false`). В конструкторе [`models/gemma/gemma.py`](../../llm/src/llm/models/gemma/gemma.py):
 
 ```python
 self._embedding_scale = math.sqrt(config["embed_dim"]) if config.get("scale_embeddings", False) else None
@@ -439,7 +439,7 @@ if self._embedding_scale is not None:
 | Gemma 2B | 524,3M | ≈ 2,5B (со связыванием) | ≈ 21 % | да; без него ещё +524M |
 | LLaMA 7B | 131,1M | ≈ 6,7B | ≈ 2 % (≈ 4 % вместе с отдельной головой) | нет |
 
-Число параметров GPT-1 и GPT-2 — из [gpt.md](gpt.md) и [gpt2.md](gpt2.md) (сверено с HF), Gemma — из [gemma.md](gemma.md) и [бэклога](backlog.md#43-нет-weight-tying-bias-во-всех-linear--p2).
+Число параметров GPT-1 и GPT-2 — из [gpt.md](gpt.md) и [gpt2.md](gpt2.md) (сверено с HF), Gemma — из [gemma.md](gemma.md) и [бэклога](../dev/backlog.md#43-нет-weight-tying-bias-во-всех-linear--p2).
 
 Выводы:
 
@@ -477,7 +477,7 @@ flowchart TB
 
 ## Реализация в репозитории: `TokenEmbeddings`
 
-Класс `TokenEmbeddings` в [`core/token_embeddings.py`](../llm/src/llm/core/token_embeddings.py) — тонкая обёртка над `nn.Embedding`:
+Класс `TokenEmbeddings` в [`core/token_embeddings.py`](../../llm/src/llm/core/token_embeddings.py) — тонкая обёртка над `nn.Embedding`:
 
 ```python
 class TokenEmbeddings(nn.Module):
@@ -500,14 +500,14 @@ class TokenEmbeddings(nn.Module):
 self._token_embeddings = TokenEmbeddings(vocab_size=config["vocab_size"], emb_size=config["embed_dim"])
 ```
 
-**Инициализация.** `nn.Embedding` по умолчанию заполняет $`E`$ из N(0, 1). Все шесть моделей переинициализируют все `Linear` и `Embedding` из N(0, 0.02) (`init_normal_` в [`core/weight_init.py`](../llm/src/llm/core/weight_init.py)) — как в статьях OpenAI для `GPT` и `GPT2` и как `_init_weights` HuggingFace для `Llama`, `Mistral`, `Mixtral` и `Gemma`; стандартное отклонение — ключ `initializer_range`. При загрузке чекпоинта инициализация не важна: веса перезаписываются.
+**Инициализация.** `nn.Embedding` по умолчанию заполняет $`E`$ из N(0, 1). Все шесть моделей переинициализируют все `Linear` и `Embedding` из N(0, 0.02) (`init_normal_` в [`core/weight_init.py`](../../llm/src/llm/core/weight_init.py)) — как в статьях OpenAI для `GPT` и `GPT2` и как `_init_weights` HuggingFace для `Llama`, `Mistral`, `Mixtral` и `Gemma`; стандартное отклонение — ключ `initializer_range`. При загрузке чекпоинта инициализация не важна: веса перезаписываются.
 
 ## Типичные ошибки и тонкости
 
 - **Индекс вне словаря.** Токен $`\ge V`$ даёт `IndexError: index out of range in self` на CPU и невнятный device-side assert на CUDA. Если токенизатор и модель расходятся в `vocab_size`, ошибка всплывёт именно здесь.
 - **Связывание и загрузка чекпоинтов.** Чекпоинт с `tie_word_embeddings: true` не загружается в модель с `false` и наоборот: у отдельной головы есть `_linear.bias`, у связанной — нет.
 - **Связывание и копирование весов.** Присваивание `linear.weight = embedding.weight` должно выполняться после создания обоих модулей и не должно заменяться копированием (`.data.copy_`), иначе параметры разойдутся после первого шага. Перенос модели на устройство (`.to(device)`) связь сохраняет.
-- **`scale_embeddings` без подходящей инициализации.** Множитель $`\sqrt{d}`$ рассчитан на малые эмбеддинги. С эмбеддингами N(0, 1) (инициализация `nn.Embedding` по умолчанию) координаты входа при обучении с нуля будут порядка $`\sqrt{d}`$ (16 при $`d = 256`$). `Gemma` в репозитории инициализирует эмбеддинги N(0, 0.02), как HF, — раньше (до пункта 62 [бэклога](backlog.md)) они оставались N(0, 1).
+- **`scale_embeddings` без подходящей инициализации.** Множитель $`\sqrt{d}`$ рассчитан на малые эмбеддинги. С эмбеддингами N(0, 1) (инициализация `nn.Embedding` по умолчанию) координаты входа при обучении с нуля будут порядка $`\sqrt{d}`$ (16 при $`d = 256`$). `Gemma` в репозитории инициализирует эмбеддинги N(0, 0.02), как HF.
 - **Логиты — не вероятности.** `forward` возвращает логиты; softmax нужен только для вероятностей. `cross_entropy` в PyTorch ожидает именно логиты — повторный softmax перед ней даёт неверный loss.
 - **Нулевой градиент ≠ неизменная строка.** Weight decay и момент AdamW двигают и строки токенов, которых не было в батче.
 

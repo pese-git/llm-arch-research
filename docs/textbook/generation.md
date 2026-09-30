@@ -9,7 +9,7 @@
 - Как останавливать генерацию по токену конца текста в батче (`eos_token_id`, `pad_token_id`).
 - Зачем нужен KV-кэш, что такое фазы prefill и decode и сколько памяти занимает кэш.
 - Что происходит, когда текст становится длиннее контекста модели $`T_{\max}`$.
-- Как всё это устроено в `BaseModel.generate` ([`core/base_model.py`](../llm/src/llm/core/base_model.py)) и [`core/generation.py`](../llm/src/llm/core/generation.py).
+- Как всё это устроено в `BaseModel.generate` ([`core/base_model.py`](../../llm/src/llm/core/base_model.py)) и [`core/generation.py`](../../llm/src/llm/core/generation.py).
 
 ## Предварительные знания
 
@@ -215,7 +215,7 @@ r \in \mathcal{V}^{(p_{\text{top}})} \iff \sum_{s=1}^{r-1} p_{(s)} < p_{\text{to
 
 Два следствия: самый вероятный токен остаётся всегда (сумма до него $`0 < p_{\text{top}}`$), а при $`p_{\text{top}} = 1`$ остаётся весь словарь (все $`c_{r-1} < 1`$, если у последнего токена ненулевая вероятность).
 
-В [`core/generation.py`](../llm/src/llm/core/generation.py), функция `sample_next_token`:
+В [`core/generation.py`](../../llm/src/llm/core/generation.py), функция `sample_next_token`:
 
 ```python
 sorted_probs, sorted_indices = torch.sort(
@@ -227,7 +227,7 @@ keep = torch.zeros_like(logits, dtype=torch.bool).scatter_(-1, sorted_indices, k
 logits = logits.masked_fill(~keep, float("-inf"))
 ```
 
-`scatter_` возвращает маску из отсортированного порядка в порядок словаря. Так же работает `TopPLogitsWarper` в HuggingFace. Ранняя версия репозитория использовала условие `cumsum <= top_p` и выбрасывала токен, пересекающий порог ([бэклог, пункт 49](backlog.md#49-top-p-отбрасывает-токен-пересекающий-порог--p2)).
+`scatter_` возвращает маску из отсортированного порядка в порядок словаря. Так же работает `TopPLogitsWarper` в HuggingFace. Частая ошибка — условие `cumsum <= top_p`: оно выбрасывает токен, на котором сумма пересекает порог, и ядро оказывается меньше, чем задано.
 
 ### Численный пример
 
@@ -253,7 +253,7 @@ c_r (включая)     0.50   0.80   0.95   1.00
 
 ## Порядок применения в коде
 
-`sample_next_token(logits, do_sample, temperature, top_k, top_p)` в [`core/generation.py`](../llm/src/llm/core/generation.py) получает логиты последней позиции `[B, V]` и выполняет шаги строго в таком порядке:
+`sample_next_token(logits, do_sample, temperature, top_k, top_p)` в [`core/generation.py`](../../llm/src/llm/core/generation.py) получает логиты последней позиции `[B, V]` и выполняет шаги строго в таком порядке:
 
 ```mermaid
 %%{init: {"flowchart": {"rankSpacing": 22, "nodeSpacing": 22}}}%%
@@ -287,7 +287,7 @@ flowchart LR
 
 ## Проверка аргументов: `validate_sampling_args`
 
-`generate` первым делом вызывает `validate_sampling_args(do_sample, temperature, top_k, top_p)` из [`core/generation.py`](../llm/src/llm/core/generation.py). Проверки действуют **только при `do_sample=True`**: при жадной генерации эти параметры не влияют на результат, и, например, `temperature=0` там допустима.
+`generate` первым делом вызывает `validate_sampling_args(do_sample, temperature, top_k, top_p)` из [`core/generation.py`](../../llm/src/llm/core/generation.py). Проверки действуют **только при `do_sample=True`**: при жадной генерации эти параметры не влияют на результат, и, например, `temperature=0` там допустима.
 
 | Условие (при `do_sample=True`) | Результат |
 |---|---|
@@ -296,7 +296,7 @@ flowchart LR
 | `top_k <= 0` | `ValueError` |
 | `top_p` вне $`(0, 1]`$ | `ValueError` |
 
-Запрет комбинации `top_k` + `top_p` — выбор этого репозитория: в HuggingFace их можно задавать вместе. Раньше проверок не было вовсе, и `top_k=0` падал с невнятной ошибкой в `torch.multinomial` ([бэклог, пункт 4](backlog.md#4-generate-не-валидирует-аргументы-хотя-докстринг-обещает--p2)).
+Запрет комбинации `top_k` + `top_p` — выбор этого репозитория: в HuggingFace их можно задавать вместе. Без проверок `top_k=0` падал бы с невнятной ошибкой в `torch.multinomial`.
 
 ## Конец текста: `eos_token_id` и `pad_token_id`
 
@@ -412,7 +412,7 @@ return x, None                            # prefill или генерация б
 1. **Позиции сдвигаются.** После сдвига окна токен, бывший на позиции $`j`$, оказывается на $`j - 1`$. У GPT позиционный эмбеддинг прибавляется к входу и входит во все K и V всех слоёв — закэшированные K/V посчитаны со старыми позициями. У RoPE ключ повёрнут на угол старой позиции. Для RoPE сдвиг всех позиций на одно и то же число скалярные произведения $`\mathbf{q} \cdot \mathbf{k}`$ не меняет (они зависят от разности позиций), но продолжить нумерацию дальше $`T_{\max}`$ нельзя: таблиц углов для таких позиций нет, а модель на них не обучалась.
 2. **Старый контекст «вшит» в кэш.** K и V во втором и следующих слоях вычислены из скрытых состояний, которые смотрели на **выброшенный** токен. Даже если исправить позиции, кэш описывает состояния с контекстом, которого в окне уже нет. Честный результат для окна — прогнать его заново.
 
-Поэтому `generate` пересчитывает окно: результат совпадает с эталоном, который на каждом шаге заново прогоняет последние $`T_{\max}`$ токенов (это проверяет `test_kv_cache.py`; история исправления — [бэклог, пункт 1](backlog.md#1-generate-падает-за-пределами-max_position_embeddings--p1)).
+Поэтому `generate` пересчитывает окно: результат совпадает с эталоном, который на каждом шаге заново прогоняет последние $`T_{\max}`$ токенов (это проверяет `test_kv_cache.py`).
 
 Скользящее окно внимания Mistral здесь не помогает: оно ограничивает, какие токены **видны**, но позиции продолжают расти, и `check_sequence_length` ограничивает их тем же `max_position_embeddings`.
 
@@ -424,13 +424,13 @@ return x, None                            # prefill или генерация б
 
 ## `torch.no_grad`
 
-`BaseModel.generate` обёрнут декоратором `@torch.no_grad()`. Без него autograd строил бы граф вычислений на всю генерацию: каждый шаг сохранял бы активации для обратного прохода, и память росла бы с числом шагов. При генерации градиенты не нужны. Раньше декоратора не было, и логиты в режиме `eval()` имели `requires_grad=True` ([бэклог, пункт 8](backlog.md#8-use_cachetrue-по-умолчанию-и-нет-torchno_grad-в-generate--p2)).
+`BaseModel.generate` обёрнут декоратором `@torch.no_grad()`. Без него autograd строил бы граф вычислений на всю генерацию: каждый шаг сохранял бы активации для обратного прохода, и память росла бы с числом шагов. При генерации градиенты не нужны. Без декоратора и логиты в режиме `eval()` имели бы `requires_grad=True`: `eval()` отключает dropout, но не autograd.
 
 `no_grad` не переключает режим модели: dropout выключается только `model.eval()`. Перед генерацией обученной модели вызывайте `model.eval()` (метод `BaseModel.load` возвращает модель уже в `eval`).
 
 ## Сигнатура `BaseModel.generate`
 
-Один метод для всех шести моделей ([`core/base_model.py`](../llm/src/llm/core/base_model.py)); наследники реализуют только `forward` и задают `_max_seq_len`:
+Один метод для всех шести моделей ([`core/base_model.py`](../../llm/src/llm/core/base_model.py)); наследники реализуют только `forward` и задают `_max_seq_len`:
 
 ```python
 @torch.no_grad()
@@ -453,7 +453,7 @@ def generate(self, x, max_new_tokens, do_sample, temperature=1.0, top_k=None, to
 
 **Возвращает** `LongTensor [B, P + n]`, где `n` — число сделанных шагов (`max_new_tokens` или меньше). Промпт входит в выход.
 
-**Исключения:** `ValueError` — неверные параметры семплирования (см. [выше](#проверка-аргументов-validate_sampling_args)), `attention_mask` не той формы или с паддингом в конце строки; `TypeError` — неизвестный именованный аргумент (раньше лишние аргументы молча проглатывались через `**kwargs`).
+**Исключения:** `ValueError` — неверные параметры семплирования (см. [выше](#проверка-аргументов-validate_sampling_args)), `attention_mask` не той формы или с паддингом в конце строки; `TypeError` — неизвестный именованный аргумент: опечатка вроде `max_lenght` не проглатывается молча.
 
 ## Примеры
 

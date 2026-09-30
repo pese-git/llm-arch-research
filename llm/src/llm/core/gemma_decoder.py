@@ -20,7 +20,7 @@ class GemmaDecoder(nn.Module):
     - Multi-Query Attention с RoPE и KV-кэшем
     - GeGLU feed-forward (GELU-gated MLP)
     - Residual-связь вокруг каждого подблока
-    - Dropout в attention и FFN (в оригинальной Gemma его нет, см. docs/gemma.md)
+    - Dropout в attention и FFN (в оригинальной Gemma его нет, см. docs/textbook/gemma.md)
 
     Алгоритм прямого прохода:
     -------------------------
@@ -112,7 +112,7 @@ class GemmaDecoder(nn.Module):
 
         Внутри:
         -------
-        - MultiQueryAttention (со своей causal-маской), GeGLU, RMSNorm ×2.
+        - GroupedQueryAttention (при num_kv_heads=1 — MQA, со своей causal-маской), GeGLU, RMSNorm ×2.
 
         Пример:
         -------

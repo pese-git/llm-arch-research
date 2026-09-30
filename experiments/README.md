@@ -118,7 +118,7 @@ uv run python experiments/hf_integration/train_with_hf_trainer.py
 
 ## 📚 См. также
 
-- [Учебное пособие по архитектурам](../docs/README.md)
+- [Учебное пособие по архитектурам](../docs/textbook/README.md)
 - [Библиотека llm](../llm/README.md)
 - [hf-proxy](../hf-proxy/README.md)
 - [Ноутбуки](../notebooks/)

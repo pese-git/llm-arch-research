@@ -129,7 +129,7 @@ class Mistral(BaseModel):
             cache (list or None): Предыдущий кэш attention (или None для полного прохода без накопления кэша).
             attention_mask (torch.Tensor, опц.): маска [batch, seq_len] (1 — токен, 0 — паддинг).
                 С кэшем — [batch, cache_len + seq_len]. Паддинг допускается в любом месте строки:
-                маскируются ключи, позиции считаются среди настоящих токенов (см. docs/masks.md).
+                маскируются ключи, позиции считаются среди настоящих токенов (см. docs/textbook/masks.md).
     
         Возвращает:
             logits (torch.Tensor): Тензор логитов shape [batch_size, seq_len, vocab_size] — вероятностное распределение по словарю для каждого токена.

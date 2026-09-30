@@ -14,7 +14,7 @@
 - Формулу scaled dot-product attention, вывод множителя $`1/\sqrt{d_h}`$ и что ломается без него.
 - Как устроено многоголовое внимание (multi-head attention), сколько у него параметров и сколько оно стоит по времени и памяти.
 - Чем отличаются MHA, GQA и MQA и почему это в первую очередь вопрос размера KV-кэша.
-- Как работают скользящее окно и KV-кэш и как всё это реализовано в [`llm/core`](../llm/src/llm/core).
+- Как работают скользящее окно и KV-кэш и как всё это реализовано в [`llm/core`](../../llm/src/llm/core).
 
 ## Предварительные знания
 
@@ -326,7 +326,7 @@ W_O = \begin{pmatrix} W_O^{(1)} \\ \vdots \\ W_O^{(H)} \end{pmatrix},
 
 Обычно $`d_h = d / H`$, и $`H d_h = d`$. Но это не обязательно: $`W_Q`$ отображает $`d \to H d_h`$, $`W_O`$ — обратно $`H d_h \to d`$, и ничто не требует равенства. Пример — **Gemma 7B**: $`H = 16`$ голов по $`d_h = 256`$ при $`d = 3072`$, так что $`H d_h = 4096 \ne 3072`$. Проекции Q, K, V расширяют пространство до 4096, а $`W_O`$ проецирует обратно в 3072 (см. [gemma.md](gemma.md)).
 
-В конфиге это ключ `head_size`; без него `head_size = embed_dim // число голов`, и тогда `embed_dim` обязан делиться на число голов (функция `resolve_head_size` в [`core/config_checks.py`](../llm/src/llm/core/config_checks.py); при RoPE она также требует чётного `head_size`).
+В конфиге это ключ `head_size`; без него `head_size = embed_dim // число голов`, и тогда `embed_dim` обязан делиться на число голов (функция `resolve_head_size` в [`core/config_checks.py`](../../llm/src/llm/core/config_checks.py); при RoPE она также требует чётного `head_size`).
 
 ## Сколько это стоит
 
@@ -511,7 +511,7 @@ kv:  [B, G, T, d_h]
 
 В двунаправленных моделях (BERT) это неверно: там старые позиции смотрят и на новые, поэтому их K и V меняются при каждом добавлении токена.
 
-Тонкость: утверждение предполагает, что позиции токенов не меняются. Когда текст перерастает `max_position_embeddings` и модель берёт последние $`T_{\max}`$ токенов, абсолютные позиции всех токенов сдвигаются, и закэшированные K (с позиционной информацией внутри) устаревают. Поэтому `generate` в этот момент сбрасывает кэш и пересчитывает окно без него (`next_generation_input` в [`core/generation.py`](../llm/src/llm/core/generation.py)).
+Тонкость: утверждение предполагает, что позиции токенов не меняются. Когда текст перерастает `max_position_embeddings` и модель берёт последние $`T_{\max}`$ токенов, абсолютные позиции всех токенов сдвигаются, и закэшированные K (с позиционной информацией внутри) устаревают. Поэтому `generate` в этот момент сбрасывает кэш и пересчитывает окно без него (`next_generation_input` в [`core/generation.py`](../../llm/src/llm/core/generation.py)).
 
 ### Объём кэша
 
@@ -569,7 +569,7 @@ print(torch.allclose(torch.cat(outs, dim=1), full, atol=1e-5))  # True
 | `MultiQueryAttention` | `(K, V)` | `[B, 1, T_cache, d_h]` | `K.size(2)` |
 | `GroupedQueryAttention` | `(K, V, next_pos)` | `[B, G, T_cache, d_h]`, `next_pos` — `int` | `next_pos` |
 
-Зачем третий элемент. Без окна длина кэша равна числу обработанных токенов, то есть абсолютной позиции следующего. С окном кэш обрезается до $`W`$ позиций, и длина кэша перестаёт совпадать с позицией: после 7 токенов при $`W = 4`$ в кэше 4 позиции, а следующий токен — седьмой (с нуля). Позиция же нужна RoPE (`start_pos`) и маске. Поэтому `GroupedQueryAttention` хранит её явно. Функция `cache_start_pos` в [`core/generation.py`](../llm/src/llm/core/generation.py) понимает оба формата: берёт `cache[0][2]`, если элементов три, иначе `cache[0][0].size(2)`.
+Зачем третий элемент. Без окна длина кэша равна числу обработанных токенов, то есть абсолютной позиции следующего. С окном кэш обрезается до $`W`$ позиций, и длина кэша перестаёт совпадать с позицией: после 7 токенов при $`W = 4`$ в кэше 4 позиции, а следующий токен — седьмой (с нуля). Позиция же нужна RoPE (`start_pos`) и маске. Поэтому `GroupedQueryAttention` хранит её явно. Функция `cache_start_pos` в [`core/generation.py`](../../llm/src/llm/core/generation.py) понимает оба формата: берёт `cache[0][2]`, если элементов три, иначе `cache[0][0].size(2)`.
 
 Ещё две детали:
 
@@ -587,9 +587,9 @@ print(torch.allclose(torch.cat(outs, dim=1), full, atol=1e-5))  # True
 
 | Класс | Файл | Головы K/V | RoPE | Окно | KV-кэш слоя | Модели |
 |---|---|---|---|---|---|---|
-| `MultiHeadAttention` | [`core/multi_head_attention.py`](../llm/src/llm/core/multi_head_attention.py) | = `num_heads` | необязательно | нет | `(K, V)` | GPT, GPT-2 (без RoPE), LLaMA (с RoPE) |
-| `GroupedQueryAttention` | [`core/group_query_attention.py`](../llm/src/llm/core/group_query_attention.py) | `num_kv_heads` | необязательно | `window_size` или нет | `(K, V, next_pos)` | Mistral, Mixtral, Gemma |
-| `MultiQueryAttention` | [`core/multi_query_attention.py`](../llm/src/llm/core/multi_query_attention.py) | 1 | необязательно | нет | `(K, V)` | учебный модуль, моделями не используется |
+| `MultiHeadAttention` | [`core/multi_head_attention.py`](../../llm/src/llm/core/multi_head_attention.py) | = `num_heads` | необязательно | нет | `(K, V)` | GPT, GPT-2 (без RoPE), LLaMA (с RoPE) |
+| `GroupedQueryAttention` | [`core/group_query_attention.py`](../../llm/src/llm/core/group_query_attention.py) | `num_kv_heads` | необязательно | `window_size` или нет | `(K, V, next_pos)` | Mistral, Mixtral, Gemma |
+| `MultiQueryAttention` | [`core/multi_query_attention.py`](../../llm/src/llm/core/multi_query_attention.py) | 1 | необязательно | нет | `(K, V)` | учебный модуль, моделями не используется |
 
 Модули attention создаются внутри блоков декодера: `GptDecoder`, `Gpt2Decoder`, `CachedDecoder` (LLaMA) — `MultiHeadAttention`; `MistralDecoder`, `MixtralDecoder`, `GemmaDecoder` — `GroupedQueryAttention`.
 
@@ -623,7 +623,7 @@ print(torch.allclose(torch.cat(outs, dim=1), full, atol=1e-5))  # True
 - шаг 8: dropout на весах внимания нет;
 - шаг 12: при `window_size` K и V обрезаются до последних `window_size` позиций, возвращается `(k, v, start_pos + seq_len)`.
 
-**Паддинг.** Все три класса принимают необязательный `padding` — `Padding(key_mask, positions)` из [`core/padding.py`](../llm/src/llm/core/padding.py), который модель строит по `attention_mask`. Позиции идут в RoPE вместо `start_pos, start_pos + 1, …`, а `padding.apply` добавляет маску ключей к causal-маске и окну: маска становится `[B, 1, T, T_kv]`, своей у каждой строки батча. Подробно — в [Маски](masks.md#attention_mask-и-паддинг).
+**Паддинг.** Все три класса принимают необязательный `padding` — `Padding(key_mask, positions)` из [`core/padding.py`](../../llm/src/llm/core/padding.py), который модель строит по `attention_mask`. Позиции идут в RoPE вместо `start_pos, start_pos + 1, …`, а `padding.apply` добавляет маску ключей к causal-маске и окну: маска становится `[B, 1, T, T_kv]`, своей у каждой строки батча. Подробно — в [Маски](masks.md#attention_mask-и-паддинг).
 
 `MultiQueryAttention.forward` отличается от MHA тем, что K и V проецируются в одну голову (`nn.Linear(emb_size, head_size)`) и транслируются на все головы Q на шаге 6.
 

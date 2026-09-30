@@ -2,8 +2,8 @@
 
 Часть II · [← Mixtral](mixtral.md) · [Оглавление](README.md) · [Глоссарий →](glossary.md)
 
-> Реализация: [`llm/src/llm/models/gemma/gemma.py`](../llm/src/llm/models/gemma/gemma.py) · класс `Gemma`
-> Ноутбук: [`notebooks/gemma.ipynb`](../notebooks/gemma.ipynb)
+> Реализация: [`llm/src/llm/models/gemma/gemma.py`](../../llm/src/llm/models/gemma/gemma.py) · класс `Gemma`
+> Ноутбук: [`notebooks/gemma.ipynb`](../../notebooks/gemma.ipynb)
 
 Место в линейке: развивает ту же базу (RoPE + RMSNorm), что и [LLaMA](llama.md)/[Mistral](mistral.md), но с собственным вариантом attention и FFN — не входит в основную цепочку GPT → Mixtral. Это последняя глава части II; дальше — [глоссарий](glossary.md) и [оглавление](README.md).
 
@@ -166,7 +166,7 @@ Z = \mathrm{RMSNorm}_f\big(H^{(L)}\big)\, E^{\top} \in \mathbb{R}^{T \times V}
 
 ### Multi-Query Attention vs GQA
 
-MQA предложена в [Shazeer, 2019](https://arxiv.org/abs/1911.02150), GQA — в [Ainslie et al., 2023](https://arxiv.org/abs/2305.13245) как обобщение между MQA и MHA. Gemma 2B использует MQA (одна K/V-голова), Gemma 7B — обычный MHA (16 K/V-голов, по одной на Q-голову). Поэтому блок Gemma строится на `GroupedQueryAttention` ([`core/group_query_attention.py`](../llm/src/llm/core/group_query_attention.py)) без скользящего окна с `num_kv_heads` из конфига: `1` (по умолчанию) — MQA, `num_q_heads` — MHA. При одной K/V-голове она не копируется на все Q-головы, а транслируется в матричном умножении, так что результат побитово совпадает с прежним `MultiQueryAttention` ([`core/multi_query_attention.py`](../llm/src/llm/core/multi_query_attention.py)); тот остался в `llm.core` как отдельный учебный модуль. KV-кэш слоя — тройка `(K, V, next_pos)`, как у Mistral. Сравнение MHA, GQA и MQA — в [attention.md](attention.md#виды-по-числу-голов-kv-mha-gqa-mqa).
+MQA предложена в [Shazeer, 2019](https://arxiv.org/abs/1911.02150), GQA — в [Ainslie et al., 2023](https://arxiv.org/abs/2305.13245) как обобщение между MQA и MHA. Gemma 2B использует MQA (одна K/V-голова), Gemma 7B — обычный MHA (16 K/V-голов, по одной на Q-голову). Поэтому блок Gemma строится на `GroupedQueryAttention` ([`core/group_query_attention.py`](../../llm/src/llm/core/group_query_attention.py)) без скользящего окна с `num_kv_heads` из конфига: `1` (по умолчанию) — MQA, `num_q_heads` — MHA. При одной K/V-голове она не копируется на все Q-головы, а транслируется в матричном умножении, так что результат побитово совпадает с прежним `MultiQueryAttention` ([`core/multi_query_attention.py`](../../llm/src/llm/core/multi_query_attention.py)); тот остался в `llm.core` как отдельный учебный модуль. KV-кэш слоя — тройка `(K, V, next_pos)`, как у Mistral. Сравнение MHA, GQA и MQA — в [attention.md](attention.md#виды-по-числу-голов-kv-mha-gqa-mqa).
 
 Выигрыш MQA — в размере KV-кэша: на токен и слой он хранит $`2 G d_h`$ чисел. У Gemma 2B это $`2 \cdot 1 \cdot 256 = 512`$, а при MHA с теми же головами было бы $`2 \cdot 8 \cdot 256 = 4096`$ — в 8 раз больше. На 18 слоях и контексте 8192 токена в bfloat16 (2 байта) — $`512 \cdot 18 \cdot 8192 \cdot 2 = 150\,994\,944`$ байт $`= 144`$ МиБ против $`1152`$ МиБ $`\approx 1{,}1`$ ГиБ на одну последовательность (как в таблице [attention.md](attention.md#виды-по-числу-голов-kv-mha-gqa-mqa)).
 
@@ -174,21 +174,21 @@ MQA предложена в [Shazeer, 2019](https://arxiv.org/abs/1911.02150), G
 
 | Компонент | Класс | Файл |
 |---|---|---|
-| Токен-эмбеддинги | `TokenEmbeddings` | [`core/token_embeddings.py`](../llm/src/llm/core/token_embeddings.py) |
-| Выходная проекция | `nn.Linear` или `output_projection(..., tie_weights=True)` | [`core/token_embeddings.py`](../llm/src/llm/core/token_embeddings.py) |
-| Позиционное кодирование | `RoPE` | [`core/rope.py`](../llm/src/llm/core/rope.py) |
-| Нормализация | `RMSNorm` | [`core/rms_norm.py`](../llm/src/llm/core/rms_norm.py) |
-| Attention | `GroupedQueryAttention` (`num_kv_heads` K/V-голов, по умолчанию 1 — MQA; RoPE; без окна) | [`core/group_query_attention.py`](../llm/src/llm/core/group_query_attention.py) |
-| FFN | `GeGLU` (gated GELU-MLP) | [`core/geglu.py`](../llm/src/llm/core/geglu.py) |
-| Блок декодера | `GemmaDecoder` (pre-LN) | [`core/gemma_decoder.py`](../llm/src/llm/core/gemma_decoder.py) |
-| Модель целиком | `Gemma` | [`models/gemma/gemma.py`](../llm/src/llm/models/gemma/gemma.py) |
-| Перенос весов HF | `convert_hf_state_dict` | [`models/gemma/hf_weights.py`](../llm/src/llm/models/gemma/hf_weights.py) |
+| Токен-эмбеддинги | `TokenEmbeddings` | [`core/token_embeddings.py`](../../llm/src/llm/core/token_embeddings.py) |
+| Выходная проекция | `nn.Linear` или `output_projection(..., tie_weights=True)` | [`core/token_embeddings.py`](../../llm/src/llm/core/token_embeddings.py) |
+| Позиционное кодирование | `RoPE` | [`core/rope.py`](../../llm/src/llm/core/rope.py) |
+| Нормализация | `RMSNorm` | [`core/rms_norm.py`](../../llm/src/llm/core/rms_norm.py) |
+| Attention | `GroupedQueryAttention` (`num_kv_heads` K/V-голов, по умолчанию 1 — MQA; RoPE; без окна) | [`core/group_query_attention.py`](../../llm/src/llm/core/group_query_attention.py) |
+| FFN | `GeGLU` (gated GELU-MLP) | [`core/geglu.py`](../../llm/src/llm/core/geglu.py) |
+| Блок декодера | `GemmaDecoder` (pre-LN) | [`core/gemma_decoder.py`](../../llm/src/llm/core/gemma_decoder.py) |
+| Модель целиком | `Gemma` | [`models/gemma/gemma.py`](../../llm/src/llm/models/gemma/gemma.py) |
+| Перенос весов HF | `convert_hf_state_dict` | [`models/gemma/hf_weights.py`](../../llm/src/llm/models/gemma/hf_weights.py) |
 
 ## Разбор кода
 
 ### `GemmaDecoder`
 
-[`core/gemma_decoder.py`](../llm/src/llm/core/gemma_decoder.py), `GemmaDecoder(num_q_heads, emb_size, head_size, max_seq_len, rope, dropout=0.1, norm_eps=1e-6, num_kv_heads=1, intermediate_size=None, bias=True)`:
+[`core/gemma_decoder.py`](../../llm/src/llm/core/gemma_decoder.py), `GemmaDecoder(num_q_heads, emb_size, head_size, max_seq_len, rope, dropout=0.1, norm_eps=1e-6, num_kv_heads=1, intermediate_size=None, bias=True)`:
 
 | Атрибут | Модуль | Формула |
 |---|---|---|
@@ -207,13 +207,13 @@ ffn_out = self._ff(norm2_out)          # GeGLU(RMSNorm2(U^(l)))
 # возвращает (ffn_out + out, kv_caches) при use_cache, иначе (ffn_out + out, None)
 ```
 
-`GeGLU` ([`core/geglu.py`](../llm/src/llm/core/geglu.py)) — три `nn.Linear` (`_gate`, `_up`, `_down`) и активация `GELU` из [`core/gelu.py`](../llm/src/llm/core/gelu.py) — tanh-аппроксимация, совпадающая с `gelu_pytorch_tanh` в HF: `out = self._down(self._up(x) * GELU(self._gate(x)))`, затем dropout.
+`GeGLU` ([`core/geglu.py`](../../llm/src/llm/core/geglu.py)) — три `nn.Linear` (`_gate`, `_up`, `_down`) и активация `GELU` из [`core/gelu.py`](../../llm/src/llm/core/gelu.py) — tanh-аппроксимация, совпадающая с `gelu_pytorch_tanh` в HF: `out = self._down(self._up(x) * GELU(self._gate(x)))`, затем dropout.
 
-`RMSNorm` ([`core/rms_norm.py`](../llm/src/llm/core/rms_norm.py)) хранит вес `_w`, инициализированный **единицами**, и возвращает `self._w * norm_x` — то есть параметр $`\mathbf{w} = 1 + \tilde{\mathbf{w}}`$, а не $`\tilde{\mathbf{w}}`$. Для float16/bfloat16 нормализация считается во float32, результат приводится к dtype входа и только потом умножается на вес.
+`RMSNorm` ([`core/rms_norm.py`](../../llm/src/llm/core/rms_norm.py)) хранит вес `_w`, инициализированный **единицами**, и возвращает `self._w * norm_x` — то есть параметр $`\mathbf{w} = 1 + \tilde{\mathbf{w}}`$, а не $`\tilde{\mathbf{w}}`$. Для float16/bfloat16 нормализация считается во float32, результат приводится к dtype входа и только потом умножается на вес.
 
 ### `Gemma`
 
-[`models/gemma/gemma.py`](../llm/src/llm/models/gemma/gemma.py), наследник `BaseModel`.
+[`models/gemma/gemma.py`](../../llm/src/llm/models/gemma/gemma.py), наследник `BaseModel`.
 
 `__init__(config)`:
 
@@ -242,7 +242,7 @@ logits = self._linear(self._norm(out))                    # Z = RMSNorm_f(H^(L))
 
 ### `convert_hf_state_dict`
 
-[`models/gemma/hf_weights.py`](../llm/src/llm/models/gemma/hf_weights.py):
+[`models/gemma/hf_weights.py`](../../llm/src/llm/models/gemma/hf_weights.py):
 
 ```python
 def convert_hf_state_dict(hf_state_dict: dict, num_heads: int, num_kv_heads: int = None) -> dict:
@@ -255,7 +255,7 @@ def convert_hf_state_dict(hf_state_dict: dict, num_heads: int, num_kv_heads: int
 
 Два шага:
 
-1. **Перенос LLaMA** (`convert_hf_state_dict` из [`models/llama/hf_weights.py`](../llm/src/llm/models/llama/hf_weights.py)): переименование `model.embed_tokens` → `_token_embeddings._embedding`, `self_attn.{q,k,v,o}_proj` → `_heads._{q,k,v,layer}`, `mlp.{gate,up,down}_proj` → `_ff._{gate,up,down}`, `input_layernorm`/`post_attention_layernorm` → `_norm1`/`_norm2`, `model.norm` → `_norm`, `lm_head` → `_linear`. Строки `q_proj` и `k_proj` переставляются внутри каждой головы: HF хранит пары RoPE как «первая половина головы | вторая половина», а `RoPE` здесь вращает соседние координаты $`(2i, 2i+1)`$ ([llama.md](llama.md#загрузка-весов-huggingface)). Поэтому нужны `num_heads` и `num_kv_heads`. Если `lm_head.weight` в чекпоинте нет, `_linear.weight` получает копию эмбеддингов.
+1. **Перенос LLaMA** (`convert_hf_state_dict` из [`models/llama/hf_weights.py`](../../llm/src/llm/models/llama/hf_weights.py)): переименование `model.embed_tokens` → `_token_embeddings._embedding`, `self_attn.{q,k,v,o}_proj` → `_heads._{q,k,v,layer}`, `mlp.{gate,up,down}_proj` → `_ff._{gate,up,down}`, `input_layernorm`/`post_attention_layernorm` → `_norm1`/`_norm2`, `model.norm` → `_norm`, `lm_head` → `_linear`. Строки `q_proj` и `k_proj` переставляются внутри каждой головы: HF хранит пары RoPE как «первая половина головы | вторая половина», а `RoPE` здесь вращает соседние координаты $`(2i, 2i+1)`$ ([llama.md](llama.md#загрузка-весов-huggingface)). Поэтому нужны `num_heads` и `num_kv_heads`. Если `lm_head.weight` в чекпоинте нет, `_linear.weight` получает копию эмбеддингов.
 2. **Поправка RMSNorm**: ко всем весам `._w` (обе нормы каждого блока и финальная) прибавляется 1 — переход от $`\tilde{\mathbf{w}}`$ к $`\mathbf{w} = 1 + \tilde{\mathbf{w}}`$.
 
 При связанных весах `state_dict` модели содержит и `_token_embeddings._embedding.weight`, и `_linear.weight` — это один параметр под двумя именами; `load_state_dict` записывает в него одно и то же значение дважды.
@@ -323,7 +323,7 @@ print(total, emb, total - emb)                       # 2506172416 524288000 1981
 
 `model.parameters()` не повторяет один и тот же `nn.Parameter`, поэтому связанная матрица учтена один раз.
 
-**Учебный конфиг** [`gemma_train.json`](../experiments/llm_only/configs/gemma_train.json): $`V = 1000`$, $`d = 256`$, $`H = 4`$, $`G = 1`$ (по умолчанию), $`d_h = 64`$, $`L = 4`$, $`d_{ff} = 4d`$, bias, отдельная выходная проекция:
+**Учебный конфиг** [`gemma_train.json`](../../experiments/llm_only/configs/gemma_train.json): $`V = 1000`$, $`d = 256`$, $`H = 4`$, $`G = 1`$ (по умолчанию), $`d_h = 64`$, $`L = 4`$, $`d_{ff} = 4d`$, bias, отдельная выходная проекция:
 
 | Часть | Параметров |
 |---|---|
@@ -335,7 +335,7 @@ print(total, emb, total - emb)                       # 2506172416 524288000 1981
 
 ## Отличия от Gemma
 
-Сравнение с Gemma 2B/7B (статья и `GemmaConfig`/`GemmaModel` в HF). Подробности, воспроизведение и варианты исправления — в [бэклоге](backlog.md#gemma) (номера пунктов в скобках).
+Сравнение с Gemma 2B/7B (статья и `GemmaConfig`/`GemmaModel` в HF). Подробности, воспроизведение и варианты исправления — в [бэклоге](../dev/backlog.md#gemma) (номера пунктов в скобках).
 
 | | Gemma | Здесь |
 |---|---|---|
@@ -351,7 +351,7 @@ print(total, emb, total - emb)                       # 2506172416 524288000 1981
 
 ## Конфигурация
 
-Пример из [`experiments/llm_only/configs/gemma_train.json`](../experiments/llm_only/configs/gemma_train.json):
+Пример из [`experiments/llm_only/configs/gemma_train.json`](../../experiments/llm_only/configs/gemma_train.json):
 
 | Параметр | Значение в примере | Используется? |
 |---|---|---|
@@ -365,8 +365,6 @@ print(total, emb, total - emb)                       # 2506172416 524288000 1981
 | `initializer_range` | (нет в примере) | ✅ необязательное стандартное отклонение начальных весов `Linear` и `Embedding`, по умолчанию `0.02` — как в HF; см. [training.md](training.md#какие-модели-что-используют) |
 | `dropout` | 0.1 | ✅ после эмбеддингов, в attention и GeGLU; в Gemma dropout нет — для соответствия оригиналу `0` |
 | `head_size` | 64 | ✅ необязательный; по умолчанию `embed_dim // num_q_heads` |
-
-Ключи Mixtral (`num_kv_heads`, `num_experts`, `top_k_experts`, `window_size`), которые раньше были в этом конфиге и моделью не читались, удалены; `num_kv_heads` теперь читается (см. ниже).
 
 ### Как в статье
 
@@ -385,11 +383,11 @@ print(total, emb, total - emb)                       # 2506172416 524288000 1981
 
 `scale_embeddings` умножает выход эмбеддингов на `√embed_dim` (множитель приводится к dtype эмбеддингов, как в HF). При tied embeddings одна матрица служит и входом, и выходом, и её норма рассчитана на выходную проекцию; без множителя вход в первый блок был бы на порядок меньше. `tie_word_embeddings` особенно заметен у Gemma: словарь 256 000 токенов, и отдельная голова для 2B — это ещё ~524M параметров.
 
-При обучении **с нуля** важна инициализация. `Gemma`, как HF, инициализирует `Linear` и `Embedding` из $`\mathcal{N}(0, 0.02^2)`$ (`init_normal_`, ключ `initializer_range`), и с `tie_word_embeddings` и `scale_embeddings` начальный cross-entropy на учебном конфиге ($`d = 256`$, $`V = 1000`$) — 7.06 при $`\ln 1000 \approx 6.9`$ (std логитов 0.36). До пункта 62 [бэклога](backlog.md) своей инициализации у `Gemma` не было, эмбеддинги оставались $`\mathcal{N}(0, 1)`$ по умолчанию `nn.Embedding`, и с этими ключами логиты в начале обучения получались порядка $`\sqrt{d}`$: стандартное отклонение ≈18, начальный cross-entropy ≈258. Почему нужны малые эмбеддинги — в [embeddings.md](embeddings.md) (раздел «Масштабирование эмбеддингов на √d»).
+При обучении **с нуля** важна инициализация. `Gemma`, как HF, инициализирует `Linear` и `Embedding` из $`\mathcal{N}(0, 0.02^2)`$ (`init_normal_`, ключ `initializer_range`), и с `tie_word_embeddings` и `scale_embeddings` начальный cross-entropy на учебном конфиге ($`d = 256`$, $`V = 1000`$) — 7.06 при $`\ln 1000 \approx 6.9`$ (std логитов 0.36). С инициализацией `nn.Embedding` по умолчанию, $`\mathcal{N}(0, 1)`$, те же ключи дают логиты порядка $`\sqrt{d}`$: стандартное отклонение ≈18, начальный cross-entropy ≈258. Почему нужны малые эмбеддинги — в [embeddings.md](embeddings.md) (раздел «Масштабирование эмбеддингов на √d»).
 
 ## Загрузка весов HuggingFace
 
-С ключами из таблицы выше загружаются веса `GemmaForCausalLM` — через `convert_hf_state_dict` из [`models/gemma/hf_weights.py`](../llm/src/llm/models/gemma/hf_weights.py). Это перенос LLaMA ([llama.md](llama.md#загрузка-весов-huggingface): те же имена слоёв и перестановка строк `q_proj`/`k_proj` под RoPE на чередующихся парах) плюс одна поправка: `GemmaRMSNorm` умножает на `(1 + w)`, а `RMSNorm` здесь — на `w`, поэтому к весам всех RMSNorm прибавляется 1 (разбор — в [Разборе кода](#convert_hf_state_dict)).
+С ключами из таблицы выше загружаются веса `GemmaForCausalLM` — через `convert_hf_state_dict` из [`models/gemma/hf_weights.py`](../../llm/src/llm/models/gemma/hf_weights.py). Это перенос LLaMA ([llama.md](llama.md#загрузка-весов-huggingface): те же имена слоёв и перестановка строк `q_proj`/`k_proj` под RoPE на чередующихся парах) плюс одна поправка: `GemmaRMSNorm` умножает на `(1 + w)`, а `RMSNorm` здесь — на `w`, поэтому к весам всех RMSNorm прибавляется 1 (разбор — в [Разборе кода](#convert_hf_state_dict)).
 
 ```python
 from transformers import GemmaForCausalLM
@@ -493,7 +491,7 @@ model.load_state_dict(convert_hf_state_dict(hf.state_dict(), num_heads=c.num_att
 
    </details>
 
-8. (Ноутбук.) В [`notebooks/gemma.ipynb`](../notebooks/gemma.ipynb) обучите учебную Gemma дважды: с ключами по умолчанию и с `tie_word_embeddings: true`, `scale_embeddings: true`. Сравните начальный loss и кривые обучения. Как исправить начальный loss во втором случае, не меняя код модели? (Подсказка: `llm.core.weight_init`.)
+8. (Ноутбук.) В [`notebooks/gemma.ipynb`](../../notebooks/gemma.ipynb) обучите учебную Gemma дважды: с ключами по умолчанию и с `tie_word_embeddings: true`, `scale_embeddings: true`. Сравните начальный loss и кривые обучения. Как исправить начальный loss во втором случае, не меняя код модели? (Подсказка: `llm.core.weight_init`.)
 
 ## Литература
 

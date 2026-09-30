@@ -70,7 +70,7 @@ class BaseModel(nn.Module, ABC):
             cache (Optional[list]): KV-кэш предыдущих токенов (по слою на элемент)
             attention_mask (Optional[Tensor]): Маска паддинга [batch, seq_len] (1 — токен,
                 0 — паддинг), с кэшем — [batch, cache_len + seq_len]; паддинг в любом месте
-                строки (см. docs/masks.md)
+                строки (см. docs/textbook/masks.md)
         Returns:
             (logits, cache): логиты [batch, seq_len, vocab_size] и новый кэш
             (None при use_cache=False)

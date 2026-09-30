@@ -2,8 +2,8 @@
 
 Часть II · [← GPT-2](gpt2.md) · [Оглавление](README.md) · [Mistral →](mistral.md)
 
-> Реализация: [`llm/src/llm/models/llama/llama.py`](../llm/src/llm/models/llama/llama.py) · класс `Llama`
-> Ноутбук: [`notebooks/llama.ipynb`](../notebooks/llama.ipynb)
+> Реализация: [`llm/src/llm/models/llama/llama.py`](../../llm/src/llm/models/llama/llama.py) · класс `Llama`
+> Ноутбук: [`notebooks/llama.ipynb`](../../notebooks/llama.ipynb)
 
 Место в линейке: [GPT-1](gpt.md) → [GPT-2](gpt2.md) → **LLaMA** → [Mistral](mistral.md) → [Mixtral](mixtral.md) · [Gemma](gemma.md)
 
@@ -71,7 +71,7 @@
 
 Пример: $`\mathbf{x} = (3, 4)`$, $`\mathbf{g} = (1, 1)`$. Среднее квадратов $`(9 + 16)/2 = 12{,}5`$, корень — $`3{,}536`$, результат $`(0{,}849;\ 1{,}131)`$. LayerNorm дал бы $`(-1, 1)`$: сначала вычел бы среднее $`3{,}5`$. RMSNorm сохраняет направление вектора, LayerNorm — нет.
 
-Подробно — в [normalization.md](normalization.md). В коде — [`core/rms_norm.py`](../llm/src/llm/core/rms_norm.py), класс `RMSNorm`; для входа в float16/bfloat16 норма считается во float32.
+Подробно — в [normalization.md](normalization.md). В коде — [`core/rms_norm.py`](../../llm/src/llm/core/rms_norm.py), класс `RMSNorm`; для входа в float16/bfloat16 норма считается во float32.
 
 ### 2. SwiGLU вместо GELU-FFN
 
@@ -96,7 +96,7 @@ FFN GPT-2 — два линейных слоя с GELU между ними. В L
 
 Матриц три, а не две, поэтому при $`d_{ff} = 4d`$ FFN был бы в 1,5 раза тяжелее. LLaMA берёт $`d_{ff} \approx \tfrac{2}{3} \cdot 4d`$, чтобы число параметров осталось прежним: $`3 \cdot d \cdot \tfrac{8d}{3} = 8d^2 = 2 \cdot d \cdot 4d`$ (см. [Размер FFN и bias](#размер-ffn-и-bias)).
 
-Подробно — в [feed-forward.md](feed-forward.md). В коде — [`core/swi_glu.py`](../llm/src/llm/core/swi_glu.py), класс `SwiGLU` (поля `_gate`, `_up`, `_down`).
+Подробно — в [feed-forward.md](feed-forward.md). В коде — [`core/swi_glu.py`](../../llm/src/llm/core/swi_glu.py), класс `SwiGLU` (поля `_gate`, `_up`, `_down`).
 
 ### 3. RoPE вместо обучаемых позиционных эмбеддингов
 
@@ -254,7 +254,7 @@ flowchart TB
     classDef dim fill:#f5f5f5,stroke:#bbbbbb,color:#999999,stroke-dasharray:4 3;
 ```
 
-**В коде** ([`core/rope.py`](../llm/src/llm/core/rope.py), класс `RoPE`): конструктор вычисляет `freqs = 1 / base ** (2·arange(d_h/2) / d_h)` — это $`\theta_i`$ — и буферы `cos_matrix`, `sin_matrix` формы `[max_seq_len, d_h/2]` со значениями $`\cos t\theta_i`$, $`\sin t\theta_i`$. `forward(x, start_pos)` берёт строки `start_pos : start_pos + seq_len`, делит `x` на чётные (`x[..., 0::2]`) и нечётные (`x[..., 1::2]`) координаты и собирает `x_even·cos − x_odd·sin`, `x_even·sin + x_odd·cos` — ровно формулу выше. Применяется в `MultiHeadAttention.forward` к `q` и `k` после разбиения на головы и до склейки с кэшем.
+**В коде** ([`core/rope.py`](../../llm/src/llm/core/rope.py), класс `RoPE`): конструктор вычисляет `freqs = 1 / base ** (2·arange(d_h/2) / d_h)` — это $`\theta_i`$ — и буферы `cos_matrix`, `sin_matrix` формы `[max_seq_len, d_h/2]` со значениями $`\cos t\theta_i`$, $`\sin t\theta_i`$. `forward(x, start_pos)` берёт строки `start_pos : start_pos + seq_len`, делит `x` на чётные (`x[..., 0::2]`) и нечётные (`x[..., 1::2]`) координаты и собирает `x_even·cos − x_odd·sin`, `x_even·sin + x_odd·cos` — ровно формулу выше. Применяется в `MultiHeadAttention.forward` к `q` и `k` после разбиения на головы и до склейки с кэшем.
 
 **KV-кэш.** `start_pos` равен длине кэша `cache[0].size(2)` (в Mistral и Mixtral, где кэш обрезается окном, — хранимой позиции `next_pos`, см. [mistral.md](mistral.md)). Кэш хранит K уже повёрнутыми, поэтому старые ключи не пересчитываются. Позиций дальше `max_position_embeddings` в таблицах нет: `forward` за этой границей даёт `ValueError`, а `generate` продолжает по последним `max_position_embeddings` токенам и пересчитывает их без кэша — при сдвиге окна позиции всех токенов меняются, и повёрнутые K из кэша больше не годятся (см. [gpt.md](gpt.md#генерация) и [generation.md](generation.md)).
 
@@ -288,22 +288,22 @@ flowchart TB
 
 | Компонент | Класс | Файл |
 |---|---|---|
-| Токен-эмбеддинги | `TokenEmbeddings` (без отдельных позиционных эмбеддингов) | [`core/token_embeddings.py`](../llm/src/llm/core/token_embeddings.py) |
-| Позиционное кодирование | `RoPE` — поворот Q/K на угол, зависящий от позиции | [`core/rope.py`](../llm/src/llm/core/rope.py) |
-| Нормализация | `RMSNorm` (pre-norm, оба подслоя, и финальная) | [`core/rms_norm.py`](../llm/src/llm/core/rms_norm.py) |
-| FFN | `SwiGLU` (gated SiLU-MLP) | [`core/swi_glu.py`](../llm/src/llm/core/swi_glu.py) |
-| Attention | `MultiHeadAttention` + RoPE | [`core/multi_head_attention.py`](../llm/src/llm/core/multi_head_attention.py) |
-| Блок декодера | `CachedDecoder` (параметризован `norm_layer`, `feed_forward_layer`) | [`core/cached_decoder.py`](../llm/src/llm/core/cached_decoder.py) |
-| Модель целиком | `Llama`, `llama_intermediate_size` | [`models/llama/llama.py`](../llm/src/llm/models/llama/llama.py) |
-| Перенос весов HF | `convert_hf_state_dict` | [`models/llama/hf_weights.py`](../llm/src/llm/models/llama/hf_weights.py) |
+| Токен-эмбеддинги | `TokenEmbeddings` (без отдельных позиционных эмбеддингов) | [`core/token_embeddings.py`](../../llm/src/llm/core/token_embeddings.py) |
+| Позиционное кодирование | `RoPE` — поворот Q/K на угол, зависящий от позиции | [`core/rope.py`](../../llm/src/llm/core/rope.py) |
+| Нормализация | `RMSNorm` (pre-norm, оба подслоя, и финальная) | [`core/rms_norm.py`](../../llm/src/llm/core/rms_norm.py) |
+| FFN | `SwiGLU` (gated SiLU-MLP) | [`core/swi_glu.py`](../../llm/src/llm/core/swi_glu.py) |
+| Attention | `MultiHeadAttention` + RoPE | [`core/multi_head_attention.py`](../../llm/src/llm/core/multi_head_attention.py) |
+| Блок декодера | `CachedDecoder` (параметризован `norm_layer`, `feed_forward_layer`) | [`core/cached_decoder.py`](../../llm/src/llm/core/cached_decoder.py) |
+| Модель целиком | `Llama`, `llama_intermediate_size` | [`models/llama/llama.py`](../../llm/src/llm/models/llama/llama.py) |
+| Перенос весов HF | `convert_hf_state_dict` | [`models/llama/hf_weights.py`](../../llm/src/llm/models/llama/hf_weights.py) |
 
 ## Разбор кода
 
 ### Класс `Llama`
 
-`Llama` наследует `BaseModel` ([`core/base_model.py`](../llm/src/llm/core/base_model.py)), откуда берёт `generate`, `save`, `load`. Конструктор:
+`Llama` наследует `BaseModel` ([`core/base_model.py`](../../llm/src/llm/core/base_model.py)), откуда берёт `generate`, `save`, `load`. Конструктор:
 
-1. `head_size = resolve_head_size(config, "num_heads", rope=True)` — $`d_h`$ из ключа `head_size` или $`d / H`$; проверяет делимость и чётность (RoPE поворачивает пары) — [`core/config_checks.py`](../llm/src/llm/core/config_checks.py).
+1. `head_size = resolve_head_size(config, "num_heads", rope=True)` — $`d_h`$ из ключа `head_size` или $`d / H`$; проверяет делимость и чётность (RoPE поворачивает пары) — [`core/config_checks.py`](../../llm/src/llm/core/config_checks.py).
 2. Читает необязательные ключи: `rms_norm_eps` (1e-6), `intermediate_size` ($`4d`$), `bias` (`True`), `rope_theta` (10000).
 3. Создаёт `TokenEmbeddings`, **один** `RoPE` и `nn.Dropout`.
 4. Строит `num_layers` блоков `CachedDecoder`, передавая каждому `norm_layer=partial(RMSNorm, eps=norm_eps)`, свежий `SwiGLU(...)` и общий `rope`.
@@ -326,7 +326,7 @@ logits = self._linear(self._norm(out))              # Z = RMSNorm_f(H^(L)) W_out
 
 ### Класс `CachedDecoder`
 
-[`core/cached_decoder.py`](../llm/src/llm/core/cached_decoder.py). Это общий pre-norm блок с подставляемыми нормализацией и FFN; attention в нём всегда `MultiHeadAttention` (с RoPE, если передан `rope`). По умолчанию `norm_layer=nn.LayerNorm`, и тогда это классический pre-LN блок GPT-2. LLaMA подставляет RMSNorm и SwiGLU:
+[`core/cached_decoder.py`](../../llm/src/llm/core/cached_decoder.py). Это общий pre-norm блок с подставляемыми нормализацией и FFN; attention в нём всегда `MultiHeadAttention` (с RoPE, если передан `rope`). По умолчанию `norm_layer=nn.LayerNorm`, и тогда это классический pre-LN блок GPT-2. LLaMA подставляет RMSNorm и SwiGLU:
 
 ```
 norm1_out = Norm1(x)                 # RMSNorm_1
@@ -361,7 +361,7 @@ P = 2Vd + \beta V + d + L\,\big(4d^2 + 3d\,d_{ff} + 2d + \beta\,(4d + 2d_{ff} + 
 
 где $`V`$ — словарь, $`d`$ — `embed_dim`, $`L`$ — `num_layers`, $`d_{ff}`$ — `intermediate_size`. Число голов $`H`$ в формулу не входит: при $`Hd_h = d`$ проекции имеют размер $`d \times d`$ при любом $`H`$.
 
-**Учебный конфиг** [`experiments/llm_only/configs/llama_train.json`](../experiments/llm_only/configs/llama_train.json): $`d = 256`$, $`L = 4`$, $`H = 4`$, по умолчанию $`d_{ff} = 4d = 1024`$ и $`\beta = 1`$. `vocab_size` в файле равен `null` и берётся из токенизатора (`bpe_vocab_size: 1000`); примем $`V = 1000`$.
+**Учебный конфиг** [`experiments/llm_only/configs/llama_train.json`](../../experiments/llm_only/configs/llama_train.json): $`d = 256`$, $`L = 4`$, $`H = 4`$, по умолчанию $`d_{ff} = 4d = 1024`$ и $`\beta = 1`$. `vocab_size` в файле равен `null` и берётся из токенизатора (`bpe_vocab_size: 1000`); примем $`V = 1000`$.
 
 ```math
 \begin{aligned}
@@ -417,7 +417,7 @@ print(count(model))                         # 6738415616
 
 ## Конфигурация
 
-Пример из [`experiments/llm_only/configs/llama_train.json`](../experiments/llm_only/configs/llama_train.json):
+Пример из [`experiments/llm_only/configs/llama_train.json`](../../experiments/llm_only/configs/llama_train.json):
 
 | Параметр | Значение в примере | Смысл |
 |---|---|---|
@@ -460,7 +460,7 @@ config = {..., "embed_dim": 4096, "intermediate_size": llama_intermediate_size(4
 
 ### Загрузка весов HuggingFace
 
-С этими ключами загружаются веса `LlamaForCausalLM` — через `convert_hf_state_dict` из [`models/llama/hf_weights.py`](../llm/src/llm/models/llama/hf_weights.py):
+С этими ключами загружаются веса `LlamaForCausalLM` — через `convert_hf_state_dict` из [`models/llama/hf_weights.py`](../../llm/src/llm/models/llama/hf_weights.py):
 
 ```python
 from transformers import LlamaForCausalLM
@@ -496,7 +496,7 @@ W^{\text{здесь}}\big[h d_h + 2i + s\big] = W^{\text{HF}}\big[h d_h + s \cdo
 
 Почему перестановка ничего не ломает: переставить строки $`W_Q`$ — значит переставить координаты вектора $`\mathbf{q}`$. Одна и та же перестановка $`\pi`$ координат $`\mathbf{q}`$ и $`\mathbf{k}`$ сохраняет скалярное произведение, $`\pi(\mathbf{q}) \cdot \pi(\mathbf{k}) = \mathbf{q} \cdot \mathbf{k}`$, а пара $`i`$ в обоих вариантах вращается с той же частотой $`\theta_i`$. После перестановки пары HF стоят на соседних местах, и RoPE Meta поворачивает их так же, как `rotate_half` — исходные. $`W_V`$ и $`W_O`$ не переставляются: V не поворачивается.
 
-Подходят модели с обычным MHA (`num_key_value_heads == num_attention_heads`) и без `rope_scaling`. Проверено на пяти открытых моделях архитектуры LLaMA ([`llm/tests/models/test_llama_hf_parity.py`](../llm/tests/models/test_llama_hf_parity.py)): логиты совпадают с HF с точностью до ~1e-4, greedy-генерация с KV-кэшем — токен в токен.
+Подходят модели с обычным MHA (`num_key_value_heads == num_attention_heads`) и без `rope_scaling`. Проверено на пяти открытых моделях архитектуры LLaMA ([`llm/tests/models/test_llama_hf_parity.py`](../../llm/tests/models/test_llama_hf_parity.py)): логиты совпадают с HF с точностью до ~1e-4, greedy-генерация с KV-кэшем — токен в токен.
 
 | Модель | `intermediate_size` | Совпадает с `llama_intermediate_size` | max \|Δ логитов\| |
 |---|---|---|---|
