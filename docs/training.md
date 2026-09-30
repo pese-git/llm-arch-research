@@ -229,7 +229,7 @@ u_t = \mu\, u_{t-1} + g_t, \qquad \theta_t = \theta_{t-1} - \eta\, u_t
 
 где $`u_t`$ — «скорость» той же формы, что $`\theta`$, $`u_0 = 0`$, $`\mu \in [0, 1)`$ — коэффициент момента. При постоянном градиенте $`u_t \to g/(1-\mu)`$: для $`\mu = 0.9`$ шаг вдоль устойчивого направления в 10 раз больше, а колебания поперёк оврага (градиент меняет знак) взаимно гасятся.
 
-В репозитории: `get_optimizer(model, optimizer_type="sgd")` создаёт `optim.SGD(..., momentum=0.9)`. Аргумент `weight_decay` в этой ветке **не передаётся** — SGD из `get_optimizer` работает без weight decay.
+В репозитории: `get_optimizer(model, optimizer_type="sgd")` создаёт `optim.SGD(..., momentum=0.9)` с теми же группами weight decay, что и AdamW (см. [ниже](#какие-параметры-исключать-из-weight-decay)); в SGD это L2 через градиент. (До исправления пункта 61 [бэклога](backlog.md) аргумент `weight_decay` в этой ветке не передавался.)
 
 ### Adam
 
@@ -325,31 +325,27 @@ v_1 = 0.001·0.25 = 0.00025    v̂_1 = 0.00025 / (1 − 0.999) = 0.25
 
 Обычная практика — применять weight decay только к матрицам (веса `Linear`, эмбеддинги), а смещения (bias) и коэффициенты нормализации (веса LayerNorm и RMSNorm) не затухать. GPT-1 (разд. 4.1 статьи) применяет свою регуляризацию с $`w = 0.01`$ именно так — «on all non bias or gain weights». Смысл: смещений и коэффициентов нормализации мало, на переобучение они почти не влияют, а затухание коэффициента RMSNorm к нулю просто уменьшает масштаб сигнала и спорит с нормализацией.
 
-Что делает репозиторий. `get_optimizer` ([`training/optimizer.py`](../llm/src/llm/training/optimizer.py)):
+Что делает репозиторий. `get_optimizer` ([`training/optimizer.py`](../llm/src/llm/training/optimizer.py)) делит параметры на две группы функцией `weight_decay_param_groups`:
 
 ```python
-if optimizer_type.lower() == "adamw":
-    return optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
-elif optimizer_type.lower() == "adam":
-    return optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
-elif optimizer_type.lower() == "sgd":
-    return optim.SGD(model.parameters(), lr=lr, momentum=0.9)
-```
-
-- Групп параметров нет: `weight_decay` (по умолчанию `0.01`) применяется ко **всем** параметрам, включая bias и веса LayerNorm/RMSNorm. Для учебного GPT ($`V = 1000`$) это 14 312 одномерных параметров из 3 704 808 — мало, но они всё же затухают.
-- `optimizer_type="adam"` — это Adam с **L2**, а не AdamW.
-- `Trainer` вызывает `get_optimizer(model, lr=lr)`: всегда AdamW, $`\lambda = 0.01`$, $`\beta_1, \beta_2 = 0.9, 0.999`$ (значения PyTorch по умолчанию). Для сравнения, LLaMA (Touvron et al., 2023, разд. 2.3) обучалась с $`\beta_2 = 0.95`$ и $`\lambda = 0.1`$.
-
-Если нужны группы, оптимизатор `Trainer` можно подменить до вызова `train()` — планировщик создаётся внутри `train()` по `self.optimizer`:
-
-```python
-trainer = Trainer(model, dataset, lr=3e-4, batch_size=8, num_epochs=3, warmup_steps=100)
 decay = [p for p in model.parameters() if p.dim() >= 2]      # матрицы Linear и Embedding
 no_decay = [p for p in model.parameters() if p.dim() < 2]    # bias и веса нормализаций
-trainer.optimizer = torch.optim.AdamW(
-    [{"params": decay, "weight_decay": 0.1}, {"params": no_decay, "weight_decay": 0.0}],
-    lr=3e-4, betas=(0.9, 0.95),
-)
+groups = [{"params": decay, "weight_decay": weight_decay},
+          {"params": no_decay, "weight_decay": 0.0}]
+```
+
+- Критерий — размерность: матрицы `Linear` (включая роутер и экспертов MoE) и эмбеддинги двумерны, bias и веса LayerNorm/RMSNorm — одномерны. Общая матрица при weight tying входит в группы один раз (`model.parameters()` не повторяет параметр) и затухает, как и в GPT-1. Для учебного GPT ($`V = 1000`$) без decay остаются 14 312 одномерных параметров из 3 704 808.
+- Эмбеддинги затухают, как в GPT-1, nanoGPT и HF `Trainer` (он исключает только bias и веса нормализаций).
+- Группы одинаковы для всех трёх вариантов: `"adamw"` — decoupled weight decay, `"adam"` — Adam с **L2**, а не AdamW, `"sgd"` — SGD с моментом 0.9 и L2.
+- `Trainer` вызывает `get_optimizer(model, lr=lr)`: всегда AdamW, $`\lambda = 0.01`$ на матрицах, $`\beta_1, \beta_2 = 0.9, 0.999`$ (значения PyTorch по умолчанию). Для сравнения, LLaMA (Touvron et al., 2023, разд. 2.3) обучалась с $`\beta_2 = 0.95`$ и $`\lambda = 0.1`$.
+
+До исправления пункта 61 [бэклога](backlog.md) групп не было, и `weight_decay` применялся ко **всем** параметрам, включая bias и веса нормализаций. Другие $`\lambda`$ или $`\beta`$ можно задать, подменив оптимизатор `Trainer` до вызова `train()` — планировщик создаётся внутри `train()` по `self.optimizer`:
+
+```python
+from llm.training.optimizer import weight_decay_param_groups
+
+trainer = Trainer(model, dataset, lr=3e-4, batch_size=8, num_epochs=3, warmup_steps=100)
+trainer.optimizer = torch.optim.AdamW(weight_decay_param_groups(model, 0.1), lr=3e-4, betas=(0.9, 0.95))
 trainer.train()
 ```
 
@@ -797,7 +793,7 @@ print((targets != -100).float().mean())   # доля целей в loss: при 
 
 - Обучение минимизирует среднюю cross-entropy следующего токена; датасеты возвращают `labels` — копию `input_ids` с `-100` на паддинге — и `attention_mask`, сдвиг делает `compute_lm_loss`, pad-токены в loss не входят.
 - Градиент cross-entropy по логитам — $`p - \mathbf{y}`$; autograd по цепному правилу доводит его до всех весов.
-- Adam нормирует шаг каждого параметра оценкой второго момента, с поправкой смещения в начале; AdamW применяет weight decay мимо этой нормировки. В репозитории — AdamW с $`\lambda = 0.01`$ на все параметры.
+- Adam нормирует шаг каждого параметра оценкой второго момента, с поправкой смещения в начале; AdamW применяет weight decay мимо этой нормировки. В репозитории — AdamW с $`\lambda = 0.01`$ на матрицах (веса `Linear` и эмбеддинги); bias и веса нормализаций не затухают.
 - Learning rate: линейный warmup от 0 и линейный спад до 0; warmup гасит шум ранних оценок Adam и нестабильность post-LN. Длину warmup удобно задавать долей от числа шагов (`warmup_ratio`). Косинусного расписания в репозитории нет.
 - Gradient clipping ограничивает общую норму градиента единицей и защищает от всплесков.
 - Все шесть моделей инициализируются $`\mathcal{N}(0, 0.02^2)`$, как в статьях и HuggingFace (GPT-2 — ещё и с масштабом $`1/\sqrt{2L}`$ для residual-проекций); начальный loss $`\approx \ln V + \sigma^2/2`$.
