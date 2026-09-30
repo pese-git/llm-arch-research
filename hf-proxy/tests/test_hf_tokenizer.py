@@ -9,6 +9,7 @@ import pytest
 import torch
 
 from hf_proxy import HFTokenizerAdapter, convert_to_hf_format, create_hf_tokenizer
+from llm.tokenizers import BPETokenizer
 
 
 class TestInit:
@@ -334,6 +335,26 @@ class TestSaveLoad:
 
         loaded = HFTokenizerAdapter.from_pretrained(str(tmp_path))
         assert loaded.encode("hello world") == hf_tokenizer.encode("hello world")
+
+    def test_from_pretrained_directory_keeps_merge_order(self, tmp_path):
+        """Слияния сохраняются: загруженный адаптер кодирует по порядку слияний,
+        а не жадным поиском (nest — n est, а не ne s t)."""
+        llm_tokenizer = BPETokenizer()
+        llm_tokenizer.train(
+            ["low"] * 5 + ["lower"] * 2 + ["newest"] * 6 + ["widest"] * 3,
+            vocab_size=20,
+            special_tokens=["<pad>", "<unk>", "<bos>", "<eos>"],
+        )
+        HFTokenizerAdapter(llm_tokenizer).save_pretrained(str(tmp_path))
+
+        config = json.loads((tmp_path / "tokenizer_config.json").read_text(encoding="utf-8"))
+        assert config["merges"][0] == ["e", "s"]
+
+        loaded = HFTokenizerAdapter.from_pretrained(str(tmp_path))
+        assert loaded.llm_tokenizer.merges == llm_tokenizer.merges
+        nest = [llm_tokenizer.vocab["n"], llm_tokenizer.vocab["est"]]
+        assert llm_tokenizer.encode("nest") == nest
+        assert loaded.llm_tokenizer.encode("nest") == nest
 
     def test_from_pretrained_directory_missing_files(self, tmp_path):
         with pytest.raises(FileNotFoundError):

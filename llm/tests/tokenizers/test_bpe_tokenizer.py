@@ -443,3 +443,80 @@ class TestBPESaveLoadSpecialTokens:
         loaded = BPETokenizer.load(str(path))
         assert loaded.merges == {}
         assert loaded.encode("мир") == tokenizer.encode("мир")
+
+
+# --- Кодирование по порядку слияний (бэклог, пункт 58) ---
+
+# Корпус из статьи Sennrich et al.: low×5, lower×2, newest×6, widest×3
+SENNRICH = ["low"] * 5 + ["lower"] * 2 + ["newest"] * 6 + ["widest"] * 3
+
+
+def sennrich_tokenizer(vocab_size=20):
+    tokenizer = BPETokenizer()
+    tokenizer.train(SENNRICH, vocab_size=vocab_size, special_tokens=SPECIAL_TOKENS)
+    return tokenizer
+
+
+def pieces(tokenizer, text):
+    return [tokenizer.inverse_vocab[i] for i in tokenizer.encode(text)]
+
+
+class TestBPEMergeOrder:
+    @pytest.mark.parametrize("word, expected", [
+        ("nest", ["n", "est"]),        # жадный longest-match дал бы ne s t
+        ("lowest", ["low", "est"]),
+        ("newest", ["newest"]),
+        ("lower", ["low", "e", "r"]),  # при vocab_size=20 слияний для lower нет
+    ])
+    def test_merges_applied_in_rank_order(self, word, expected):
+        assert pieces(sennrich_tokenizer(), word) == expected
+
+    def test_training_words_split_as_in_training(self):
+        """Слова корпуса разбиваются так же, как после обучения: при раннем останове
+        (мало слияний) это не обязательно самые длинные токены словаря."""
+        tokenizer = sennrich_tokenizer(vocab_size=13)  # 10 символов + 3 слияния
+        ranked = sorted(tokenizer.merges, key=tokenizer.merges.get)
+        for word in set(SENNRICH):
+            symbols = list(word)
+            for pair in ranked:  # повтор обучения: слияния по очереди
+                symbols = BPETokenizer._merge_pair(symbols, pair, pair[0] + pair[1])
+            assert pieces(tokenizer, word) == symbols
+
+    def test_matches_huggingface_bpe(self):
+        """Разбиение совпадает с эталонным BPE из HuggingFace tokenizers
+        на тех же словаре и слияниях — на всех словах из букв корпуса длины 1–4
+        и на случайных словах длины 5–9."""
+        tokenizers = pytest.importorskip("tokenizers")
+        import itertools
+        import random
+
+        tokenizer = sennrich_tokenizer()
+        ranked = sorted(tokenizer.merges, key=tokenizer.merges.get)
+        reference = tokenizers.Tokenizer(
+            tokenizers.models.BPE(vocab=dict(tokenizer.vocab), merges=ranked)
+        )
+        alphabet = sorted(set("".join(SENNRICH)))
+        words = ["".join(w) for n in range(1, 5) for w in itertools.product(alphabet, repeat=n)]
+        rng = random.Random(0)
+        words += ["".join(rng.choice(alphabet) for _ in range(rng.randint(5, 9))) for _ in range(2000)]
+        for word in words:
+            assert tokenizer._bpe_word(word) == reference.encode(word).tokens, word
+
+    def test_without_merges_falls_back_to_greedy(self):
+        """Токенизатор без слияний (старые файлы) кодирует жадным поиском по словарю, как раньше."""
+        tokenizer = sennrich_tokenizer()
+        tokenizer.merges = {}
+        assert pieces(tokenizer, "nest") == ["ne", "s", "t"]
+
+    def test_unknown_symbol_is_unk(self):
+        tokenizer = sennrich_tokenizer()
+        ids = tokenizer.encode("lowz")
+        assert ids == [tokenizer.vocab["low"], tokenizer.unk_token_id]
+
+    def test_save_load_keeps_merge_order(self, tmp_path):
+        tokenizer = sennrich_tokenizer()
+        path = tmp_path / "tokenizer.json"
+        tokenizer.save(str(path))
+        loaded = BPETokenizer.load(str(path))
+        for word, expected in [("nest", ["n", "est"]), ("lowest", ["low", "est"])]:
+            assert pieces(loaded, word) == pieces(tokenizer, word) == expected
