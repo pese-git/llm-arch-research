@@ -2,8 +2,8 @@
 
 Часть II · [← LLaMA](llama.md) · [Оглавление](README.md) · [Mixtral →](mixtral.md)
 
-> Реализация: [`llm/src/llm/models/mistral/mistral.py`](../llm/src/llm/models/mistral/mistral.py) · класс `Mistral`
-> Ноутбук: [`notebooks/mistral.ipynb`](../notebooks/mistral.ipynb)
+> Реализация: [`llm/src/llm/models/mistral/mistral.py`](../../llm/src/llm/models/mistral/mistral.py) · класс `Mistral`
+> Ноутбук: [`notebooks/mistral.ipynb`](../../notebooks/mistral.ipynb)
 
 Место в линейке: [GPT-1](gpt.md) → [GPT-2](gpt2.md) → [LLaMA](llama.md) → **Mistral** → [Mixtral](mixtral.md) · [Gemma](gemma.md)
 
@@ -263,7 +263,7 @@ kv_cache = (k, v, start_pos + seq_len)    # тройка: K, V, next_pos
 
 Содержимое то же, что в кольцевом буфере, но в порядке позиций; цена — копирование $`O(W)`$ на каждом шаге вместо записи $`O(1)`$.
 
-Из-за обрезки длина кэша перестаёт совпадать с позицией токена, поэтому кэш — это **тройка** `(K, V, next_pos)`: `next_pos` — абсолютная позиция следующего токена. Её RoPE использует как `start_pos` (`start_pos = cache[2]`), и по ней же модель проверяет длину (`cache_start_pos` в [`core/generation.py`](../llm/src/llm/core/generation.py)). Маска берётся срезом абсолютной маски:
+Из-за обрезки длина кэша перестаёт совпадать с позицией токена, поэтому кэш — это **тройка** `(K, V, next_pos)`: `next_pos` — абсолютная позиция следующего токена. Её RoPE использует как `start_pos` (`start_pos = cache[2]`), и по ней же модель проверяет длину (`cache_start_pos` в [`core/generation.py`](../../llm/src/llm/core/generation.py)). Маска берётся срезом абсолютной маски:
 
 ```python
 cache_len = k.size(2) - seq_len
@@ -294,13 +294,13 @@ next_token = logits[:, -1].argmax(-1, keepdim=True)   # дальше — по т
 
 | Компонент | Класс | Файл |
 |---|---|---|
-| Токен-эмбеддинги | `TokenEmbeddings` | [`core/token_embeddings.py`](../llm/src/llm/core/token_embeddings.py) |
-| Позиционное кодирование | `RoPE` | [`core/rope.py`](../llm/src/llm/core/rope.py) |
-| Нормализация | `RMSNorm` | [`core/rms_norm.py`](../llm/src/llm/core/rms_norm.py) |
-| Attention | `GroupedQueryAttention` (GQA + скользящее окно + RoPE) | [`core/group_query_attention.py`](../llm/src/llm/core/group_query_attention.py) |
-| FFN | `SwiGLU` | [`core/swi_glu.py`](../llm/src/llm/core/swi_glu.py) |
-| Блок декодера | `MistralDecoder` (pre-norm) | [`core/mistral_decoder.py`](../llm/src/llm/core/mistral_decoder.py) |
-| Модель целиком | `Mistral` | [`models/mistral/mistral.py`](../llm/src/llm/models/mistral/mistral.py) |
+| Токен-эмбеддинги | `TokenEmbeddings` | [`core/token_embeddings.py`](../../llm/src/llm/core/token_embeddings.py) |
+| Позиционное кодирование | `RoPE` | [`core/rope.py`](../../llm/src/llm/core/rope.py) |
+| Нормализация | `RMSNorm` | [`core/rms_norm.py`](../../llm/src/llm/core/rms_norm.py) |
+| Attention | `GroupedQueryAttention` (GQA + скользящее окно + RoPE) | [`core/group_query_attention.py`](../../llm/src/llm/core/group_query_attention.py) |
+| FFN | `SwiGLU` | [`core/swi_glu.py`](../../llm/src/llm/core/swi_glu.py) |
+| Блок декодера | `MistralDecoder` (pre-norm) | [`core/mistral_decoder.py`](../../llm/src/llm/core/mistral_decoder.py) |
+| Модель целиком | `Mistral` | [`models/mistral/mistral.py`](../../llm/src/llm/models/mistral/mistral.py) |
 
 ## Разбор кода
 
@@ -308,7 +308,7 @@ next_token = logits[:, -1].argmax(-1, keepdim=True)   # дальше — по т
 
 ### Класс `Mistral`
 
-[`models/mistral/mistral.py`](../llm/src/llm/models/mistral/mistral.py):
+[`models/mistral/mistral.py`](../../llm/src/llm/models/mistral/mistral.py):
 
 - размер головы — `resolve_head_size(config, "num_q_heads", rope=True)`: ключ `head_size` или `embed_dim // num_q_heads`;
 - в каждый `MistralDecoder` передаются `num_q_heads`, `num_kv_heads`, `window_size=config.get("window_size")` (`None` — окна нет), `norm_eps`, `intermediate_size` (`None` — $`4d`$ внутри `SwiGLU`) и `bias`;
@@ -316,7 +316,7 @@ next_token = logits[:, -1].argmax(-1, keepdim=True)   # дальше — по т
 
 ### Класс `MistralDecoder`
 
-[`core/mistral_decoder.py`](../llm/src/llm/core/mistral_decoder.py). В отличие от параметризуемого `CachedDecoder`, здесь состав зафиксирован: `GroupedQueryAttention` (`_heads`), `SwiGLU` (`_ff`), две `RMSNorm` (`_norm1`, `_norm2`). Имена полей те же, что у `CachedDecoder`, поэтому одна функция `convert_hf_state_dict` обслуживает обе модели. `forward`:
+[`core/mistral_decoder.py`](../../llm/src/llm/core/mistral_decoder.py). В отличие от параметризуемого `CachedDecoder`, здесь состав зафиксирован: `GroupedQueryAttention` (`_heads`), `SwiGLU` (`_ff`), две `RMSNorm` (`_norm1`, `_norm2`). Имена полей те же, что у `CachedDecoder`, поэтому одна функция `convert_hf_state_dict` обслуживает обе модели. `forward`:
 
 ```
 norm1_out = RMSNorm1(x)
@@ -329,7 +329,7 @@ result    = ffn_out + out
 
 ### Класс `GroupedQueryAttention`
 
-[`core/group_query_attention.py`](../llm/src/llm/core/group_query_attention.py). Специфичное для GQA и окна:
+[`core/group_query_attention.py`](../../llm/src/llm/core/group_query_attention.py). Специфичное для GQA и окна:
 
 **Конструктор.** Проверяет, что `num_q_heads % num_kv_heads == 0` (иначе `ValueError`). Проекции: `_q = nn.Linear(d, H·d_h)`, `_k` и `_v = nn.Linear(d, G·d_h)`, `_layer = nn.Linear(H·d_h, d)` — это $`W_O`$. Маска строится один раз на $`T_{\max} \times T_{\max}`$ методом `_create_sliding_window_mask`:
 
@@ -388,7 +388,7 @@ P &= 2 \cdot 32\,000 \cdot 4096 + 4096 + 32 \cdot 218\,112\,000 = 262\,148\,096 
 
 $`\approx 7{,}24`$ млрд. FFN — 81 % параметров слоя; attention — 19 % (у LLaMA 7B — 33 %): GQA урезал K/V, а FFN стал шире. С MHA ($`G = 32`$) было бы 8 047 038 464.
 
-**Учебный конфиг** [`experiments/llm_only/configs/mistral_train.json`](../experiments/llm_only/configs/mistral_train.json): $`d = 256`$, $`H = 4`$, $`G = 2`$, $`d_h = 64`$, $`L = 4`$, $`d_{ff} = 4d = 1024`$, $`\beta = 1`$, $`V = 1000`$ (из токенизатора):
+**Учебный конфиг** [`experiments/llm_only/configs/mistral_train.json`](../../experiments/llm_only/configs/mistral_train.json): $`d = 256`$, $`H = 4`$, $`G = 2`$, $`d_h = 64`$, $`L = 4`$, $`d_{ff} = 4d = 1024`$, $`\beta = 1`$, $`V = 1000`$ (из токенизатора):
 
 ```math
 \begin{aligned}
@@ -422,7 +422,7 @@ print(count(model))                             # 7241732096
 
 ## Конфигурация
 
-Пример из [`experiments/llm_only/configs/mistral_train.json`](../experiments/llm_only/configs/mistral_train.json):
+Пример из [`experiments/llm_only/configs/mistral_train.json`](../../experiments/llm_only/configs/mistral_train.json):
 
 | Параметр | Значение в примере | Смысл |
 |---|---|---|
@@ -445,7 +445,7 @@ print(count(model))                             # 7241732096
 
 ## Отличия от Mistral 7B
 
-Подробности, воспроизведение и варианты исправления — в [бэклоге](backlog.md#mistral) (номера пунктов в скобках).
+Подробности, воспроизведение и варианты исправления — в [бэклоге](../dev/backlog.md#mistral) (номера пунктов в скобках).
 
 | | Mistral 7B | Здесь |
 |---|---|---|
@@ -482,7 +482,7 @@ model.load_state_dict(convert_hf_state_dict(hf.state_dict(), num_heads=c.num_att
                                             num_kv_heads=c.num_key_value_heads))
 ```
 
-Сверено со случайными `MistralForCausalLM` из `transformers` (со скользящим окном и без него, с `head_dim`, не равным `hidden_size / num_attention_heads`): логиты совпадают до ~1e-5, greedy-генерация с KV-кэшем дольше окна — токен в токен ([`llm/tests/models/test_mistral_mixtral_hf_parity.py`](../llm/tests/models/test_mistral_mixtral_hf_parity.py)). Настоящие веса (Mistral 7B — около 14 ГБ) для проверки слишком велики.
+Сверено со случайными `MistralForCausalLM` из `transformers` (со скользящим окном и без него, с `head_dim`, не равным `hidden_size / num_attention_heads`): логиты совпадают до ~1e-5, greedy-генерация с KV-кэшем дольше окна — токен в токен ([`llm/tests/models/test_mistral_mixtral_hf_parity.py`](../../llm/tests/models/test_mistral_mixtral_hf_parity.py)). Настоящие веса (Mistral 7B — около 14 ГБ) для проверки слишком велики.
 
 `Mistral` без `window_size` — это LLaMA с GQA, поэтому так же загружаются и чекпоинты `LlamaForCausalLM` с `num_key_value_heads < num_attention_heads` (Llama 2 70B и производные): проверено на случайной модели, логиты совпадают до ~1e-7.
 

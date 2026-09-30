@@ -2,8 +2,8 @@
 
 Часть II · [← Mistral](mistral.md) · [Оглавление](README.md) · [Gemma →](gemma.md)
 
-> Реализация: [`llm/src/llm/models/mixtral/mixtral.py`](../llm/src/llm/models/mixtral/mixtral.py) · класс `Mixtral`
-> Ноутбук: [`notebooks/mixtral.ipynb`](../notebooks/mixtral.ipynb)
+> Реализация: [`llm/src/llm/models/mixtral/mixtral.py`](../../llm/src/llm/models/mixtral/mixtral.py) · класс `Mixtral`
+> Ноутбук: [`notebooks/mixtral.ipynb`](../../notebooks/mixtral.ipynb)
 
 Место в линейке: [GPT-1](gpt.md) → [GPT-2](gpt2.md) → [LLaMA](llama.md) → [Mistral](mistral.md) → **Mixtral** · [Gemma](gemma.md)
 
@@ -183,7 +183,7 @@ flowchart TB
     classDef dim fill:#f5f5f5,stroke:#bbbbbb,color:#999999,stroke-dasharray:4 3;
 ```
 
-Кратко, что делает [`MoE.forward`](../llm/src/llm/core/moe.py) (подробный разбор — в [mixture-of-experts.md](mixture-of-experts.md#реализация-в-репозитории)):
+Кратко, что делает [`MoE.forward`](../../llm/src/llm/core/moe.py) (подробный разбор — в [mixture-of-experts.md](mixture-of-experts.md#реализация-в-репозитории)):
 
 1. Роутер `nn.Linear(emb_size, num_experts)` выдаёт логит на каждого эксперта для каждого токена.
 2. `torch.topk` выбирает `top_k_experts` экспертов; веса — softmax **только по выбранным k**, во float32.
@@ -226,25 +226,25 @@ return dropout(Y).reshape(batch, seq_len, D)
 
 При равномерной загрузке вспомогательное слагаемое равно $`\alpha k`$ (для $`k = 2`$ — $`2\alpha`$), перекос его увеличивает. Градиент идёт через $`P_i`$ с «весом» загрузки: логиты перегруженных экспертов уменьшаются. Вывод, численные примеры и тонкости — в [mixture-of-experts.md](mixture-of-experts.md#коллапс-роутера-и-load-balancing-loss).
 
-В коде: `MoE` запоминает `router_logits` последнего прохода, `load_balancing_loss` в [`core/moe.py`](../llm/src/llm/core/moe.py) считает формулу (совпадает с HF до float), `Mixtral.auxiliary_loss()` возвращает `router_aux_loss_coef · aux`, а `Trainer` и `HFGPTAdapter` прибавляют его к loss при обучении (loss оценки — только языковой модели). По умолчанию коэффициент `0` — loss выключен, как и в HF, где он включается `output_router_logits=True` (коэффициент там по умолчанию 0.001).
+В коде: `MoE` запоминает `router_logits` последнего прохода, `load_balancing_loss` в [`core/moe.py`](../../llm/src/llm/core/moe.py) считает формулу (совпадает с HF до float), `Mixtral.auxiliary_loss()` возвращает `router_aux_loss_coef · aux`, а `Trainer` и `HFGPTAdapter` прибавляют его к loss при обучении (loss оценки — только языковой модели). По умолчанию коэффициент `0` — loss выключен, как и в HF, где он включается `output_router_logits=True` (коэффициент там по умолчанию 0.001).
 
 ## Компоненты
 
 | Компонент | Класс | Файл |
 |---|---|---|
-| Токен-эмбеддинги | `TokenEmbeddings` | [`core/token_embeddings.py`](../llm/src/llm/core/token_embeddings.py) |
-| Позиционное кодирование | `RoPE` | [`core/rope.py`](../llm/src/llm/core/rope.py) |
-| Нормализация | `RMSNorm` | [`core/rms_norm.py`](../llm/src/llm/core/rms_norm.py) |
-| Attention | `GroupedQueryAttention` (тот же класс, что у [Mistral](mistral.md)) | [`core/group_query_attention.py`](../llm/src/llm/core/group_query_attention.py) |
-| FFN | `MoE` (top-k роутинг по `SwiGLU`-экспертам) | [`core/moe.py`](../llm/src/llm/core/moe.py) |
-| Блок декодера | `MixtralDecoder` (pre-LN) | [`core/mixtral_decoder.py`](../llm/src/llm/core/mixtral_decoder.py) |
-| Модель целиком | `Mixtral` | [`models/mixtral/mixtral.py`](../llm/src/llm/models/mixtral/mixtral.py) |
+| Токен-эмбеддинги | `TokenEmbeddings` | [`core/token_embeddings.py`](../../llm/src/llm/core/token_embeddings.py) |
+| Позиционное кодирование | `RoPE` | [`core/rope.py`](../../llm/src/llm/core/rope.py) |
+| Нормализация | `RMSNorm` | [`core/rms_norm.py`](../../llm/src/llm/core/rms_norm.py) |
+| Attention | `GroupedQueryAttention` (тот же класс, что у [Mistral](mistral.md)) | [`core/group_query_attention.py`](../../llm/src/llm/core/group_query_attention.py) |
+| FFN | `MoE` (top-k роутинг по `SwiGLU`-экспертам) | [`core/moe.py`](../../llm/src/llm/core/moe.py) |
+| Блок декодера | `MixtralDecoder` (pre-LN) | [`core/mixtral_decoder.py`](../../llm/src/llm/core/mixtral_decoder.py) |
+| Модель целиком | `Mixtral` | [`models/mixtral/mixtral.py`](../../llm/src/llm/models/mixtral/mixtral.py) |
 
 ## Разбор кода
 
 ### `MixtralDecoder`
 
-[`core/mixtral_decoder.py`](../llm/src/llm/core/mixtral_decoder.py). Конструктор создаёт четыре модуля:
+[`core/mixtral_decoder.py`](../../llm/src/llm/core/mixtral_decoder.py). Конструктор создаёт четыре модуля:
 
 | Атрибут | Модуль | Формула |
 |---|---|---|
@@ -267,7 +267,7 @@ ffn_out = self._ff(norm2_out)          # MoE(RMSNorm2(U^(l)))
 
 ### `Mixtral`
 
-[`models/mixtral/mixtral.py`](../llm/src/llm/models/mixtral/mixtral.py), наследник `BaseModel`.
+[`models/mixtral/mixtral.py`](../../llm/src/llm/models/mixtral/mixtral.py), наследник `BaseModel`.
 
 `__init__(config)`:
 
@@ -347,7 +347,7 @@ print(total)                                   # 46702792704
 print(total - experts + 32 * 2 * one_expert)   # 12879925248
 ```
 
-**Учебный конфиг** [`mixtral_train.json`](../experiments/llm_only/configs/mixtral_train.json): $`V = 1000`$ (BPE-словарь), $`d = 256`$, $`H = 4`$, $`G = 2`$, $`d_h = 64`$, $`L = 4`$, $`E = 8`$, $`k = 2`$, $`d_{ff} = 4d = 1024`$, bias включён. С bias каждый `Linear` получает ещё $`d_{out}`$ параметров:
+**Учебный конфиг** [`mixtral_train.json`](../../experiments/llm_only/configs/mixtral_train.json): $`V = 1000`$ (BPE-словарь), $`d = 256`$, $`H = 4`$, $`G = 2`$, $`d_h = 64`$, $`L = 4`$, $`E = 8`$, $`k = 2`$, $`d_{ff} = 4d = 1024`$, bias включён. С bias каждый `Linear` получает ещё $`d_{out}`$ параметров:
 
 | Часть | Параметров |
 |---|---|
@@ -361,7 +361,7 @@ print(total - experts + 32 * 2 * one_expert)   # 12879925248
 
 ## Отличия от Mixtral 8x7B
 
-Реализация учебная и сознательно маленькая, но часть отличий от оригинала меняет поведение модели. Подробности, воспроизведение и варианты исправления — в [бэклоге](backlog.md#mixtral) (номера пунктов в скобках).
+Реализация учебная и сознательно маленькая, но часть отличий от оригинала меняет поведение модели. Подробности, воспроизведение и варианты исправления — в [бэклоге](../dev/backlog.md#mixtral) (номера пунктов в скобках).
 
 | | Mixtral 8x7B | Здесь |
 |---|---|---|
@@ -375,7 +375,7 @@ print(total - experts + 32 * 2 * one_expert)   # 12879925248
 
 ## Конфигурация
 
-Пример из [`experiments/llm_only/configs/mixtral_train.json`](../experiments/llm_only/configs/mixtral_train.json) — все ключи используются `Mixtral.__init__`; неверные сочетания (как у [Mistral](mistral.md#конфигурация), а также `top_k_experts` вне `1 … num_experts`) дают `ValueError` в конструкторе:
+Пример из [`experiments/llm_only/configs/mixtral_train.json`](../../experiments/llm_only/configs/mixtral_train.json) — все ключи используются `Mixtral.__init__`; неверные сочетания (как у [Mistral](mistral.md#конфигурация), а также `top_k_experts` вне `1 … num_experts`) дают `ValueError` в конструкторе:
 
 | Параметр | Значение в примере | Смысл |
 |---|---|---|
@@ -498,7 +498,7 @@ model.load_state_dict(convert_hf_state_dict(hf.state_dict(), num_heads=c.num_att
 
    </details>
 
-8. (Ноутбук.) В [`notebooks/mixtral.ipynb`](../notebooks/mixtral.ipynb) обучите модель и после обучения посмотрите, как токены распределяются по экспертам в разных слоях (`decoder._ff.router_logits`). Видна ли «синтаксическая» специализация, о которой пишут авторы статьи, — например, одинаковые эксперты для знаков препинания?
+8. (Ноутбук.) В [`notebooks/mixtral.ipynb`](../../notebooks/mixtral.ipynb) обучите модель и после обучения посмотрите, как токены распределяются по экспертам в разных слоях (`decoder._ff.router_logits`). Видна ли «синтаксическая» специализация, о которой пишут авторы статьи, — например, одинаковые эксперты для знаков препинания?
 
 ## Литература
 

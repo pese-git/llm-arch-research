@@ -162,7 +162,7 @@ class GPT2(BaseModel):
             cache (list / None): Внешний кэш KV attention (передаётся при генерации)
             attention_mask (torch.Tensor, опц.): маска [batch, seq_len] (1 — токен, 0 — паддинг).
                 С кэшем — [batch, cache_len + seq_len]. Паддинг допускается в любом месте строки:
-                маскируются ключи, позиции считаются среди настоящих токенов (см. docs/masks.md).
+                маскируются ключи, позиции считаются среди настоящих токенов (см. docs/textbook/masks.md).
 
         Returns:
             logits: torch.Tensor [batch, seq_len, vocab_size]

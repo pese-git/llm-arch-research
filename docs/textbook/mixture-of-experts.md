@@ -2,7 +2,7 @@
 
 Часть I · [← предыдущая](feed-forward.md) · [Оглавление](README.md) · [следующая →](training.md)
 
-> Реализация: [`llm/src/llm/core/moe.py`](../llm/src/llm/core/moe.py) · класс `MoE`, функция `load_balancing_loss`
+> Реализация: [`llm/src/llm/core/moe.py`](../../llm/src/llm/core/moe.py) · класс `MoE`, функция `load_balancing_loss`
 > Где используется: [Mixtral](mixtral.md)
 
 ## Что вы узнаете
@@ -75,7 +75,7 @@
 
 Роутер очень дешёвый: $`d \cdot E`$ параметров (для Mixtral $`4096 \cdot 8 = 32\,768`$ на слой — в пять тысяч раз меньше одного эксперта). Обучается он вместе со всей сетью обычным градиентным спуском — отдельной разметки «какой эксперт для чего» нет.
 
-В коде: `self._router = nn.Linear(emb_size, num_experts, bias=bias)` в `MoE.__init__`, вызов `router_logits = self._router(x_flat)` в `MoE.forward` ([`core/moe.py`](../llm/src/llm/core/moe.py)).
+В коде: `self._router = nn.Linear(emb_size, num_experts, bias=bias)` в `MoE.__init__`, вызов `router_logits = self._router(x_flat)` в `MoE.forward` ([`core/moe.py`](../../llm/src/llm/core/moe.py)).
 
 ## Top-k gating
 
@@ -427,7 +427,7 @@ C = \left\lceil \frac{k \cdot N}{E} \cdot c \right\rceil
 
 Формула слоя записана для одного токена. Наивная реализация — цикл по токенам: для каждого роутер, top-k и $`k`$ вызовов экспертов на векторе длины $`d`$. Это медленно: матричные умножения на одном векторе не используют параллелизм.
 
-[`MoE.forward`](../llm/src/llm/core/moe.py) делает наоборот — **цикл по экспертам**, и каждый эксперт обрабатывает сразу все свои токены одним вызовом:
+[`MoE.forward`](../../llm/src/llm/core/moe.py) делает наоборот — **цикл по экспертам**, и каждый эксперт обрабатывает сразу все свои токены одним вызовом:
 
 ```
 X = x.reshape(N, d)                          # N = B · T токенов; батч и позиция неважны
@@ -447,7 +447,7 @@ return dropout(Y).reshape(B, T, d)
 - **Стоимость.** $`\sum_e n_e = kN`$: каждый эксперт считает ровно столько строк, сколько токенов его выбрало, итого $`k/E`$ от «все эксперты на все токены». Python-цикл — $`E`$ итераций на слой, а не $`N \cdot k`$.
 - **Без отбрасывания.** Размер `X[tok]` определяется во время выполнения, поэтому ёмкость не нужна. Эксперт без токенов пропускается целиком (`continue`), и его параметры в этом проходе не получают градиента.
 
-Так же устроены `MixtralSparseMoeBlock` в HuggingFace и `MoeLayer` в эталонном коде Mistral. Корректность проверяет тест `test_matches_naive_per_token_reference` в [`llm/tests/core/test_moe.py`](../llm/tests/core/test_moe.py): результат совпадает с наивным циклом по токенам.
+Так же устроены `MixtralSparseMoeBlock` в HuggingFace и `MoeLayer` в эталонном коде Mistral. Корректность проверяет тест `test_matches_naive_per_token_reference` в [`llm/tests/core/test_moe.py`](../../llm/tests/core/test_moe.py): результат совпадает с наивным циклом по токенам.
 
 <details><summary>Пример dispatch на 3 токенах</summary>
 
@@ -486,7 +486,7 @@ topk_weights = F.softmax(topk_logits.float(), dim=-1).to(x.dtype)  # [N, top_k]
 
 ### Класс `MoE`
 
-[`llm/src/llm/core/moe.py`](../llm/src/llm/core/moe.py), `MoE(emb_size, num_experts, top_k_experts, dropout=0.1, hidden_dim=None, bias=True)`:
+[`llm/src/llm/core/moe.py`](../../llm/src/llm/core/moe.py), `MoE(emb_size, num_experts, top_k_experts, dropout=0.1, hidden_dim=None, bias=True)`:
 
 | Параметр | Смысл |
 |---|---|
@@ -497,7 +497,7 @@ topk_weights = F.softmax(topk_logits.float(), dim=-1).to(x.dtype)  # [N, top_k]
 | `hidden_dim` | $`d_{ff}`$ каждого эксперта; по умолчанию `4 * emb_size` (у Mixtral 8x7B — 14336) |
 | `bias` | bias у роутера и всех матриц экспертов; в Mixtral его нет (`bias=False`) |
 
-Атрибуты: `_router` (`nn.Linear(emb_size, num_experts)`), `_experts` (`nn.ModuleList` из `num_experts` блоков [`SwiGLU`](../llm/src/llm/core/swi_glu.py) с матрицами `_gate`, `_up`, `_down`), `_dropout`.
+Атрибуты: `_router` (`nn.Linear(emb_size, num_experts)`), `_experts` (`nn.ModuleList` из `num_experts` блоков [`SwiGLU`](../../llm/src/llm/core/swi_glu.py) с матрицами `_gate`, `_up`, `_down`), `_dropout`.
 
 Соответствие формулам в `MoE.forward`:
 
@@ -526,13 +526,13 @@ prob_per_expert = probs.mean(dim=0)                     # P_i: [E]
 return num_experts * (tokens_per_expert * prob_per_expert.unsqueeze(0)).sum()
 ```
 
-(с `token_mask` средние взвешиваются маской настоящих токенов, повторённой на все слои). Формула совпадает с HF `load_balancing_loss_func` до точности float — это проверяет [`llm/tests/core/test_load_balancing_loss.py`](../llm/tests/core/test_load_balancing_loss.py). Здесь top-k берётся по вероятностям, а в `MoE.forward` — по логитам; по доказательству выше это одно и то же множество.
+(с `token_mask` средние взвешиваются маской настоящих токенов, повторённой на все слои). Формула совпадает с HF `load_balancing_loss_func` до точности float — это проверяет [`llm/tests/core/test_load_balancing_loss.py`](../../llm/tests/core/test_load_balancing_loss.py). Здесь top-k берётся по вероятностям, а в `MoE.forward` — по логитам; по доказательству выше это одно и то же множество.
 
 ### Подключение к обучению
 
-- `Mixtral.auxiliary_loss()` ([`models/mixtral/mixtral.py`](../llm/src/llm/models/mixtral/mixtral.py)) собирает `decoder._ff.router_logits` всех слоёв, вызывает `load_balancing_loss` с маской настоящих токенов из последнего `forward` и умножает на `router_aux_loss_coef`. При коэффициенте 0 (по умолчанию) возвращает `None`.
+- `Mixtral.auxiliary_loss()` ([`models/mixtral/mixtral.py`](../../llm/src/llm/models/mixtral/mixtral.py)) собирает `decoder._ff.router_logits` всех слоёв, вызывает `load_balancing_loss` с маской настоящих токенов из последнего `forward` и умножает на `router_aux_loss_coef`. При коэффициенте 0 (по умолчанию) возвращает `None`.
 - `BaseModel.auxiliary_loss()` по умолчанию возвращает `None` — у плотных моделей вспомогательного loss нет.
-- `Trainer` ([`training/trainer.py`](../llm/src/llm/training/trainer.py)) после `compute_lm_loss` прибавляет `self.model.auxiliary_loss()`, если он не `None`, и делает `backward` от суммы. При оценке (`evaluate`) — только loss языковой модели. Так же поступает `HFGPTAdapter` в `hf-proxy` (aux loss только при `self.training`).
+- `Trainer` ([`training/trainer.py`](../../llm/src/llm/training/trainer.py)) после `compute_lm_loss` прибавляет `self.model.auxiliary_loss()`, если он не `None`, и делает `backward` от суммы. При оценке (`evaluate`) — только loss языковой модели. Так же поступает `HFGPTAdapter` в `hf-proxy` (aux loss только при `self.training`).
 
 ```python
 import torch
@@ -583,7 +583,7 @@ aux = model.auxiliary_loss()     # ≈ 0.01 · 2 в начале обучени�
 
    </details>
 
-3. Посчитайте общее и активное число параметров слоя MoE учебного конфига Mixtral из [`mixtral_train.json`](../experiments/llm_only/configs/mixtral_train.json): $`d = 256`$, $`E = 8`$, $`k = 2`$, $`d_{ff} = 4d`$, bias включён.
+3. Посчитайте общее и активное число параметров слоя MoE учебного конфига Mixtral из [`mixtral_train.json`](../../experiments/llm_only/configs/mixtral_train.json): $`d = 256`$, $`E = 8`$, $`k = 2`$, $`d_{ff} = 4d`$, bias включён.
 
    <details><summary>Ответ</summary>
 
@@ -623,7 +623,7 @@ aux = model.auxiliary_loss()     # ≈ 0.01 · 2 в начале обучени�
 
    </details>
 
-8. (Исследование.) Обучите учебный Mixtral из [`mixtral_train.json`](../experiments/llm_only/configs/mixtral_train.json) дважды: с `router_aux_loss_coef: 0` и `0.01`. После обучения прогоните валидационный текст и постройте гистограмму выбора экспертов по слоям (используйте `decoder._ff.router_logits` и `torch.topk`). Как меняется равномерность и loss языковой модели?
+8. (Исследование.) Обучите учебный Mixtral из [`mixtral_train.json`](../../experiments/llm_only/configs/mixtral_train.json) дважды: с `router_aux_loss_coef: 0` и `0.01`. После обучения прогоните валидационный текст и постройте гистограмму выбора экспертов по слоям (используйте `decoder._ff.router_logits` и `torch.topk`). Как меняется равномерность и loss языковой модели?
 
 ## Литература
 

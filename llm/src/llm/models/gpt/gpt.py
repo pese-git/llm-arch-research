@@ -170,7 +170,7 @@ class GPT(BaseModel):
         attention_mask : torch.Tensor, optional
             Маска [batch, seq_len] (1 — токен, 0 — паддинг), с кэшем — [batch, cache_len + seq_len].
             Паддинг допускается в любом месте строки: маскируются ключи, позиции считаются
-            среди настоящих токенов (см. docs/masks.md).
+            среди настоящих токенов (см. docs/textbook/masks.md).
 
         Returns:
         --------

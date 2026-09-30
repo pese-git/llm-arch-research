@@ -150,7 +150,7 @@ N_{\mathrm{FFN}} = \underbrace{d \cdot d_{ff} + d_{ff}}_{W_1,\ \mathbf{b}_1} + \
 \mathrm{GELU}(x) \approx \frac{x}{2}\left(1 + \tanh\!\left(\sqrt{\frac{2}{\pi}}\,\big(x + 0.044715\, x^3\big)\right)\right)
 ```
 
-где $`\sqrt{2/\pi} \approx 0.7978846`$. Именно её использовали OpenAI в коде GPT-1 и GPT-2, поэтому для совместимости с их весами нужна она, а не точная версия (см. [бэклог, пункт 13](backlog.md#13-gelu-точная-erf-версия-вместо-tanh-аппроксимации--p2)).
+где $`\sqrt{2/\pi} \approx 0.7978846`$. Именно её использовали OpenAI в коде GPT-1 и GPT-2, поэтому для совместимости с их весами нужна она, а не точная версия (см. [бэклог, пункт 13](../dev/backlog.md#13-gelu-точная-erf-версия-вместо-tanh-аппроксимации--p2)).
 
 <details><summary>Откуда берутся константы</summary>
 
@@ -348,7 +348,7 @@ d_{ff} = \frac{8d}{3} = \frac{2}{3} \cdot 4d
 
 ### Округление до multiple_of
 
-$`8d/3`$ обычно не целое и неудобно для GPU: матричные умножения быстрее, когда размеры кратны большой степени двойки. Поэтому в коде Meta результат округляют **вверх** до кратного `multiple_of` (256 для LLaMA), с необязательным множителем `ffn_dim_multiplier` (LLaMA 2 70B). В репозитории это `llama_intermediate_size` в [`models/llama/llama.py`](../llm/src/llm/models/llama/llama.py):
+$`8d/3`$ обычно не целое и неудобно для GPU: матричные умножения быстрее, когда размеры кратны большой степени двойки. Поэтому в коде Meta результат округляют **вверх** до кратного `multiple_of` (256 для LLaMA), с необязательным множителем `ffn_dim_multiplier` (LLaMA 2 70B). В репозитории это `llama_intermediate_size` в [`models/llama/llama.py`](../../llm/src/llm/models/llama/llama.py):
 
 ```python
 def llama_intermediate_size(embed_dim: int, multiple_of: int = 256, ffn_dim_multiplier: float = None) -> int:
@@ -371,7 +371,7 @@ d_{ff} = m \cdot \left\lceil \frac{\lfloor 8d/3 \rfloor}{m} \right\rceil
 2. $`10922 / 256 = 42.66`$, вверх → $`43`$.
 3. $`d_{ff} = 43 \cdot 256 = 11008`$.
 
-Параметров FFN на слой: $`3 \cdot 4096 \cdot 11008 = 135\,266\,304`$ против $`8 \cdot 4096^2 = 134\,217\,728`$ у классического FFN — на 0.8 % больше из-за округления. С тем же $`d_{ff} = 4d = 16384`$ было бы $`201\,326\,592`$ — в 1.5 раза больше ([бэклог, пункт 23](backlog.md)). Другие значения: $`d = 5120`$ (LLaMA 13B) → $`13824`$; $`d = 8192`$, `ffn_dim_multiplier=1.3`, `multiple_of=4096` (LLaMA 2 70B) → $`28672`$.
+Параметров FFN на слой: $`3 \cdot 4096 \cdot 11008 = 135\,266\,304`$ против $`8 \cdot 4096^2 = 134\,217\,728`$ у классического FFN — на 0.8 % больше из-за округления. С тем же $`d_{ff} = 4d = 16384`$ было бы $`201\,326\,592`$ — в 1.5 раза больше ([бэклог, пункт 23](../dev/backlog.md)). Другие значения: $`d = 5120`$ (LLaMA 13B) → $`13824`$; $`d = 8192`$, `ffn_dim_multiplier=1.3`, `multiple_of=4096` (LLaMA 2 70B) → $`28672`$.
 
 ```python
 from llm.models.llama import llama_intermediate_size
@@ -385,7 +385,7 @@ print(llama_intermediate_size(288, multiple_of=32))   # 768 (llama2.c stories15M
 Не все модели следуют правилу ⅔:
 
 - **Mistral 7B** и эксперты **Mixtral 8x7B**: $`d_{ff} = 14336 = 3.5d`$ при $`d = 4096`$ ([mistral.md](mistral.md#отличия-от-mistral-7b)). FFN в $`3 \cdot 3.5 / 8 = 1.3125`$ раза тяжелее классического FFN с $`d_{ff} = 4d`$ при том же $`d`$.
-- **Gemma**: $`d_{ff} = 8d`$ на каждую из матриц `gate` и `up` — 16384 при $`d = 2048`$ (2B) и 24576 при $`d = 3072`$ (7B) ([gemma.md](gemma.md#как-в-статье)). Это $`24d^2`$ параметров — втрое больше классического FFN. В табл. 1 статьи Gemma указаны вдвое большие «feedforward hidden dims» (32768 и 49152) — это сумма gate и up ([бэклог, пункт 44](backlog.md)).
+- **Gemma**: $`d_{ff} = 8d`$ на каждую из матриц `gate` и `up` — 16384 при $`d = 2048`$ (2B) и 24576 при $`d = 3072`$ (7B) ([gemma.md](gemma.md#как-в-статье)). Это $`24d^2`$ параметров — втрое больше классического FFN. В табл. 1 статьи Gemma указаны вдвое большие «feedforward hidden dims» (32768 и 49152) — это сумма gate и up ([бэклог, пункт 44](../dev/backlog.md)).
 
 ### Модель → FFN → d_ff
 
@@ -409,7 +409,7 @@ print(llama_intermediate_size(288, multiple_of=32))   # 768 (llama2.c stories15M
 В репозитории все FFN-модули устроены одинаково: **один dropout на выходе**, после сжимающей проекции, перед residual-сложением. Внутри (на скрытых активациях) dropout нет.
 
 - `FeedForward`, `SwiGLU`, `GeGLU`: `return self._dropout(out)` в конце `forward`; вероятность — параметр `dropout` конструктора (из `config["dropout"]`).
-- `MoE`: эксперты-`SwiGLU` создаются с `dropout=0.0`, dropout — один, на выходе всего слоя, иначе выход прорежался бы дважды ([`core/moe.py`](../llm/src/llm/core/moe.py)).
+- `MoE`: эксперты-`SwiGLU` создаются с `dropout=0.0`, dropout — один, на выходе всего слоя, иначе выход прорежался бы дважды ([`core/moe.py`](../../llm/src/llm/core/moe.py)).
 
 Современные LLM (LLaMA, Mistral, Gemma) предобучаются на огромных корпусах почти за одну эпоху и dropout не используют: переобучение там не главная проблема. В репозитории он есть везде и отключается `"dropout": 0` в конфиге — см. [mistral.md](mistral.md#отличия-от-mistral-7b), [gemma.md](gemma.md#отличия-от-gemma).
 
@@ -417,11 +417,11 @@ print(llama_intermediate_size(288, multiple_of=32))   # 768 (llama2.c stories15M
 
 | Класс | Файл | Формула | Где используется |
 |---|---|---|---|
-| `FeedForward` | [`core/feed_forward.py`](../llm/src/llm/core/feed_forward.py) | $`\phi(\mathbf{x}W_1 + \mathbf{b}_1)W_2 + \mathbf{b}_2`$, $`d_{ff} = 4d`$ | GPT-1 (`GptDecoder`), GPT-2 (`Gpt2Decoder`) |
-| `SwiGLU` | [`core/swi_glu.py`](../llm/src/llm/core/swi_glu.py) | $`(\mathrm{SiLU}(\mathbf{x}W) \otimes \mathbf{x}V)W_2`$ | LLaMA, Mistral, эксперты Mixtral |
-| `GeGLU` | [`core/geglu.py`](../llm/src/llm/core/geglu.py) | $`(\mathrm{GELU}_{\tanh}(\mathbf{x}W) \otimes \mathbf{x}V)W_2`$ | Gemma |
-| `GELU` | [`core/gelu.py`](../llm/src/llm/core/gelu.py) | tanh-аппроксимация | `FeedForward(activation="gelu_tanh")`, `GeGLU` |
-| `SiLU` | [`core/silu.py`](../llm/src/llm/core/silu.py) | $`x\,\sigma(x)`$ | `SwiGLU` |
+| `FeedForward` | [`core/feed_forward.py`](../../llm/src/llm/core/feed_forward.py) | $`\phi(\mathbf{x}W_1 + \mathbf{b}_1)W_2 + \mathbf{b}_2`$, $`d_{ff} = 4d`$ | GPT-1 (`GptDecoder`), GPT-2 (`Gpt2Decoder`) |
+| `SwiGLU` | [`core/swi_glu.py`](../../llm/src/llm/core/swi_glu.py) | $`(\mathrm{SiLU}(\mathbf{x}W) \otimes \mathbf{x}V)W_2`$ | LLaMA, Mistral, эксперты Mixtral |
+| `GeGLU` | [`core/geglu.py`](../../llm/src/llm/core/geglu.py) | $`(\mathrm{GELU}_{\tanh}(\mathbf{x}W) \otimes \mathbf{x}V)W_2`$ | Gemma |
+| `GELU` | [`core/gelu.py`](../../llm/src/llm/core/gelu.py) | tanh-аппроксимация | `FeedForward(activation="gelu_tanh")`, `GeGLU` |
+| `SiLU` | [`core/silu.py`](../../llm/src/llm/core/silu.py) | $`x\,\sigma(x)`$ | `SwiGLU` |
 
 ### FeedForward
 
@@ -444,7 +444,7 @@ self._dropout = nn.Dropout(dropout)
 `forward` — ровно формула классического FFN: `_layer1` → `_activation` → `_layer2` → `_dropout`. Особенности:
 - $`d_{ff}`$ зашит как `emb_size * 4`, параметра для него нет; bias есть всегда;
 - значение `activation` по умолчанию у самого класса — `"relu"`, но декодеры передают другое: `GptDecoder(activation="gelu_tanh")` по умолчанию (модель `GPT` читает `config.get("activation", "gelu_tanh")`), `Gpt2Decoder` жёстко задаёт `"gelu_tanh"`;
-- раньше `forward` приводил веса к dtype входа — это убрано ([бэклог, пункт 9](backlog.md#9-приведение-dtype-внутри-feedforwardforward--p3)); dtype модели меняют снаружи: `model.to(torch.bfloat16)` или `torch.autocast`.
+- `forward` не приводит веса к dtype входа: dtype модели меняют снаружи — `model.to(torch.bfloat16)` или `torch.autocast`.
 
 ### SwiGLU и GeGLU
 
@@ -481,7 +481,7 @@ return self._dropout(out)
 
 ### GELU и SiLU
 
-`GELU` в [`core/gelu.py`](../llm/src/llm/core/gelu.py) — формула tanh-аппроксимации буквально:
+`GELU` в [`core/gelu.py`](../../llm/src/llm/core/gelu.py) — формула tanh-аппроксимации буквально:
 
 ```python
 self.sqrt_2_over_pi = torch.sqrt(torch.tensor(2.0) / math.pi)
@@ -491,7 +491,7 @@ return 0.5 * x * (1 + torch.tanh(self.sqrt_2_over_pi * (x + 0.044715 * torch.pow
 
 Параметров нет; константа $`\sqrt{2/\pi}`$ — обычный атрибут-тензор (0-мерный, поэтому при умножении действует как скаляр и не меняет dtype и устройство входа). Результат совпадает с `nn.functional.gelu(x, approximate="tanh")` до $`2.4 \cdot 10^{-7}`$.
 
-`SiLU` в [`core/silu.py`](../llm/src/llm/core/silu.py) — `torch.sigmoid(x) * x`, совпадает с `nn.functional.silu` до ошибок округления float32.
+`SiLU` в [`core/silu.py`](../../llm/src/llm/core/silu.py) — `torch.sigmoid(x) * x`, совпадает с `nn.functional.silu` до ошибок округления float32.
 
 ```python
 import torch

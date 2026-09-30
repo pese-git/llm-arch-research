@@ -3,8 +3,9 @@
 // 1. Формулы GitHub: строчные $`…`$ и блоки ```math — в узлы, которые рендерит rehype-katex
 //    (классы math-inline / math-display). Обычный remark-math не подходит: он не понимает
 //    обратные кавычки и принял бы за формулу любой одиночный «$» в тексте.
-// 2. Ссылки: `attention.md#якорь` → страница сайта, `README.md` → главная,
-//    `../llm/src/...` и прочие пути репозитория → файл или папка на GitHub.
+// 2. Ссылки разрешаются относительно исходного файла в docs/: ссылка на .md из docs/ →
+//    страница сайта (`README.md` — индекс папки), `../../llm/src/...` и прочие пути
+//    репозитория → файл или папка на GitHub.
 import fs from 'node:fs';
 import path from 'node:path';
 import { visit, SKIP } from 'unist-util-visit';
@@ -44,35 +45,44 @@ function convertMath(tree) {
   });
 }
 
-export default function remarkGithubDocs({ base = '/', docsDir, repoRoot, repoUrl, branch = 'master' }) {
+export default function remarkGithubDocs({ base = '/', docsDir, contentDir, repoRoot, repoUrl, branch = 'master' }) {
   const siteBase = base.endsWith('/') ? base : `${base}/`;
-  const docFiles = new Set(fs.readdirSync(docsDir).filter((f) => f.endsWith('.md')));
 
-  function rewrite(url) {
+  /** Путь страницы в коллекции → её исходник относительно docs/ (index.md → README.md). */
+  function sourceOf(filePath) {
+    const rel = path.relative(contentDir, filePath).split(path.sep).join('/');
+    return rel.replace(/(^|\/)index\.md$/, '$1README.md');
+  }
+
+  function rewrite(url, source) {
     if (!url || /^([a-z][a-z0-9+.-]*:|#|\/)/i.test(url)) return url; // внешние, якоря, абсолютные
     const [target, hash = ''] = url.split(/(?=#)/);
     const anchor = hash ? decodeURIComponent(hash) : '';
-    const file = decodeURIComponent(target);
-    if (docFiles.has(file)) {
-      const slug = file === 'README.md' ? '' : `${file.replace(/\.md$/, '')}/`;
+    // Путь относительно docs/: от папки исходного файла
+    const rel = path.posix.normalize(path.posix.join(path.posix.dirname(source), decodeURIComponent(target)));
+    if (rel.endsWith('.md') && !rel.startsWith('..') && fs.existsSync(path.join(docsDir, rel))) {
+      const slug = rel.replace(/(^|\/)README\.md$/, '$1').replace(/\.md$/, '/');
       return `${siteBase}${slug}${anchor}`;
     }
-    // Путь внутри репозитория: docs/<url> → относительно корня
-    const rel = path.posix.normalize(path.posix.join('docs', file)).replace(/\/$/, '');
-    if (rel.startsWith('..')) return url;
+    // Путь внутри репозитория: docs/<rel> → относительно корня
+    const repoPath = path.posix.normalize(path.posix.join('docs', rel)).replace(/\/$/, '');
+    if (repoPath.startsWith('..')) return url;
     let kind = 'blob';
     try {
-      if (fs.statSync(path.join(repoRoot, rel)).isDirectory()) kind = 'tree';
+      if (fs.statSync(path.join(repoRoot, repoPath)).isDirectory()) kind = 'tree';
     } catch {
       // файла нет в рабочей копии — всё равно ведём на GitHub
     }
-    return `${repoUrl}/${kind}/${branch}/${rel.split('/').map(encodeURIComponent).join('/')}${hash}`;
+    return `${repoUrl}/${kind}/${branch}/${repoPath.split('/').map(encodeURIComponent).join('/')}${hash}`;
   }
 
-  return (tree) => {
+  return (tree, file) => {
+    // Визитка (index.mdx) пишется под сайт: ссылки в ней уже адреса страниц
+    if (file.path?.endsWith('.mdx')) return;
     convertMath(tree);
+    const source = file.path ? sourceOf(file.path) : 'README.md';
     visit(tree, ['link', 'definition'], (node) => {
-      node.url = rewrite(node.url);
+      node.url = rewrite(node.url, source);
     });
   };
 }

@@ -117,7 +117,7 @@ P_\theta(x_0, \dots, x_{T-1}) = \prod_{t=0}^{T-1} p_\theta(x_t \mid x_{<t})
 - $`\mathbf{b} \in \mathbb{R}^{1 \times V}`$ — смещение (bias); в части моделей его нет;
 - $`\mathbf{z}_t \in \mathbb{R}^{1 \times V}`$ — логиты: чем больше $`z_{t,i}`$, тем «увереннее» модель, что следующий токен — $`i`$.
 
-В коде это последний `nn.Linear(embed_dim, vocab_size)` модели, например `self._linear` в `Llama` ([`models/llama/llama.py`](../llm/src/llm/models/llama/llama.py)): `logits = self._linear(out)`. Модель возвращает логиты для **всех** позиций сразу — тензор формы `[batch, seq_len, vocab_size]`, то есть $`B \times T \times V`$. Как устроена эта проекция и когда она делит веса с эмбеддингами (weight tying), разбирается в [embeddings.md](embeddings.md).
+В коде это последний `nn.Linear(embed_dim, vocab_size)` модели, например `self._linear` в `Llama` ([`models/llama/llama.py`](../../llm/src/llm/models/llama/llama.py)): `logits = self._linear(out)`. Модель возвращает логиты для **всех** позиций сразу — тензор формы `[batch, seq_len, vocab_size]`, то есть $`B \times T \times V`$. Как устроена эта проекция и когда она делит веса с эмбеддингами (weight tying), разбирается в [embeddings.md](embeddings.md).
 
 ## Softmax: от логитов к вероятностям
 
@@ -336,7 +336,7 @@ PPL     = e^1.213 = 3.36                 (= 2^1.75: вероятности — �
 
 (токены — реальный результат `BPETokenizer` из `experiments/llm_only` для первой строки учебного корпуса; `␣` — пробел, который токенизатор прикрепляет к началу слова.) Из $`T`$ позиций получается $`T - 1`$ обучающих примеров: логиты последней позиции не с чем сравнить.
 
-В репозитории датасеты возвращают `labels`, **совпадающие** с `input_ids` (`labels = input_ids.clone()` в `TextDataset`, `StreamingTextDataset`, `TextWithSpecialTokensDataset` — [`datasets/`](../llm/src/llm/datasets)), а сдвиг делает `Trainer.compute_lm_loss` ([`training/trainer.py`](../llm/src/llm/training/trainer.py)):
+В репозитории датасеты возвращают `labels`, **совпадающие** с `input_ids` (`labels = input_ids.clone()` в `TextDataset`, `StreamingTextDataset`, `TextWithSpecialTokensDataset` — [`datasets/`](../../llm/src/llm/datasets)), а сдвиг делает `Trainer.compute_lm_loss` ([`training/trainer.py`](../../llm/src/llm/training/trainer.py)):
 
 ```python
 shift_logits = logits[..., :-1, :].contiguous()   # [B, T-1, V]: прогнозы позиций 0 … T-2
@@ -383,7 +383,7 @@ print(loss.exp().item())                                        # перплек
 
 Не все позиции нужно учить. Если короткую последовательность дополнили pad-токенами до длины батча, предсказывать «после паддинга снова паддинг» бессмысленно — это только размывает loss. Для таких позиций в `labels` ставят **`-100`**: это `ignore_index` в `F.cross_entropy` (и его значение по умолчанию). Позиции с меткой `-100` не входят ни в сумму, ни в знаменатель среднего и не дают градиента. Так же `-100` используют, чтобы не учить модель на промпте при дообучении на инструкциях, — loss считают только по ответу.
 
-В репозитории метки `-100` на паддинге ставят датасеты `llm/datasets` (функция `lm_example`: `input_ids` дополняются `pad_token_id`, `labels` — значением `-100`) и коллатор [hf-proxy](../hf-proxy/README.md) (`pad` в `HFTokenizerAdapter`). Подробнее — в разделе «Типичные ошибки и тонкости» ниже и в [training.md](training.md#данные-от-текста-к-батчу).
+В репозитории метки `-100` на паддинге ставят датасеты `llm/datasets` (функция `lm_example`: `input_ids` дополняются `pad_token_id`, `labels` — значением `-100`) и коллатор [hf-proxy](../../hf-proxy/README.md) (`pad` в `HFTokenizerAdapter`). Подробнее — в разделе «Типичные ошибки и тонкости» ниже и в [training.md](training.md#данные-от-текста-к-батчу).
 
 ## Почему нужна causal-маска
 
@@ -405,7 +405,7 @@ i=2      1   1   1   0
 i=3      1   1   1   1
 ```
 
-С маской выход на позиции $`t`$ зависит только от $`x_0, \dots, x_t`$ — ровно то, что требует $`p_\theta(x_{t+1} \mid x_{\le t})`$. Один проход по последовательности длины $`T`$ эквивалентен $`T`$ отдельным проходам по префиксам, но гораздо дешевле. В коде маска — буфер `_tril_mask = torch.tril(...)` в модулях attention и `masked_fill(~mask, float("-inf"))` перед softmax (`MultiHeadAttention` в [`core/multi_head_attention.py`](../llm/src/llm/core/multi_head_attention.py)). Остальные виды масок — в [masks.md](masks.md), сам attention — в [attention.md](attention.md).
+С маской выход на позиции $`t`$ зависит только от $`x_0, \dots, x_t`$ — ровно то, что требует $`p_\theta(x_{t+1} \mid x_{\le t})`$. Один проход по последовательности длины $`T`$ эквивалентен $`T`$ отдельным проходам по префиксам, но гораздо дешевле. В коде маска — буфер `_tril_mask = torch.tril(...)` в модулях attention и `masked_fill(~mask, float("-inf"))` перед softmax (`MultiHeadAttention` в [`core/multi_head_attention.py`](../../llm/src/llm/core/multi_head_attention.py)). Остальные виды масок — в [masks.md](masks.md), сам attention — в [attention.md](attention.md).
 
 ## Общая схема decoder-only трансформера
 
@@ -510,7 +510,7 @@ Residual-связи ([He et al., 2015](https://arxiv.org/abs/1512.03385)) важ
 | [Mixtral](mixtral.md) | 2023 | `llm.models.mixtral.Mixtral` | GQA (окно — опционально) | RoPE | RMSNorm | MoE из SwiGLU | SentencePiece, $`V = 32\,000`$ |
 | [Gemma](gemma.md) | 2024 | `llm.models.gemma.Gemma` | MQA (или GQA/MHA) | RoPE | RMSNorm | GeGLU | SentencePiece, $`V = 256\,000`$ |
 
-Все модели наследуют `BaseModel` ([`core/base_model.py`](../llm/src/llm/core/base_model.py)): `forward` принимает `x` и необязательные `use_cache=False`, `cache=None`, `attention_mask=None` и возвращает кортеж `(logits, cache)`, а метод `generate` общий. (У `GPT` порядок позиционных аргументов другой — `forward(x, attention_mask, use_cache, cache)`, поэтому их надёжнее передавать по имени.) В экспериментах `experiments/llm_only` все модели обучаются с одним и тем же учебным BPE-токенизатором (`BPETokenizer`), а `vocab_size` модели берётся из токенизатора — словари оригинальных моделей используются только при загрузке весов HuggingFace.
+Все модели наследуют `BaseModel` ([`core/base_model.py`](../../llm/src/llm/core/base_model.py)): `forward` принимает `x` и необязательные `use_cache=False`, `cache=None`, `attention_mask=None` и возвращает кортеж `(logits, cache)`, а метод `generate` общий. (У `GPT` порядок позиционных аргументов другой — `forward(x, attention_mask, use_cache, cache)`, поэтому их надёжнее передавать по имени.) В экспериментах `experiments/llm_only` все модели обучаются с одним и тем же учебным BPE-токенизатором (`BPETokenizer`), а `vocab_size` модели берётся из токенизатора — словари оригинальных моделей используются только при загрузке весов HuggingFace.
 
 ## Карта пособия
 
@@ -537,7 +537,7 @@ Residual-связи ([He et al., 2015](https://arxiv.org/abs/1512.03385)) важ
 - **Softmax перед `F.cross_entropy`.** Функция ждёт логиты и сама применяет log-softmax. Если подать вероятности, softmax применится дважды: loss будет считаться неверно, а обучение резко замедлится.
 - **Забытый сдвиг.** Если сравнивать `logits[:, t]` с `labels[:, t]`, модель учится копировать текущий вход, а не предсказывать следующий. Loss быстро падает, генерация бессмысленна. В репозитории сдвиг делает `Trainer.compute_lm_loss`; при собственном цикле обучения его нужно сделать самому.
 - **Двойной сдвиг.** Обратная ошибка: сдвинуть метки в датасете **и** использовать `Trainer`, который сдвигает ещё раз. Тогда модель учится предсказывать токен через один.
-- **Паддинг в loss.** Если дополнить `labels` значением `pad_token_id`, а не `-100`, pad-позиции входят в loss. Так было в датасетах `llm/datasets` до исправления пункта 57 [бэклога](backlog.md): в `experiments/llm_only` каждая строка корпуса — отдельный пример, дополненный до `max_position_embeddings = 128` токенов, а строки короткие (первая — 6 токенов), и большая часть позиций в loss была предсказанием паддинга после паддинга. Модель быстро учит это тривиальное правило, и средний loss получается заниженным относительно качества на настоящем тексте. Корректный вариант — `-100` на pad-позициях (теперь так делают датасеты `llm/datasets` и коллатор hf-proxy) или склейка текстов в непрерывный поток, нарезанный на куски длины $`T`$ без паддинга (так готовят данные для предобучения).
+- **Паддинг в loss.** Если дополнить `labels` значением `pad_token_id`, а не `-100`, pad-позиции входят в loss. В `experiments/llm_only` каждая строка корпуса — отдельный пример, дополненный до `max_position_embeddings = 128` токенов, а строки короткие (первая — 6 токенов), и большая часть позиций в loss оказалась бы предсказанием паддинга после паддинга. Модель быстро учит это тривиальное правило, и средний loss получается заниженным относительно качества на настоящем тексте. Корректный вариант — `-100` на pad-позициях (так делают датасеты `llm/datasets` и коллатор hf-proxy) или склейка текстов в непрерывный поток, нарезанный на куски длины $`T`$ без паддинга (так готовят данные для предобучения).
 - **Первый токен не моделируется.** Loss считается по $`T - 1`$ позициям; $`x_0`$ не предсказывается, если в начало не добавлен `<bos>`.
 - **Перплексия с разными токенизаторами несравнима** — см. раздел «Перплексия».
 - **Натуральный логарифм.** `F.cross_entropy` возвращает наты; перплексия — `exp(loss)`, а не `2 ** loss`.
@@ -609,7 +609,7 @@ $`H(q, p) = H(q) + D_{\mathrm{KL}}(q \,\|\, p)`$, а $`D_{\mathrm{KL}} \ge 0`$ (
 
 </details>
 
-8. (Код.) Возьмите `TextDataset` из `llm.datasets.text_dataset` и токенизатор, обученный на паре предложений, с `block_size=32`. Посчитайте, какая доля позиций в `labels` равна `-100`. Замените `labels` на `input_ids` (так датасеты работали до исправления пункта 57 бэклога) и сравните loss необученной модели в обоих случаях.
+8. (Код.) Возьмите `TextDataset` из `llm.datasets.text_dataset` и токенизатор, обученный на паре предложений, с `block_size=32`. Посчитайте, какая доля позиций в `labels` равна `-100`. Замените `labels` на `input_ids` (паддинг войдёт в loss) и сравните loss необученной модели в обоих случаях.
 
 ## Литература
 

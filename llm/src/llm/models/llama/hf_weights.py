@@ -12,7 +12,7 @@
 
 Подходят модели без rope_scaling. Конфиг должен совпадать с HF: "intermediate_size" — как у
 модели, "bias": False (если в HF нет attention_bias и mlp_bias), rms_norm_eps и rope_theta — как
-в HF. Для Mistral/Mixtral окно здесь на одну позицию шире, чем в HF (docs/mistral.md, «Ширина
+в HF. Для Mistral/Mixtral окно здесь на одну позицию шире, чем в HF (docs/textbook/mistral.md, «Ширина
 окна: W + 1»): sliding_window=W в HF — "window_size": W − 1 здесь; sliding_window=None — без ключа.
 
 Пример:

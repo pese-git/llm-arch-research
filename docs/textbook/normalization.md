@@ -266,7 +266,7 @@ $`\epsilon`$ решает две задачи.
 | $`10^{-6}`$ | $`707.1`$ | $`301.5`$ |
 | $`\to 0`$ | $`\to 1000`$ | $`\to 316.2`$ |
 
-Значение $`\epsilon`$ — гиперпараметр, с которым модель обучалась: у LLaMA и Gemma $`10^{-6}`$, у Mistral 7B и Mixtral 8x7B $`10^{-5}`$ (ключ `rms_norm_eps` конфига HF и этого репозитория). При типичном $`m \approx 1`$ разница выходов — около $`4.5 \cdot 10^{-6}`$ относительно, но при загрузке чужих весов её лучше не вносить: ошибки накапливаются по $`2L + 1`$ нормализациям. В репозитории `eps` задаётся ключом `rms_norm_eps` (по умолчанию `1e-6`) — см. [бэклог, пункт 50](backlog.md#50-eps-в-rmsnorm-зашит-как-1e-6--p3).
+Значение $`\epsilon`$ — гиперпараметр, с которым модель обучалась: у LLaMA и Gemma $`10^{-6}`$, у Mistral 7B и Mixtral 8x7B $`10^{-5}`$ (ключ `rms_norm_eps` конфига HF и этого репозитория). При типичном $`m \approx 1`$ разница выходов — около $`4.5 \cdot 10^{-6}`$ относительно, но при загрузке чужих весов её лучше не вносить: ошибки накапливаются по $`2L + 1`$ нормализациям. В репозитории `eps` задаётся ключом `rms_norm_eps` (по умолчанию `1e-6`) — см. [бэклог, пункт 50](../dev/backlog.md#50-eps-в-rmsnorm-зашит-как-1e-6--p3).
 
 ### Вариант Gemma: множитель (1 + w)
 
@@ -278,7 +278,7 @@ y_i = \frac{x_i}{\mathrm{RMS}(\mathbf{x})} \, (1 + w_i), \qquad w_i = 0 \ \text{
 
 где $`\mathbf{w} \in \mathbb{R}^d`$ — хранимый параметр. Это та же функция, что обычный RMSNorm с $`\mathbf{g} = \mathbf{1} + \mathbf{w}`$: при инициализации обе дают множитель 1. Разница — в параметризации: «нулевая точка» параметра соответствует тождественному масштабу. Одно из практических следствий: weight decay, стягивающий параметры к нулю, в такой параметризации тянет масштаб к 1, а не к 0 (это наше объяснение; в статье Gemma мотивация не приводится).
 
-В репозитории отдельного класса для Gemma нет: `RMSNorm` умножает на сам вес, а при загрузке весов HF к ним прибавляется 1 — `convert_hf_state_dict` в [`models/gemma/hf_weights.py`](../llm/src/llm/models/gemma/hf_weights.py):
+В репозитории отдельного класса для Gemma нет: `RMSNorm` умножает на сам вес, а при загрузке весов HF к ним прибавляется 1 — `convert_hf_state_dict` в [`models/gemma/hf_weights.py`](../../llm/src/llm/models/gemma/hf_weights.py):
 
 ```python
 for key in result:
@@ -286,7 +286,7 @@ for key in result:
         result[key] = result[key] + 1
 ```
 
-Подробнее — [gemma.md](gemma.md#отличия-от-gemma) и [бэклог, пункт 46](backlog.md#46-rmsnorm-без-1--w-и-вычислений-во-float32--p3).
+Подробнее — [gemma.md](gemma.md#отличия-от-gemma) и [бэклог, пункт 46](../dev/backlog.md#46-rmsnorm-без-1--w-и-вычислений-во-float32--p3).
 
 ## Нормализация в половинной точности
 
@@ -305,7 +305,7 @@ for key in result:
 
 ### Решение в репозитории
 
-`RMSNorm.forward` в [`core/rms_norm.py`](../llm/src/llm/core/rms_norm.py) для float16/bfloat16 считает нормализацию во float32:
+`RMSNorm.forward` в [`core/rms_norm.py`](../../llm/src/llm/core/rms_norm.py) для float16/bfloat16 считает нормализацию во float32:
 
 ```python
 x_compute = x.float() if x.dtype in (torch.float16, torch.bfloat16) else x   # 1. повышаем точность
@@ -469,12 +469,12 @@ flowchart TB
 
 | Модель | Блок | Расстановка | Нормализация в блоке | Финальная |
 |---|---|---|---|---|
-| GPT-1 | `GptDecoder` в [`core/gpt_decoder.py`](../llm/src/llm/core/gpt_decoder.py) | post-LN | `nn.LayerNorm(emb_size)` ×2 | нет |
-| GPT-2 | `Gpt2Decoder` в [`core/gpt2_decoder.py`](../llm/src/llm/core/gpt2_decoder.py) | pre-LN | `nn.LayerNorm(emb_size)` ×2 | `GPT2._norm = nn.LayerNorm` |
-| LLaMA | `CachedDecoder` в [`core/cached_decoder.py`](../llm/src/llm/core/cached_decoder.py) | pre-LN | `norm_layer(emb_size)` ×2, LLaMA передаёт `partial(RMSNorm, eps=norm_eps)` | `Llama._norm = RMSNorm` |
-| Mistral | `MistralDecoder` в [`core/mistral_decoder.py`](../llm/src/llm/core/mistral_decoder.py) | pre-LN | `RMSNorm(emb_size, eps=norm_eps)` ×2 | `Mistral._norm = RMSNorm` |
-| Mixtral | `MixtralDecoder` в [`core/mixtral_decoder.py`](../llm/src/llm/core/mixtral_decoder.py) | pre-LN | `RMSNorm(emb_size, eps=norm_eps)` ×2 | `Mixtral._norm = RMSNorm` |
-| Gemma | `GemmaDecoder` в [`core/gemma_decoder.py`](../llm/src/llm/core/gemma_decoder.py) | pre-LN | `RMSNorm(emb_size, eps=norm_eps)` ×2 | `Gemma._norm = RMSNorm` |
+| GPT-1 | `GptDecoder` в [`core/gpt_decoder.py`](../../llm/src/llm/core/gpt_decoder.py) | post-LN | `nn.LayerNorm(emb_size)` ×2 | нет |
+| GPT-2 | `Gpt2Decoder` в [`core/gpt2_decoder.py`](../../llm/src/llm/core/gpt2_decoder.py) | pre-LN | `nn.LayerNorm(emb_size)` ×2 | `GPT2._norm = nn.LayerNorm` |
+| LLaMA | `CachedDecoder` в [`core/cached_decoder.py`](../../llm/src/llm/core/cached_decoder.py) | pre-LN | `norm_layer(emb_size)` ×2, LLaMA передаёт `partial(RMSNorm, eps=norm_eps)` | `Llama._norm = RMSNorm` |
+| Mistral | `MistralDecoder` в [`core/mistral_decoder.py`](../../llm/src/llm/core/mistral_decoder.py) | pre-LN | `RMSNorm(emb_size, eps=norm_eps)` ×2 | `Mistral._norm = RMSNorm` |
+| Mixtral | `MixtralDecoder` в [`core/mixtral_decoder.py`](../../llm/src/llm/core/mixtral_decoder.py) | pre-LN | `RMSNorm(emb_size, eps=norm_eps)` ×2 | `Mixtral._norm = RMSNorm` |
+| Gemma | `GemmaDecoder` в [`core/gemma_decoder.py`](../../llm/src/llm/core/gemma_decoder.py) | pre-LN | `RMSNorm(emb_size, eps=norm_eps)` ×2 | `Gemma._norm = RMSNorm` |
 
 **Post-LN** — `GptDecoder.forward`: сложение внутри вызова нормализации.
 
@@ -496,11 +496,11 @@ ffn_out = self._ff(norm2_out)
 result = ffn_out + out                  # y  = x' + FFN(LN2(x'))
 ```
 
-Финальная нормализация применяется в `forward` модели после цикла по декодерам: `out = self._norm(out)`, затем `logits = self._linear(out)` (например, [`models/gpt/gpt2.py`](../llm/src/llm/models/gpt/gpt2.py), [`models/llama/llama.py`](../llm/src/llm/models/llama/llama.py)).
+Финальная нормализация применяется в `forward` модели после цикла по декодерам: `out = self._norm(out)`, затем `logits = self._linear(out)` (например, [`models/gpt/gpt2.py`](../../llm/src/llm/models/gpt/gpt2.py), [`models/llama/llama.py`](../../llm/src/llm/models/llama/llama.py)).
 
 Детали `RMSNorm`:
 - конструктор `RMSNorm(dim, eps=1e-6)`; `eps <= 0` — `ValueError`;
-- вес — `nn.Parameter(torch.ones(dim))` с именем `_w` (в `state_dict` ключи вида `_decoders.0._norm1._w`), поэтому конвертеры весов HF переименовывают `input_layernorm.weight` → `_norm1._w` ([`models/llama/hf_weights.py`](../llm/src/llm/models/llama/hf_weights.py));
+- вес — `nn.Parameter(torch.ones(dim))` с именем `_w` (в `state_dict` ключи вида `_decoders.0._norm1._w`), поэтому конвертеры весов HF переименовывают `input_layernorm.weight` → `_norm1._w` ([`models/llama/hf_weights.py`](../../llm/src/llm/models/llama/hf_weights.py));
 - `eps` не параметр и не буфер — в чекпоинт не попадает, задаётся конфигом (`rms_norm_eps`).
 
 Модели читают `eps` так: `norm_eps = config.get("rms_norm_eps", 1e-6)` и передают его во все $`2L + 1`$ нормализаций.
