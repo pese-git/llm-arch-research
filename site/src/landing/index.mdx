@@ -1,0 +1,101 @@
+---
+title: Архитектуры LLM с нуля
+description: Шесть языковых моделей — от GPT-1 до Gemma — на PyTorch. Небольшой код, сверенный с HuggingFace, и учебное пособие, которое объясняет каждую строку.
+template: splash
+hero:
+  title: Архитектуры LLM с нуля
+  tagline: Шесть языковых моделей — от GPT-1 до Gemma — на PyTorch. Небольшой код, который читается целиком и сверен с HuggingFace, и учебное пособие, которое объясняет каждую строку.
+  image:
+    file: ../../assets/logo.svg
+  actions:
+    - text: Читать пособие
+      link: textbook/
+      icon: right-arrow
+      variant: primary
+    - text: Руководство
+      link: guide/
+      variant: secondary
+    - text: GitHub
+      link: https://github.com/pese-git/llm-arch-research
+      icon: external
+      variant: minimal
+---
+
+{/* Страница только для сайта: её исходник — site/src/landing/index.mdx, scripts/sync-docs.mjs
+    кладёт её на место docs/README.md. Ссылки относительные — от адреса главной страницы. */}
+
+import { Card, CardGrid, LinkCard, Tabs, TabItem } from '@astrojs/starlight/components';
+
+## Шесть архитектур
+
+Каждая модель — отдельный класс библиотеки `llm` и глава пособия: что изменилось по сравнению с предыдущей моделью, формулы и разбор кода.
+
+<CardGrid>
+  <LinkCard title="GPT-1 · OpenAI, 2018" description="Decoder-only трансформер: обучаемые позиции, multi-head attention, post-LN." href="textbook/gpt/" />
+  <LinkCard title="GPT-2 · OpenAI, 2019" description="Pre-LN, финальная нормализация, масштабированная инициализация." href="textbook/gpt2/" />
+  <LinkCard title="LLaMA · Meta, 2023" description="RoPE, RMSNorm и SwiGLU — основа современных открытых моделей." href="textbook/llama/" />
+  <LinkCard title="Mistral · Mistral AI, 2023" description="Grouped Query Attention и скользящее окно внимания." href="textbook/mistral/" />
+  <LinkCard title="Mixtral · Mistral AI, 2024" description="Mixture-of-Experts: роутер выбирает два эксперта из восьми." href="textbook/mixtral/" />
+  <LinkCard title="Gemma · Google DeepMind, 2024" description="Multi-Query Attention, GeGLU, масштаб эмбеддингов на √d." href="textbook/gemma/" />
+</CardGrid>
+
+## Почему этот проект
+
+<CardGrid>
+  <Card title="Читается целиком" icon="document">
+    Каждый блок трансформера — небольшой самостоятельный модуль. Библиотека зависит только от PyTorch и NumPy: никакой магии фреймворков между формулой и кодом.
+  </Card>
+  <Card title="Сверено с эталоном" icon="star">
+    На весах HuggingFace логиты всех шести моделей совпадают до 1e-5–1e-4, greedy-генерация с KV-кэшем — токен в токен. Больше 1150 тестов.
+  </Card>
+  <Card title="Три уровня объяснения" icon="puzzle">
+    Каждый механизм — идея и статья, затем формулы с числовыми примерами, затем конкретная строка кода, которая их реализует.
+  </Card>
+  <Card title="Полный цикл" icon="rocket">
+    BPE-токенизатор, датасеты, обучение, генерация — greedy, top-k, top-p, KV-кэш, батч промптов — и загрузка готовых весов HuggingFace.
+  </Card>
+</CardGrid>
+
+## Попробуйте
+
+<Tabs>
+  <TabItem label="Установка">
+    ```bash
+    git clone https://github.com/pese-git/llm-arch-research.git
+    cd llm-arch-research
+    uv sync
+    ```
+    Нужны Python 3.10+ и [uv](https://docs.astral.sh/uv/). Видеокарта не обязательна. Подробнее — в [Установке](guide/installation/).
+  </TabItem>
+  <TabItem label="Обучить модель">
+    ```bash
+    uv run python experiments/llm_only/run_llm_experiment.py --model llama --action train \
+        --config experiments/llm_only/configs/llama_train.json
+    uv run python experiments/llm_only/run_llm_experiment.py --model llama --action generate \
+        --config experiments/llm_only/configs/llama_generate.json
+    ```
+    Любая из шести моделей на встроенном учебном корпусе: `gpt`, `gpt2`, `llama`, `mistral`, `mixtral`, `gemma`. Подробнее — в [Обучении](guide/training/).
+  </TabItem>
+  <TabItem label="Загрузить GPT-2">
+    ```python
+    from transformers import GPT2LMHeadModel
+    from llm.models.gpt import GPT2, convert_hf_state_dict
+
+    hf = GPT2LMHeadModel.from_pretrained("openai-community/gpt2")
+    model = GPT2({"vocab_size": 50257, "embed_dim": 768, "num_heads": 12, "num_layers": 12,
+                  "max_position_embeddings": 1024, "dropout": 0.0, "tie_word_embeddings": True})
+    model.load_state_dict(convert_hf_state_dict(hf.state_dict()))
+    ```
+    Рецепты для всех шести моделей — в [Загрузке весов HuggingFace](guide/hf-weights/).
+  </TabItem>
+</Tabs>
+
+## Документация
+
+<CardGrid>
+  <LinkCard title="Учебное пособие" description="Для тех, кто хочет понять, как устроены LLM. Нужны Python и математика первых курсов, опыт в глубоком обучении — нет." href="textbook/" />
+  <LinkCard title="Руководство пользователя" description="Для исследователей, которые обучают и запускают модели: конфиги, данные, обучение, генерация, веса HF." href="guide/" />
+  <LinkCard title="Для разработчиков" description="Для тех, кто развивает проект: устройство репозитория, добавление модели, тесты, соглашения." href="dev/" />
+</CardGrid>
+
+**С чего начать:** [понять архитектуры](textbook/language-modeling/) · [обучить модель](guide/training/) · [запустить готовые веса](guide/hf-weights/) · [изменить код](dev/architecture/)

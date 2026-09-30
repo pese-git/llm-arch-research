@@ -2,8 +2,9 @@
 // по оглавлениям разделов. Исходники остаются в docs/ — они же читаются на GitHub;
 // сгенерированные файлы в git не хранятся.
 //
-// Структура docs/ сохраняется: docs/README.md — главная, docs/<раздел>/README.md — первая
-// страница раздела, docs/<раздел>/<глава>.md — страница <раздел>/<глава>/.
+// Структура docs/ сохраняется: docs/<раздел>/README.md — первая страница раздела,
+// docs/<раздел>/<глава>.md — страница <раздел>/<глава>/. Главная — визитка src/landing/index.mdx
+// (только для сайта); docs/README.md — входная страница для GitHub, на сайт не попадает.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,6 +13,7 @@ const siteDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 export const docsDir = path.resolve(siteDir, '../docs');
 export const outDir = path.join(siteDir, 'src/content/docs');
 const sidebarFile = path.join(siteDir, 'src/generated/sidebar.json');
+const landingFile = path.join(siteDir, 'src/landing/index.mdx');
 
 // Разделы в порядке меню: папка в docs/ и подпись группы
 export const sections = [
@@ -28,7 +30,7 @@ const outName = (rel) => rel.replace(/(^|\/)README\.md$/, '$1index.md');
 
 const yamlString = (s) => JSON.stringify(s);
 
-/** Все .md в docs/ — пути относительно docs/ через «/». */
+/** Все .md в docs/ — пути относительно docs/ через «/»; docs/README.md заменяет визитка. */
 export function listDocs() {
   const out = [];
   const walk = (dir) => {
@@ -39,7 +41,7 @@ export function listDocs() {
     }
   };
   walk(docsDir);
-  return out.sort();
+  return out.filter((f) => f !== 'README.md').sort();
 }
 
 /**
@@ -108,6 +110,7 @@ export function syncDocs({ quiet = false } = {}) {
   const files = listDocs();
   fs.rmSync(outDir, { recursive: true, force: true });
   for (const rel of files) syncFile(rel);
+  fs.copyFileSync(landingFile, path.join(outDir, 'index.mdx'));
   const sidebar = [{ label: 'Главная', link: '/' }, ...sections.map((s) => buildSection(s, files)).filter(Boolean)];
   fs.mkdirSync(path.dirname(sidebarFile), { recursive: true });
   fs.writeFileSync(sidebarFile, JSON.stringify(sidebar, null, 2) + '\n');

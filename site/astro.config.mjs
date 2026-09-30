@@ -36,7 +36,7 @@ const docsWatcher = {
       server.watcher.add(docsDir);
       const onChange = (/** @type {string} */ file) => {
         const rel = docsRel(file);
-        if (!rel) return;
+        if (!rel || rel === 'README.md') return;
         // Оглавления README задают меню — меню читается при старте, нужен перезапуск
         if (rel.endsWith('README.md')) syncDocs({ quiet: true });
         else syncFile(rel);
@@ -61,6 +61,8 @@ export default defineConfig({
     mermaid({ theme: 'default', autoTheme: true }),
     starlight({
       title: 'Архитектуры LLM',
+      logo: { src: './src/assets/logo.svg' },
+      favicon: '/favicon.svg',
       description:
         'GPT-1, GPT-2, LLaMA, Mistral, Mixtral и Gemma на PyTorch: учебное пособие, руководство пользователя и документация для разработчиков.',
       defaultLocale: 'root',

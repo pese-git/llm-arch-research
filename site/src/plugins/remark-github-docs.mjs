@@ -77,6 +77,8 @@ export default function remarkGithubDocs({ base = '/', docsDir, contentDir, repo
   }
 
   return (tree, file) => {
+    // Визитка (index.mdx) пишется под сайт: ссылки в ней уже адреса страниц
+    if (file.path?.endsWith('.mdx')) return;
     convertMath(tree);
     const source = file.path ? sourceOf(file.path) : 'README.md';
     visit(tree, ['link', 'definition'], (node) => {
