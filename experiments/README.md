@@ -56,7 +56,7 @@ uv run python experiments/llm_only/run_llm_experiment.py --model llama --action 
   "bpe_tokenizer": "checkpoints/bpe_tokenizer.json",
   "bpe_vocab_size": 1000,
   "bpe_special_tokens": ["<pad>", "<unk>", "<bos>", "<eos>"],
-  "test_prompts": ["Open source AI"],
+  "test_prompts": ["Машинное обучение"],
   "model_config": { "vocab_size": null, "embed_dim": 256, "...": "ключи зависят от модели" },
   "model_weights": "checkpoints/llama-bpe/model.pt",
   "model_config_path": "checkpoints/llama-bpe/config.json",
@@ -74,7 +74,7 @@ uv run python experiments/llm_only/run_llm_experiment.py --model llama --action 
 ```json
 {
   "bpe_tokenizer": "checkpoints/bpe_tokenizer.json",
-  "test_prompts": ["The Llama model is"],
+  "test_prompts": ["Искусственный интеллект"],
   "model_config_path": "checkpoints/mistral-bpe/config.json",
   "model_weights": "checkpoints/mistral-bpe/model.pt",
   "generation": { "max_new_tokens": 40, "temperature": 0.8, "do_sample": true, "top_k": null, "top_p": null },

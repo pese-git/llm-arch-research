@@ -177,7 +177,13 @@ class BPETokenizer(BaseTokenizer):
 
         Returns:
         --------
-        List[int] — последовательность индексов из vocabulary.
+        List[int] — последовательность индексов из vocabulary. Символ, которого
+        нет в словаре, кодируется как unk_token_id.
+
+        Raises:
+        -------
+        ValueError — в тексте есть символ, которого нет в словаре, а в словаре нет
+            unk_token (токенизатор обучен без него в special_tokens).
 
         Пример:
         -------
@@ -201,7 +207,15 @@ class BPETokenizer(BaseTokenizer):
         # 3. Заменить токены на их ID
         token_ids = self._tokens_to_ids(tokens)
 
-        # Заменяем -1 на unk_token_id
+        # Заменяем -1 на unk_token_id. Без unk_token в словаре — ошибка, а не None
+        # в списке id: такой список не превратить в тензор, и модель упала бы позже
+        if -1 in token_ids and self.unk_token_id is None:
+            unknown = sorted({t for t, tid in zip(tokens, token_ids) if tid == -1})
+            raise ValueError(
+                f"Символов {unknown} нет в словаре, а unk_token {self.unk_token!r} в словарь "
+                f"не добавлен. Обучите токенизатор с ним в special_tokens или уберите "
+                f"эти символы из текста."
+            )
         token_ids = [tid if tid != -1 else self.unk_token_id for tid in token_ids]
 
         # Добавляем специальные токены если нужно

@@ -1,9 +1,9 @@
 {
     "bpe_tokenizer": "checkpoints/bpe_tokenizer.json",
     "test_prompts": [
-      "The neural network",
-      "Transformer architecture",
-      "GPT models are"
+      "Нейронные сети",
+      "GPT модели учатся",
+      "Обработка естественного"
     ],
     "model_config_path": "checkpoints/gpt-bpe/config.json",
     "model_weights": "checkpoints/gpt-bpe/model.pt",
