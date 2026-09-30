@@ -26,6 +26,11 @@ r"""
 
 Детальное описание: https://arxiv.org/abs/1711.05101
 
+Weight decay применяется только к матрицам — весам Linear и эмбеддингам (параметры с dim ≥ 2).
+Смещения и коэффициенты нормализации (LayerNorm, RMSNorm) не затухают: так в GPT-1 (разд. 4.1,
+"all non bias or gain weights"), nanoGPT и HF Trainer. Их мало, на переобучение они почти не
+влияют, а затухание коэффициента нормализации к нулю лишь уменьшает масштаб сигнала.
+
 Пример использования:
 ---------------------
 >>> optimizer = get_optimizer(model, lr=3e-4, weight_decay=0.01, optimizer_type="adamw")
@@ -39,6 +44,26 @@ r"""
 import torch.optim as optim
 
 
+def weight_decay_param_groups(model, weight_decay):
+    """
+    Делит параметры модели на две группы для оптимизатора: матрицы (dim ≥ 2: веса Linear,
+    эмбеддинги) — с weight_decay, остальное (bias, веса LayerNorm и RMSNorm) — без.
+
+    Общая матрица при weight tying входит один раз: model.parameters() не повторяет
+    параметр, зарегистрированный в двух модулях. Пустая группа не создаётся.
+
+    Returns:
+        list[dict] — группы параметров для конструктора torch.optim.Optimizer.
+    """
+    decay = [p for p in model.parameters() if p.dim() >= 2]
+    no_decay = [p for p in model.parameters() if p.dim() < 2]
+    groups = [
+        {"params": decay, "weight_decay": weight_decay},
+        {"params": no_decay, "weight_decay": 0.0},
+    ]
+    return [group for group in groups if group["params"]]
+
+
 def get_optimizer(model, lr=3e-4, weight_decay=0.01, optimizer_type="adamw"):
     """
     Фабричная функция для создания оптимизатора PyTorch по выбранному типу.
@@ -50,9 +75,14 @@ def get_optimizer(model, lr=3e-4, weight_decay=0.01, optimizer_type="adamw"):
     lr : float, по умолчанию 3e-4
         Шаг обучения (learning rate).
     weight_decay : float, по умолчанию 0.01
-        Коэффициент weight decay (L2-регуляризации).
+        Коэффициент weight decay. Применяется только к матрицам (веса Linear и эмбеддинги),
+        bias и веса нормализаций не затухают (см. weight_decay_param_groups).
     optimizer_type : str, по умолчанию 'adamw'
-        Тип оптимизатора: 'adamw', 'adam' или 'sgd'.
+        Тип оптимизатора:
+        - 'adamw' — AdamW: decoupled weight decay, θ ← θ − η·λ·θ отдельно от шага Adam;
+        - 'adam' — Adam с L2-регуляризацией: λ·θ прибавляется к градиенту и нормируется
+          вместе с ним, поэтому на весах с большими градиентами почти не действует;
+        - 'sgd' — SGD с моментом 0.9; weight decay — тоже L2 через градиент.
     
     Возвращаемое значение
     ---------------------
@@ -67,11 +97,10 @@ def get_optimizer(model, lr=3e-4, weight_decay=0.01, optimizer_type="adamw"):
     ---------------------
     >>> optimizer = get_optimizer(model, lr=1e-3, optimizer_type='sgd')
     """
-    if optimizer_type.lower() == "adamw":
-        return optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
-    elif optimizer_type.lower() == "adam":
-        return optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
-    elif optimizer_type.lower() == "sgd":
-        return optim.SGD(model.parameters(), lr=lr, momentum=0.9)
-    else:
+    optimizer_classes = {"adamw": optim.AdamW, "adam": optim.Adam, "sgd": optim.SGD}
+    optimizer_class = optimizer_classes.get(optimizer_type.lower())
+    if optimizer_class is None:
         raise ValueError(f"Неизвестный тип оптимизатора: {optimizer_type}")
+    groups = weight_decay_param_groups(model, weight_decay)
+    kwargs = {"momentum": 0.9} if optimizer_class is optim.SGD else {}
+    return optimizer_class(groups, lr=lr, weight_decay=weight_decay, **kwargs)

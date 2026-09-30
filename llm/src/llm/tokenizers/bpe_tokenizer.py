@@ -6,7 +6,7 @@ BPE (Byte Pair Encoding) токенизатор.
 
 import re
 from collections import Counter
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple
 from .base_tokenizer import BaseTokenizer
 
 # Разбиение текста на слова перед BPE (как в GPT-2): пробел прикрепляется
@@ -38,8 +38,8 @@ class BPETokenizer(BaseTokenizer):
 
     Как работает BPE:
     -----------------
-    1. Строится словарь из наиболее популярных пар символов/субстрок.
-    2. Текст замещается наиболее длинными subword-подстроками из vocabulary (жадно).
+    1. Строится словарь из наиболее популярных пар символов/субстрок; порядок слияний запоминается.
+    2. Новый текст кодируется применением выученных слияний в том же порядке (как bpe() в GPT-2).
     3. Итог: многомиллионное лексическое пространство сокращается до компактного набора subword pieces.
 
     Особенности алгоритма:
@@ -177,7 +177,13 @@ class BPETokenizer(BaseTokenizer):
 
         Returns:
         --------
-        List[int] — последовательность индексов из vocabulary.
+        List[int] — последовательность индексов из vocabulary. Символ, которого
+        нет в словаре, кодируется как unk_token_id.
+
+        Raises:
+        -------
+        ValueError — в тексте есть символ, которого нет в словаре, а в словаре нет
+            unk_token (токенизатор обучен без него в special_tokens).
 
         Пример:
         -------
@@ -188,31 +194,28 @@ class BPETokenizer(BaseTokenizer):
 
         # 1. Разбиваем текст на слова так же, как при обучении
         tokens = []
+        word_tokens: Dict[str, List[str]] = {}  # слова в тексте повторяются
         for word in pretokenize(text):
-            # 2. Внутри слова жадно берем самые длинные токены
-            i = 0
-            while i < len(word):
-                # 2.1 Найти все токены в словаре, начинающиеся с word[i]
-                start_char = word[i]
-                result = [
-                    token for token in self.vocab_list if token.startswith(start_char)
-                ]
-                # 2.2 Выбрать самый длинный подходящий токен
-                find_token = self._find_max_matching_token(word[i:], result)
-                if find_token is None:
-                    # Обработка неизвестного символа
-                    tokens.append(word[i])  # Добавляем сам символ как токен
-                    i += 1
-                else:
-                    # 2.3 Добавить токен в результат
-                    tokens.append(find_token)
-                    # 2.4 Увеличить i на длину токена
-                    i += len(find_token)
+            if word not in word_tokens:
+                # 2. Внутри слова применяем слияния по порядку ранга. Без слияний
+                # (старые сохранения hf-proxy хранили только словарь) — жадный поиск
+                word_tokens[word] = (
+                    self._bpe_word(word) if self.merges else self._greedy_word(word)
+                )
+            tokens.extend(word_tokens[word])
 
-        # 4. Заменить токены на их ID
+        # 3. Заменить токены на их ID
         token_ids = self._tokens_to_ids(tokens)
 
-        # Заменяем -1 на unk_token_id
+        # Заменяем -1 на unk_token_id. Без unk_token в словаре — ошибка, а не None
+        # в списке id: такой список не превратить в тензор, и модель упала бы позже
+        if -1 in token_ids and self.unk_token_id is None:
+            unknown = sorted({t for t, tid in zip(tokens, token_ids) if tid == -1})
+            raise ValueError(
+                f"Символов {unknown} нет в словаре, а unk_token {self.unk_token!r} в словарь "
+                f"не добавлен. Обучите токенизатор с ним в special_tokens или уберите "
+                f"эти символы из текста."
+            )
         token_ids = [tid if tid != -1 else self.unk_token_id for tid in token_ids]
 
         # Добавляем специальные токены если нужно
@@ -224,10 +227,36 @@ class BPETokenizer(BaseTokenizer):
 
         return token_ids
 
-    def _find_max_matching_token(self, text: str, tokens: list) -> Optional[str]:
-        """Находит самый длинный токен из списка, с которого начинается текст"""
-        matching = [token for token in tokens if text.startswith(token)]
-        return max(matching, key=len) if matching else None
+    def _bpe_word(self, word: str) -> List[str]:
+        """
+        Разбивает слово на токены, применяя выученные слияния в порядке ранга,
+        как функция bpe() в GPT-2 и алгоритм Sennrich et al.: пока есть соседние
+        пары из списка слияний, сливаются все вхождения самой ранней из них.
+        Так слово из обучающего корпуса разбивается ровно как при обучении.
+        """
+        symbols = list(word)
+        while len(symbols) > 1:
+            pairs = zip(symbols, symbols[1:])
+            best = min(pairs, key=lambda pair: self.merges.get(pair, float("inf")))
+            if best not in self.merges:
+                break  # применимых слияний не осталось
+            symbols = self._merge_pair(symbols, best, best[0] + best[1])
+        return symbols
+
+    def _greedy_word(self, word: str) -> List[str]:
+        """
+        Жадный longest-match по словарю (как WordPiece) — только для токенизатора без
+        слияний: по одному словарю порядок слияний не восстановить. Символ, которого
+        нет в словаре, остаётся отдельным токеном (станет unk_token_id).
+        """
+        tokens = []
+        i = 0
+        while i < len(word):
+            matching = [token for token in self.vocab_list if word.startswith(token, i)]
+            token = max(matching, key=len) if matching else word[i]
+            tokens.append(token)
+            i += len(token)
+        return tokens
 
     def _tokens_to_ids(self, tokens: List[str]) -> List[int]:
         """Конвертирует список токенов в их ID с обработкой неизвестных токенов"""

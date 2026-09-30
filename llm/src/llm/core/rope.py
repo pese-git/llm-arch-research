@@ -150,7 +150,7 @@ class RoPE(nn.Module):
         state_dict.pop(prefix + "sin_matrix", None)
         super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
 
-    def forward(self, x: torch.Tensor, start_pos: int = 0) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, start_pos: int = 0, positions: torch.Tensor = None) -> torch.Tensor:
         """
         Применяет ротационное позиционное кодирование (RoPE) к входному тензору.
 
@@ -167,6 +167,9 @@ class RoPE(nn.Module):
             Это обычно либо Q, либо K из механизма внимания.
         start_pos : int, по умолчанию 0
             Сдвиг начала позиции (нужно при генерации с кэшем, почти всегда оставить 0 если не пишете автогенератор).
+        positions : torch.Tensor, опционально
+            Позиции токенов каждой строки [batch, seq_len] — при паддинге (см. core/padding.py).
+            Если задан, start_pos не используется.
 
         Возвращает:
         -----------
@@ -186,13 +189,18 @@ class RoPE(nn.Module):
         assert x.ndim == 4, "RoPE поддерживает только 4D-вход [batch, num_heads, seq_len, head_size]"
         batch_size, num_heads, seq_len, head_size = x.shape
 
-        # Берем нужную часть матриц и приводим к типу x
-        cos = self.cos_matrix[start_pos:start_pos+seq_len].to(x.dtype)  # [seq_len, head_size//2]
-        sin = self.sin_matrix[start_pos:start_pos+seq_len].to(x.dtype)  # [seq_len, head_size//2]
+        if positions is None:
+            # Берем нужную часть матриц и приводим к типу x
+            cos = self.cos_matrix[start_pos:start_pos+seq_len].to(x.dtype)  # [seq_len, head_size//2]
+            sin = self.sin_matrix[start_pos:start_pos+seq_len].to(x.dtype)  # [seq_len, head_size//2]
 
-        # Явное изменение формы для broadcasting
-        cos = cos.reshape(1, 1, seq_len, head_size // 2)
-        sin = sin.reshape(1, 1, seq_len, head_size // 2)
+            # Явное изменение формы для broadcasting
+            cos = cos.reshape(1, 1, seq_len, head_size // 2)
+            sin = sin.reshape(1, 1, seq_len, head_size // 2)
+        else:
+            # Своя позиция у каждой строки (паддинг): общий угол для всех голов
+            cos = self.cos_matrix[positions].to(x.dtype).unsqueeze(1)  # [batch, 1, seq_len, head_size//2]
+            sin = self.sin_matrix[positions].to(x.dtype).unsqueeze(1)
 
         # Разделяем на четные и нечетные компоненты по ПОСЛЕДНЕМУ измерению
         x_even = x[..., 0::2]  # [batch_size, num_heads, seq_len, head_size//2]

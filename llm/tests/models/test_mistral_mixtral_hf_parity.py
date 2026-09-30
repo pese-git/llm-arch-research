@@ -143,7 +143,9 @@ def assert_same_as_hf(model, hf_model, prompt_len=6, new_tokens=20):
         expected = hf_model(tokens).logits
         logits, _ = model(tokens)
         # генерация с KV-кэшем дольше окна: кэш обрезается, позиции RoPE идут из next_pos
+        # Явная маска: иначе HF строит её по pad_token_id и принял бы токен 0 в промпте за паддинг
         hf_greedy = hf_model.generate(tokens[:1, :prompt_len], max_new_tokens=new_tokens,
+                                      attention_mask=torch.ones_like(tokens[:1, :prompt_len]),
                                       do_sample=False, pad_token_id=0)
         greedy = model.generate(tokens[:1, :prompt_len], max_new_tokens=new_tokens,
                                 do_sample=False, use_cache=True)

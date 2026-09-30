@@ -60,4 +60,6 @@ def test_specialtokens_labels():
     block_size = 7
     ds = TextWithSpecialTokensDataset(texts, tokenizer, block_size=block_size, add_bos=True, add_eos=True)
     item = ds[0]
-    assert torch.equal(item["input_ids"], item["labels"])
+    real = item["attention_mask"] == 1
+    assert torch.equal(item["labels"][real], item["input_ids"][real])
+    assert (item["labels"][item["attention_mask"] == 0] == -100).all()

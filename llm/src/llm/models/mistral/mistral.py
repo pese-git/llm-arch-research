@@ -1,16 +1,19 @@
+from functools import partial
+
 import torch
 from torch import nn
 from llm.core.base_model import BaseModel
 from llm.core.config_checks import resolve_head_size
+from llm.core.padding import padding_from_attention_mask
 from llm.core.generation import (
     cache_start_pos,
-    check_attention_mask,
     check_sequence_length,
 )
 from llm.core.token_embeddings import TokenEmbeddings
 from llm.core.rms_norm import RMSNorm
 from llm.core.rope import RoPE
 from llm.core.mistral_decoder import MistralDecoder
+from llm.core.weight_init import DEFAULT_INITIALIZER_RANGE, init_normal_
 
 
 class Mistral(BaseModel):
@@ -104,6 +107,12 @@ class Mistral(BaseModel):
         self._norm = RMSNorm(config["embed_dim"], eps=norm_eps)
         self._linear = nn.Linear(config["embed_dim"], config["vocab_size"], bias=bias)
 
+        # Инициализация как в HF (_init_weights LLaMA, Mistral, Mixtral, Gemma): Linear и
+        # Embedding — N(0, initializer_range = 0.02), bias — нули; веса RMSNorm уже единицы
+        self.apply(
+            partial(init_normal_, std=config.get("initializer_range", DEFAULT_INITIALIZER_RANGE))
+        )
+
     def forward(
         self,
         x: torch.Tensor,
@@ -119,8 +128,8 @@ class Mistral(BaseModel):
             use_cache (bool, по умолчанию False): Возвращать ли новый KV attention-кэш для последующей генерации.
             cache (list or None): Предыдущий кэш attention (или None для полного прохода без накопления кэша).
             attention_mask (torch.Tensor, опц.): маска [batch, seq_len] (1 — токен, 0 — паддинг).
-                Поддерживается правый паддинг; на другие маски с нулями — NotImplementedError
-                (см. docs/masks.md).
+                С кэшем — [batch, cache_len + seq_len]. Паддинг допускается в любом месте строки:
+                маскируются ключи, позиции считаются среди настоящих токенов (см. docs/masks.md).
     
         Возвращает:
             logits (torch.Tensor): Тензор логитов shape [batch_size, seq_len, vocab_size] — вероятностное распределение по словарю для каждого токена.
@@ -134,9 +143,10 @@ class Mistral(BaseModel):
             >>> probabilities = torch.softmax(logits, dim=-1)
         """
         # Длина с учётом кэша: позиции start_pos … start_pos + seq_len − 1 должны быть < max_seq_len.
-        # attention_mask допускается только такая, при которой causal-маски достаточно.
-        check_sequence_length(x.size(1), cache_start_pos(cache), self._max_seq_len)
-        check_attention_mask(attention_mask, x, cache)
+        # attention_mask с нулями (паддинг) → маска ключей и позиции каждой строки (core/padding.py).
+        start_pos = cache_start_pos(cache)
+        check_sequence_length(x.size(1), start_pos, self._max_seq_len)
+        padding = padding_from_attention_mask(attention_mask, x, start_pos)
         
         # Эмбеддинги токенов и позиций
         tok_out = self._token_embeddings(x)  # [batch, seq_len, emb_size]
@@ -148,7 +158,7 @@ class Mistral(BaseModel):
         new_cache = []
         for i, decoder in enumerate(self._decoders):
             decoder_cache = cache[i] if cache is not None else None
-            decoder_result = decoder(out, use_cache=use_cache, cache=decoder_cache)
+            decoder_result = decoder(out, use_cache=use_cache, cache=decoder_cache, padding=padding)
 
             # Извлекаем результат из кортежа
             if use_cache:

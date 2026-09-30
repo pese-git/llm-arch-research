@@ -1,10 +1,12 @@
+from functools import partial
+
 import torch
 from torch import nn
 from llm.core.base_model import BaseModel
 from llm.core.config_checks import resolve_head_size
+from llm.core.padding import padding_from_attention_mask
 from llm.core.generation import (
     cache_start_pos,
-    check_attention_mask,
     check_sequence_length,
 )
 import math
@@ -13,6 +15,7 @@ from llm.core.token_embeddings import TokenEmbeddings, output_projection
 from llm.core.rope import RoPE
 from llm.core.rms_norm import RMSNorm
 from llm.core.gemma_decoder import GemmaDecoder
+from llm.core.weight_init import DEFAULT_INITIALIZER_RANGE, init_normal_
     
 
 class Gemma(BaseModel):
@@ -166,6 +169,12 @@ class Gemma(BaseModel):
         else:
             self._linear = nn.Linear(config["embed_dim"], config["vocab_size"], bias=bias)
 
+        # Инициализация как в HF (_init_weights LLaMA, Mistral, Mixtral, Gemma): Linear и
+        # Embedding — N(0, initializer_range = 0.02), bias — нули; веса RMSNorm уже единицы
+        self.apply(
+            partial(init_normal_, std=config.get("initializer_range", DEFAULT_INITIALIZER_RANGE))
+        )
+
     def forward(
         self,
         x: torch.Tensor,
@@ -189,9 +198,9 @@ class Gemma(BaseModel):
         cache : list, optional
             (Необязательно) Список/None: с кэшами KV-матриц для каждого слоя (для режима генерации статей/диalogов).
         attention_mask : torch.Tensor, optional
-            Маска [batch, seq_len] (1 — токен, 0 — паддинг). Поддерживается правый паддинг:
-            causal-маска и так скрывает от настоящих токенов стоящий после них паддинг.
-            На другие маски с нулями — NotImplementedError (см. docs/masks.md).
+            Маска [batch, seq_len] (1 — токен, 0 — паддинг), с кэшем — [batch, cache_len + seq_len].
+            Паддинг допускается в любом месте строки: маскируются ключи, позиции считаются
+            среди настоящих токенов (см. docs/masks.md).
 
         Возвращает:
         -----------
@@ -213,9 +222,10 @@ class Gemma(BaseModel):
         - При превышении x.shape[1] > max_seq_len выдаёт ValueError.
         """
         # Длина с учётом кэша: позиции start_pos … start_pos + seq_len − 1 должны быть < max_seq_len.
-        # attention_mask допускается только такая, при которой causal-маски достаточно.
-        check_sequence_length(x.size(1), cache_start_pos(cache), self._max_seq_len)
-        check_attention_mask(attention_mask, x, cache)
+        # attention_mask с нулями (паддинг) → маска ключей и позиции каждой строки (core/padding.py).
+        start_pos = cache_start_pos(cache)
+        check_sequence_length(x.size(1), start_pos, self._max_seq_len)
+        padding = padding_from_attention_mask(attention_mask, x, start_pos)
         
         # Эмбеддинги токенов и позиций
         tok_out = self._token_embeddings(x)  # [batch, seq_len, emb_size]
@@ -230,7 +240,7 @@ class Gemma(BaseModel):
         new_cache = []
         for i, decoder in enumerate(self._decoders):
             decoder_cache = cache[i] if cache is not None else None
-            decoder_result = decoder(out, use_cache=use_cache, cache=decoder_cache)
+            decoder_result = decoder(out, use_cache=use_cache, cache=decoder_cache, padding=padding)
 
             # Извлекаем результат из кортежа
             if use_cache:

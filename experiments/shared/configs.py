@@ -64,7 +64,7 @@ TRAINING_CONFIG = {
     "learning_rate": 3e-4,
     "batch_size": 2,
     "num_epochs": 3,
-    "warmup_steps": 50,
+    "warmup_ratio": 0.1,  # доля шагов: при ~18 шагах учебного корпуса — 2 шага warmup
     "gradient_clip": 1.0,
 }
 
@@ -96,5 +96,5 @@ TEST_PROMPTS = [
     "Python",
     "Трансформеры",
     "Обучение",
-    "Программирование",
+    "Мир",
 ]

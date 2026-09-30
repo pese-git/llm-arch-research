@@ -135,7 +135,9 @@ class GemmaDecoder(nn.Module):
         self._norm1 = RMSNorm(emb_size, eps=norm_eps)
         self._norm2 = RMSNorm(emb_size, eps=norm_eps)
 
-    def forward(self, x: torch.Tensor, use_cache: bool = True, cache: tuple = None) -> tuple:
+    def forward(
+        self, x: torch.Tensor, use_cache: bool = True, cache: tuple = None, padding=None
+    ) -> tuple:
         """
         Прямой проход (forward) через GemmaDecoder.
 
@@ -157,6 +159,8 @@ class GemmaDecoder(nn.Module):
             Если True — возвращается кэш KV для ускорения autoregressive генерации.
         cache : list, optional
             Кэш предыдущих ключей/значений attention (если используется при инференсе).
+        padding : Padding, опционально
+            Паддинг батча (core/padding.py) — передаётся в attention; None — без паддинга.
 
         Возвращает:
         -----------
@@ -171,12 +175,12 @@ class GemmaDecoder(nn.Module):
 
         Примечания:
         -----------
-        - Паддинг (attention_mask) проверяется в forward модели; блок применяет только встроенную causal-маску.
+        - Паддинг батча (padding) передаётся в attention: маска ключей и позиции для RoPE.
         - Для ускорения в режиме генерации рекомендуется использовать use_cache=True + передавать cache.
 
         """
         norm1_out = self._norm1(x)
-        attention, kv_caches = self._heads(norm1_out, use_cache=use_cache, cache=cache)
+        attention, kv_caches = self._heads(norm1_out, use_cache=use_cache, cache=cache, padding=padding)
         out = attention + x
 
         norm2_out = self._norm2(out)

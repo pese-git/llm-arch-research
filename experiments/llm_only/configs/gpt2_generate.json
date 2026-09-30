@@ -3,7 +3,7 @@
     "test_prompts": [
       "Нейронные сети",
       "Обработка естественного языка",
-      "GPT-2 — это"
+      "Глубокое обучение"
     ],
     "model_config_path": "checkpoints/gpt2-bpe/config.json",
     "model_weights": "checkpoints/gpt2-bpe/model.pt",

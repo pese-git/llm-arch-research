@@ -602,10 +602,10 @@ print(torch.allclose(torch.cat(outs, dim=1), full, atol=1e-5))  # True
 | 1. Позиция первого нового токена | `start_pos = cache[0].size(2) if cache is not None else 0` | абсолютная позиция; проверка `start_pos + seq_len > max_seq_len` → `ValueError` |
 | 2. Проекции | `q = self._q(x)`, `k = self._k(x)`, `v = self._v(x)` | $`Q = XW_Q`$, $`K = XW_K`$, $`V = XW_V`$, форма `[B, T, H·d_h]` |
 | 3. Разбиение на головы | `.reshape(B, T, H, d_h)`, `.transpose(1, 2)` | $`Q_1, \dots, Q_H`$, форма `[B, H, T, d_h]` |
-| 4. Позиция | `q = self._rope(q, start_pos=start_pos)`, то же для `k` | RoPE для Q и K (если задан) |
+| 4. Позиция | `q = self._rope(q, start_pos=start_pos, positions=positions)`, то же для `k` | RoPE для Q и K (если задан); при паддинге позиции — `padding.positions` |
 | 5. Кэш | `k = torch.cat([k_cache, k], dim=2)`, то же для `v` | K и V всех позиций `0 … start_pos + T − 1` |
 | 6. Оценки | `scores = q @ k.transpose(-2, -1) / (self._head_size ** 0.5)` | $`S = Q_h K_h^\top / \sqrt{d_h}`$, форма `[B, H, T, T_kv]` |
-| 7. Маска | `causal_mask = self._tril_mask[start_pos:start_pos + seq_len, :start_pos + seq_len]`; `scores.masked_fill(~causal_mask, float("-inf"))` | $`S + M`$ |
+| 7. Маска | `causal_mask = self._tril_mask[start_pos:start_pos + seq_len, :start_pos + seq_len]`; при паддинге `causal_mask = padding.apply(causal_mask, start_pos, key_start=0)`; `scores.masked_fill(~causal_mask, float("-inf"))` | $`S + M`$ |
 | 8. Softmax и dropout весов | `weights = self._attn_dropout(F.softmax(scores, dim=-1))` | $`P = \operatorname{softmax}(S + M)`$ по строкам |
 | 9. Взвешенная сумма | `x_out = weights @ v` | $`\text{head}_h = P V_h`$ |
 | 10. Склейка голов | `.transpose(1, 2).contiguous().reshape(B, T, H·d_h)` | $`\operatorname{Concat}(\text{head}_1, \dots, \text{head}_H)`$ |
@@ -622,6 +622,8 @@ print(torch.allclose(torch.cat(outs, dim=1), full, atol=1e-5))  # True
 - шаг 7: маска построена `_create_sliding_window_mask` (условие $`0 \le i - j \le W`$; без окна вместо $`W`$ подставляется `max_seq_len`, и это обычная causal-маска), а срез столбцов начинается с `start_pos - cache_len` — с позиции самого старого ключа в кэше;
 - шаг 8: dropout на весах внимания нет;
 - шаг 12: при `window_size` K и V обрезаются до последних `window_size` позиций, возвращается `(k, v, start_pos + seq_len)`.
+
+**Паддинг.** Все три класса принимают необязательный `padding` — `Padding(key_mask, positions)` из [`core/padding.py`](../llm/src/llm/core/padding.py), который модель строит по `attention_mask`. Позиции идут в RoPE вместо `start_pos, start_pos + 1, …`, а `padding.apply` добавляет маску ключей к causal-маске и окну: маска становится `[B, 1, T, T_kv]`, своей у каждой строки батча. Подробно — в [Маски](masks.md#attention_mask-и-паддинг).
 
 `MultiQueryAttention.forward` отличается от MHA тем, что K и V проецируются в одну голову (`nn.Linear(emb_size, head_size)`) и транслируются на все головы Q на шаге 6.
 

@@ -44,6 +44,10 @@ def test_streaming_textdataset_content_matching():
     tokenizer = DummyTokenizer(99)
     block_size = 5
     ds = StreamingTextDataset(texts, tokenizer, block_size)
-    # Проверка, что input_ids и labels совпадают точно
+    # labels совпадают с input_ids на настоящих токенах и равны -100 на паддинге
     for i in range(len(ds)):
-        assert torch.equal(ds[i]["input_ids"], ds[i]["labels"])
+        item = ds[i]
+        real = item["attention_mask"] == 1
+        assert torch.equal(item["labels"][real], item["input_ids"][real])
+        assert (item["labels"][item["attention_mask"] == 0] == -100).all()
+    assert ds[0]["attention_mask"].tolist() == [1, 1, 1, 0, 0]

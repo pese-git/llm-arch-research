@@ -273,16 +273,17 @@ ffn_out = self._ff(norm2_out)          # MoE(RMSNorm2(U^(l)))
 
 - `resolve_head_size(config, "num_q_heads", rope=True)` — размер головы: `head_size` из конфига или `embed_dim // num_q_heads`, с проверками (для RoPE — чётный);
 - читает необязательные `rms_norm_eps` (по умолчанию `1e-6`), `intermediate_size` (`None` → `4 · embed_dim` внутри SwiGLU), `bias` (`True`), `router_aux_loss_coef` (`0.0`; отрицательный — `ValueError`), `rope_theta` (`10000`), `window_size` (`None`);
-- создаёт `_token_embeddings` (`TokenEmbeddings`), **один** модуль `_position_embeddings` (`RoPE`) на все слои, `_dropout`, список `_decoders` из `num_layers` блоков `MixtralDecoder`, финальную `_norm` и `_linear = nn.Linear(embed_dim, vocab_size, bias=bias)` — отдельную, без weight tying.
+- создаёт `_token_embeddings` (`TokenEmbeddings`), **один** модуль `_position_embeddings` (`RoPE`) на все слои, `_dropout`, список `_decoders` из `num_layers` блоков `MixtralDecoder`, финальную `_norm` и `_linear = nn.Linear(embed_dim, vocab_size, bias=bias)` — отдельную, без weight tying;
+- инициализирует веса как HF: `init_normal_` — `Linear` (включая роутер и экспертов) и `Embedding` из $`\mathcal{N}(0, 0.02^2)`$ (ключ `initializer_range`), bias — нули.
 
 Проверка `top_k_experts` в диапазоне `1 … num_experts` делается в конструкторе `MoE`, так что неверный конфиг падает с `ValueError` при создании модели.
 
 `forward(x, use_cache=False, cache=None, attention_mask=None)`:
 
-1. `check_sequence_length` и `check_attention_mask` — длина с учётом кэша не больше `max_position_embeddings`; допускается только правый паддинг ([masks.md](masks.md)).
-2. Запоминает `self._aux_token_mask` — плоскую маску настоящих токенов из `attention_mask` (для aux loss) или `None`.
+1. `check_sequence_length` — длина с учётом кэша не больше `max_position_embeddings`; `padding_from_attention_mask` — маска ключей и позиции при паддинге в любом месте строки ([masks.md](masks.md#attention_mask-и-паддинг)).
+2. Запоминает `self._aux_token_mask` — плоскую маску настоящих новых токенов из `attention_mask` (для aux loss) или `None`.
 3. $`H^{(0)}`$: `self._dropout(self._token_embeddings(x))`.
-4. Цикл по `_decoders` с передачей кэша своего слоя; при `use_cache` собирает новый кэш.
+4. Цикл по `_decoders` с передачей кэша своего слоя и `padding`; при `use_cache` собирает новый кэш.
 5. `logits = self._linear(self._norm(out))`; возвращает `(logits, new_cache)` или `(logits, None)`.
 
 `auxiliary_loss()`:
@@ -387,6 +388,7 @@ print(total - experts + 32 * 2 * one_expert)   # 12879925248
 | `max_position_embeddings` | 512 | максимальная длина последовательности |
 | `rms_norm_eps` | (нет в примере) | необязательный `eps` всех RMSNorm, по умолчанию `1e-6`; у Mixtral 8x7B — `1e-5` |
 | `rope_theta` | (нет в примере) | необязательная база частот RoPE, по умолчанию `10000`; у Mixtral 8x7B — `1e6` (медленнее вращение, рассчитано на контекст 32k, см. [llama.md](llama.md#скорости-вращения-и-база-rope_theta)) |
+| `initializer_range` | (нет в примере) | необязательное стандартное отклонение начальных весов `Linear` и `Embedding`, по умолчанию `0.02` — как в HF; см. [training.md](training.md#какие-модели-что-используют) |
 | `router_aux_loss_coef` | (нет в примере) | необязательный коэффициент [load-balancing loss](#load-balancing-loss) роутера, по умолчанию `0` — выключен; в HF при включении — `0.001` |
 | `num_experts` | 8 | общее число экспертов MoE на слой |
 | `top_k_experts` | 2 | сколько экспертов активируется на токен |

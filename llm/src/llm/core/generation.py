@@ -68,62 +68,39 @@ def check_sequence_length(seq_len: int, start_pos: int, max_seq_len: int) -> Non
         )
 
 
-def check_attention_mask(
-    attention_mask: Optional[torch.Tensor],
-    x: torch.Tensor,
-    cache: Optional[list] = None,
-    generating: bool = False,
-) -> None:
+def check_generation_mask(
+    attention_mask: Optional[torch.Tensor], x: torch.Tensor
+) -> Optional[torch.Tensor]:
     """
-    Проверяет, что attention_mask можно обработать без явного маскирования.
+    Проверяет attention_mask промпта для generate.
 
-    Модели накладывают только causal-маску (и скользящее окно). Этого достаточно для
-    правого паддинга: pad-токены стоят после настоящих, и causal-маска и так не даёт
-    настоящим токенам на них смотреть, поэтому их выход совпадает с выходом без
-    паддинга. Левый паддинг требует маски ключей и сдвига позиций и не поддерживается;
-    вместо молчаливо неверного результата бросается NotImplementedError.
+    Паддинг в промпте должен быть левым: генерация продолжается с последнего токена
+    каждой строки, и он должен быть настоящим. Правый паддинг в generate дал бы продолжение
+    с pad-токена, поэтому отклоняется.
 
-    Допускаются:
-        - None или маска из одних единиц;
-        - в forward без кэша — правый паддинг: в каждой строке единицы, затем нули.
+    Returns:
+        None, если маски нет или в ней одни единицы (generate идёт прежним путём),
+        иначе маску как bool-тензор [batch, seq_len].
 
     Raises:
-        ValueError: Если форма маски не совпадает с [batch, seq_len] входа
-            (с кэшем допускается и полная длина [batch, cache_len + seq_len]).
-        NotImplementedError: Если в маске есть нули, которые нельзя обработать:
-            левый паддинг, пропуски, нули при генерации или вместе с кэшем.
+        ValueError: Если форма маски не [batch, seq_len] или последний токен какой-то строки — паддинг.
     """
     if attention_mask is None:
-        return
-    batch_size, seq_len = x.shape
-    allowed_lengths = {seq_len, cache_start_pos(cache) + seq_len}
-    if (
-        attention_mask.dim() != 2
-        or attention_mask.size(0) != batch_size
-        or attention_mask.size(1) not in allowed_lengths
-    ):
+        return None
+    if attention_mask.dim() != 2 or attention_mask.shape != x.shape:
         raise ValueError(
-            f"attention_mask должна иметь форму [batch, seq_len] = [{batch_size}, {seq_len}], "
+            f"attention_mask должна иметь форму промпта [batch, seq_len] = {list(x.shape)}, "
             f"получено {list(attention_mask.shape)}"
         )
     mask = attention_mask != 0
     if bool(mask.all()):
-        return
-    if generating:
-        raise NotImplementedError(
-            "generate не поддерживает attention_mask с нулями (паддинг в промптах): "
-            "генерация батчем промптов разной длины требует левого паддинга и сдвига позиций"
+        return None
+    if not bool(mask[:, -1].all()):
+        raise ValueError(
+            "в generate паддинг должен быть слева: последний токен каждой строки промпта — "
+            "настоящий (с него продолжается генерация)"
         )
-    if cache is not None:
-        raise NotImplementedError(
-            "attention_mask с нулями вместе с кэшем не поддерживается"
-        )
-    # Правый паддинг: вдоль строки маска не возрастает (1 … 1 0 … 0)
-    if not bool((mask[:, 1:] <= mask[:, :-1]).all()):
-        raise NotImplementedError(
-            "поддерживается только правый паддинг (единицы, затем нули в каждой строке); "
-            "левый паддинг требует маски ключей и сдвига позиций"
-        )
+    return mask
 
 
 def next_generation_input(

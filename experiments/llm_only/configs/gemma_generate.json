@@ -1,9 +1,9 @@
 {
     "bpe_tokenizer": "checkpoints/bpe_tokenizer.json",
     "test_prompts": [
-      "Open weights",
-      "The Llama model is",
-      "Efficient transformers"
+      "Искусственный интеллект",
+      "Трансформеры",
+      "Сверточные нейронные сети"
     ],
     "model_config_path": "checkpoints/gemma-bpe/config.json",
     "model_weights": "checkpoints/gemma-bpe/model.pt",

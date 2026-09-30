@@ -172,7 +172,9 @@ class MixtralDecoder(nn.Module):
         self._norm1 = RMSNorm(emb_size, eps=norm_eps)
         self._norm2 = RMSNorm(emb_size, eps=norm_eps)
 
-    def forward(self, x: torch.Tensor, use_cache: bool = True, cache: tuple = None) -> tuple:
+    def forward(
+        self, x: torch.Tensor, use_cache: bool = True, cache: tuple = None, padding=None
+    ) -> tuple:
         """
         Прямой проход (forward) через декодерный блок MixtralDecoder.
 
@@ -192,6 +194,8 @@ class MixtralDecoder(nn.Module):
             Если True — сохраняет кэш ключей/значений attention для ускорения авторегрессии (инференса).
         cache : list, optional
             (Необязательно) Предварительно вычисленный кеш attention (для ускорения генерации длинного текста).
+        padding : Padding, опционально
+            Паддинг батча (core/padding.py) — передаётся в attention; None — без паддинга.
 
         Возвращает:
         -----------
@@ -206,13 +210,13 @@ class MixtralDecoder(nn.Module):
 
         Примечания:
         -----------
-        - Паддинг (attention_mask) проверяется в forward модели; блок применяет только встроенную маску.
+        - Паддинг батча (padding) передаётся в attention: маска ключей и позиции для RoPE.
         - Реализация поддерживает произвольные батчи и длины последовательностей, в пределах max_seq_len слоя.
         - Модуль MixtralDecoder обычно используется в виде стека (несколько подряд) внутри крупной LLM.
 
         """
         norm1_out = self._norm1(x)
-        attention, kv_caches = self._heads(norm1_out, use_cache=use_cache, cache=cache)
+        attention, kv_caches = self._heads(norm1_out, use_cache=use_cache, cache=cache, padding=padding)
         out = attention + x
 
         norm2_out = self._norm2(out)

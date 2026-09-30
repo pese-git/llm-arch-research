@@ -54,11 +54,11 @@ loss = F.cross_entropy(shift_logits.view(-1, shift_logits.size(-1)),
                        shift_labels.view(-1), ignore_index=-100)
 ```
 
-`F.cross_entropy` с редукцией по умолчанию (`mean`) делит сумму на число позиций с меткой, отличной от `-100`, — это и есть $`|\mathcal{M}|`$.
+`F.cross_entropy` с редукцией по умолчанию (`mean`) делит сумму на число позиций с меткой, отличной от `-100`, — это и есть $`|\mathcal{M}|`$. Если таких позиций в батче нет ($`\mathcal{M}`$ пусто: батч из пустых строк или строк из одного токена), среднее не определено и `F.cross_entropy` вернула бы NaN, который через `backward()` испортил бы веса; поэтому `compute_lm_loss` в этом случае возвращает 0 — шаг не меняет веса.
 
 ### Данные: от текста к батчу
 
-В библиотеке три датасета ([`llm/src/llm/datasets/`](../llm/src/llm/datasets)). Все принимают **список строк**, токенизатор и `block_size` ($`T`$) и возвращают словари `{"input_ids": [T], "labels": [T]}`:
+В библиотеке три датасета ([`llm/src/llm/datasets/`](../llm/src/llm/datasets)). Все принимают **список строк**, токенизатор и `block_size` ($`T`$) и возвращают словари `{"input_ids": [T], "attention_mask": [T], "labels": [T]}`:
 
 | Класс | Когда токенизирует | Что делает со строкой |
 |---|---|---|
@@ -66,19 +66,24 @@ loss = F.cross_entropy(shift_logits.view(-1, shift_logits.size(-1)),
 | `StreamingTextDataset` | при каждом `__getitem__` | то же, но токенизирует на лету; это обычный `Dataset` (не `IterableDataset`), строки всё равно лежат в памяти списком |
 | `TextWithSpecialTokensDataset` | в `__init__` | как `TextDataset`, плюс `add_bos`/`add_eos` добавляют по одному BOS/EOS; при обрезке для них оставляется место |
 
-Важно понимать, что датасеты **не нарезают** длинный текст на последовательные блоки: каждая строка — ровно один пример, всё после $`T`$-го токена отбрасывается. Метки — копия входа (`labels = input_ids.clone()`); сдвиг на одну позицию делает не датасет, а `compute_lm_loss`. Схема для строки из 5 токенов при $`T = 8`$:
+Важно понимать, что датасеты **не нарезают** длинный текст на последовательные блоки: каждая строка — ровно один пример, всё после $`T`$-го токена отбрасывается. Метки — копия входа, но на pad-позициях стоит `-100`, а `attention_mask` отмечает настоящие токены единицами; сдвиг на одну позицию делает не датасет, а `compute_lm_loss`. Всё это собирает одна функция `lm_example` ([`datasets/lm_example.py`](../llm/src/llm/datasets/lm_example.py)). Схема для строки из 5 токенов при $`T = 8`$:
 
 ```
-позиция t        0    1    2    3    4    5    6    7
-input_ids       17   42    8   99    5  PAD  PAD  PAD
-labels          17   42    8   99    5  PAD  PAD  PAD      (копия)
+позиция t          0    1    2    3    4    5    6    7
+input_ids         17   42    8   99    5  PAD  PAD  PAD
+attention_mask     1    1    1    1    1    0    0    0
+labels            17   42    8   99    5 -100 -100 -100
 
 после сдвига в compute_lm_loss:
-предсказание    z_0  z_1  z_2  z_3  z_4  z_5  z_6         (logits[:, :-1])
-цель             42    8   99    5  PAD  PAD  PAD         (labels[:, 1:])
+предсказание      z_0  z_1  z_2  z_3  z_4  z_5  z_6         (logits[:, :-1])
+цель               42    8   99    5 -100 -100 -100         (labels[:, 1:])
 ```
 
-Отсюда важная тонкость. Комментарий в `compute_lm_loss` говорит «Padding токены не участвуют в loss», но датасеты дополняют последовательность `pad_token_id`, а не `-100`, поэтому `ignore_index=-100` не срабатывает и **предсказания pad-токенов входят в loss**. В примере выше 3 из 7 целей — PAD. На учебном корпусе экспериментов (`experiments/shared/configs.py`, в среднем 9 токенов на строку при $`T = 128`$) pad-токены составляют около 94% целей, и loss в основном измеряет, насколько хорошо модель научилась предсказывать «после PAD снова PAD». Как это исправить — в разделе [«Диагностика»](#диагностика).
+В loss входят 4 цели из 7: предсказания паддинга (`-100`) отбрасываются `ignore_index`. Паддинг определяется **по месту**, а не по значению токена: `pad_token_id` может совпадать с настоящим токеном (0 по умолчанию, pad = EOS у GPT-2), и сравнение `input_ids == pad_token_id` выбросило бы из loss и настоящие токены.
+
+`Trainer` передаёт `attention_mask` из батча в модель: `model(input_ids, attention_mask=...)`. При правом паддинге на выход настоящих токенов она не влияет — causal-маска и так не даёт им смотреть на паддинг, — но Mixtral по ней исключает паддинг из статистики роутера (см. [ниже](#вспомогательный-loss-moe)). Если в батче нет `attention_mask` (свой датасет), модель вызывается как раньше, `model(input_ids)`.
+
+До исправления (пункт 57 [бэклога](backlog.md)) датасеты дополняли и `labels` значением `pad_token_id`, `ignore_index=-100` не срабатывал, и **предсказания pad-токенов входили в loss**. В примере выше это 3 из 7 целей, а на учебном корпусе экспериментов (`experiments/shared/configs.py`, в среднем 9 токенов на строку при $`T = 128`$) — около 94%: loss в основном измерял, насколько хорошо модель научилась предсказывать «после PAD снова PAD». Чем это заметно — в разделе [«Диагностика»](#диагностика).
 
 Классический способ подготовки данных для предобучения (так готовят данные GPT-2 и nanoGPT) другой: все документы склеиваются в один поток токенов через разделитель EOS, и поток режется на куски длины $`T`$ без паддинга. В библиотеке такого датасета нет; для коротких строк учебного корпуса хватает `TextDataset`.
 
@@ -224,7 +229,7 @@ u_t = \mu\, u_{t-1} + g_t, \qquad \theta_t = \theta_{t-1} - \eta\, u_t
 
 где $`u_t`$ — «скорость» той же формы, что $`\theta`$, $`u_0 = 0`$, $`\mu \in [0, 1)`$ — коэффициент момента. При постоянном градиенте $`u_t \to g/(1-\mu)`$: для $`\mu = 0.9`$ шаг вдоль устойчивого направления в 10 раз больше, а колебания поперёк оврага (градиент меняет знак) взаимно гасятся.
 
-В репозитории: `get_optimizer(model, optimizer_type="sgd")` создаёт `optim.SGD(..., momentum=0.9)`. Аргумент `weight_decay` в этой ветке **не передаётся** — SGD из `get_optimizer` работает без weight decay.
+В репозитории: `get_optimizer(model, optimizer_type="sgd")` создаёт `optim.SGD(..., momentum=0.9)` с теми же группами weight decay, что и AdamW (см. [ниже](#какие-параметры-исключать-из-weight-decay)); в SGD это L2 через градиент. (До исправления пункта 61 [бэклога](backlog.md) аргумент `weight_decay` в этой ветке не передавался.)
 
 ### Adam
 
@@ -320,31 +325,27 @@ v_1 = 0.001·0.25 = 0.00025    v̂_1 = 0.00025 / (1 − 0.999) = 0.25
 
 Обычная практика — применять weight decay только к матрицам (веса `Linear`, эмбеддинги), а смещения (bias) и коэффициенты нормализации (веса LayerNorm и RMSNorm) не затухать. GPT-1 (разд. 4.1 статьи) применяет свою регуляризацию с $`w = 0.01`$ именно так — «on all non bias or gain weights». Смысл: смещений и коэффициентов нормализации мало, на переобучение они почти не влияют, а затухание коэффициента RMSNorm к нулю просто уменьшает масштаб сигнала и спорит с нормализацией.
 
-Что делает репозиторий. `get_optimizer` ([`training/optimizer.py`](../llm/src/llm/training/optimizer.py)):
+Что делает репозиторий. `get_optimizer` ([`training/optimizer.py`](../llm/src/llm/training/optimizer.py)) делит параметры на две группы функцией `weight_decay_param_groups`:
 
 ```python
-if optimizer_type.lower() == "adamw":
-    return optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
-elif optimizer_type.lower() == "adam":
-    return optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
-elif optimizer_type.lower() == "sgd":
-    return optim.SGD(model.parameters(), lr=lr, momentum=0.9)
-```
-
-- Групп параметров нет: `weight_decay` (по умолчанию `0.01`) применяется ко **всем** параметрам, включая bias и веса LayerNorm/RMSNorm. Для учебного GPT ($`V = 1000`$) это 14 312 одномерных параметров из 3 704 808 — мало, но они всё же затухают.
-- `optimizer_type="adam"` — это Adam с **L2**, а не AdamW.
-- `Trainer` вызывает `get_optimizer(model, lr=lr)`: всегда AdamW, $`\lambda = 0.01`$, $`\beta_1, \beta_2 = 0.9, 0.999`$ (значения PyTorch по умолчанию). Для сравнения, LLaMA (Touvron et al., 2023, разд. 2.3) обучалась с $`\beta_2 = 0.95`$ и $`\lambda = 0.1`$.
-
-Если нужны группы, оптимизатор `Trainer` можно подменить до вызова `train()` — планировщик создаётся внутри `train()` по `self.optimizer`:
-
-```python
-trainer = Trainer(model, dataset, lr=3e-4, batch_size=8, num_epochs=3, warmup_steps=100)
 decay = [p for p in model.parameters() if p.dim() >= 2]      # матрицы Linear и Embedding
 no_decay = [p for p in model.parameters() if p.dim() < 2]    # bias и веса нормализаций
-trainer.optimizer = torch.optim.AdamW(
-    [{"params": decay, "weight_decay": 0.1}, {"params": no_decay, "weight_decay": 0.0}],
-    lr=3e-4, betas=(0.9, 0.95),
-)
+groups = [{"params": decay, "weight_decay": weight_decay},
+          {"params": no_decay, "weight_decay": 0.0}]
+```
+
+- Критерий — размерность: матрицы `Linear` (включая роутер и экспертов MoE) и эмбеддинги двумерны, bias и веса LayerNorm/RMSNorm — одномерны. Общая матрица при weight tying входит в группы один раз (`model.parameters()` не повторяет параметр) и затухает, как и в GPT-1. Для учебного GPT ($`V = 1000`$) без decay остаются 14 312 одномерных параметров из 3 704 808.
+- Эмбеддинги затухают, как в GPT-1, nanoGPT и HF `Trainer` (он исключает только bias и веса нормализаций).
+- Группы одинаковы для всех трёх вариантов: `"adamw"` — decoupled weight decay, `"adam"` — Adam с **L2**, а не AdamW, `"sgd"` — SGD с моментом 0.9 и L2.
+- `Trainer` вызывает `get_optimizer(model, lr=lr)`: всегда AdamW, $`\lambda = 0.01`$ на матрицах, $`\beta_1, \beta_2 = 0.9, 0.999`$ (значения PyTorch по умолчанию). Для сравнения, LLaMA (Touvron et al., 2023, разд. 2.3) обучалась с $`\beta_2 = 0.95`$ и $`\lambda = 0.1`$.
+
+До исправления пункта 61 [бэклога](backlog.md) групп не было, и `weight_decay` применялся ко **всем** параметрам, включая bias и веса нормализаций. Другие $`\lambda`$ или $`\beta`$ можно задать, подменив оптимизатор `Trainer` до вызова `train()` — планировщик создаётся внутри `train()` по `self.optimizer`:
+
+```python
+from llm.training.optimizer import weight_decay_param_groups
+
+trainer = Trainer(model, dataset, lr=3e-4, batch_size=8, num_epochs=3, warmup_steps=100)
+trainer.optimizer = torch.optim.AdamW(weight_decay_param_groups(model, 0.1), lr=3e-4, betas=(0.9, 0.95))
 trainer.train()
 ```
 
@@ -367,7 +368,7 @@ trainer.train()
 
 - $`k`$ — сколько раз уже был вызван `scheduler.step()`, $`k = 0, 1, \dots`$ (номер шага; не путать с числом экспертов $`k`$ из главы о MoE);
 - $`\eta`$ — базовый learning rate (`lr` оптимизатора);
-- $`W_{\text{w}}`$ — `num_warmup_steps` (в `Trainer` — `warmup_steps`); индекс $`\text{w}`$ — чтобы не путать с шириной окна $`W`$;
+- $`W_{\text{w}}`$ — `num_warmup_steps` (в `Trainer` — `warmup_steps` или, при `warmup_ratio`, $`\lceil N_{\text{steps}} \cdot \texttt{warmup\_ratio} \rceil`$); индекс $`\text{w}`$ — чтобы не путать с шириной окна $`W`$;
 - $`N_{\text{steps}}`$ — `num_training_steps` (в `Trainer` — `len(train_loader) * num_epochs`, то же число, что в формуле выше);
 - $`\lambda(k)`$ — множитель от 0 до 1 (не путать с коэффициентом weight decay).
 
@@ -507,8 +508,8 @@ h_L = h_0 + \sum_{i=1}^{2L} r_i
 
 | Инициализация выходной проекции | $`\sigma_W`$ | $`\sigma = \sqrt{d}\,\sigma_W`$ | $`\ln V + \sigma^2/2`$ при $`V = 1000`$ | измерено |
 |---|---|---|---|---|
-| $`\mathcal{N}(0, 0.02^2)`$ (GPT, GPT-2) | 0.02 | 0.32 | 6.96 | 6.96 (std логитов 0.32) |
-| PyTorch по умолчанию (LLaMA, Mistral, Mixtral, Gemma) | $`1/\sqrt{3 \cdot 256} = 0.036`$ | 0.58 | 7.07 | 7.05–7.10 (std логитов 0.58) |
+| $`\mathcal{N}(0, 0.02^2)`$ (все шесть моделей) | 0.02 | 0.32 | 6.96 | 6.95–6.96 (std логитов 0.32) |
+| PyTorch по умолчанию (так были LLaMA, Mistral, Mixtral, Gemma до пункта 62 [бэклога](backlog.md)) | $`1/\sqrt{3 \cdot 256} = 0.036`$ | 0.58 | 7.07 | 7.05–7.10 (std логитов 0.58) |
 
 Измерения — свежие модели с конфигами из `experiments/llm_only/configs/*_train.json`, случайные токены, среднее по трём сидам. Они совпадают с [бэклогом](backlog.md) (пункт 7: «6.96 при `ln V = 6.91` (было 7.07)»). Разница в 0.1 нат невелика, но если начальный loss **сильно** больше $`\ln V`$, логиты слишком велики, и модель уверенно ошибается с первого шага.
 
@@ -518,9 +519,9 @@ h_L = h_0 + \sum_{i=1}^{2L} r_i
 |---|---|---|
 | GPT | `init_normal_`: $`\mathcal{N}(0, 0.02^2)`$, bias 0, LayerNorm 1/0 | `GPT.__init__` |
 | GPT-2 | то же + `scale_residual_projections_` ($`0.02/\sqrt{2L}`$) | `GPT2.__init__` |
-| LLaMA, Mistral, Mixtral, Gemma | **PyTorch по умолчанию**: `Linear` — равномерная с $`\sigma = 1/\sqrt{3n}`$, `Embedding` — $`\mathcal{N}(0,1)`$, RMSNorm — 1 | своей инициализации нет |
+| LLaMA, Mistral, Mixtral, Gemma | `init_normal_`: $`\mathcal{N}(0, 0.02^2)`$, bias 0; веса RMSNorm — 1 (так их создаёт конструктор) | `__init__` каждой модели |
 
-В HuggingFace-реализациях этих моделей веса инициализируются так же, как в GPT, — $`\mathcal{N}(0, 0.02^2)`$ (`initializer_range = 0.02` в `LlamaConfig`, `MistralConfig`, `MixtralConfig`, `GemmaConfig`), так что при обучении с нуля эти модели в репозитории стартуют с более крупными логитами. Для загрузки готовых весов это неважно: `load_state_dict` перезаписывает любую инициализацию.
+Так же инициализируют эти модели HuggingFace-реализации (`_init_weights`, `initializer_range = 0.02` в `LlamaConfig`, `MistralConfig`, `MixtralConfig`, `GemmaConfig`); масштабирования residual-проекций, как у GPT-2, у них нет. Стандартное отклонение у всех шести моделей задаёт необязательный ключ конфига `initializer_range`. Раньше LLaMA, Mistral, Mixtral и Gemma своей инициализации не делали (пункт 62 [бэклога](backlog.md)) и стартовали с более крупными логитами, а Gemma с `tie_word_embeddings` и `scale_embeddings` — с loss ≈258 вместо $`\ln V`$: эмбеддинги $`\mathcal{N}(0, 1)`$, умноженные на $`\sqrt{d}`$, и та же матрица на выходе. Для загрузки готовых весов это неважно: `load_state_dict` перезаписывает любую инициализацию.
 
 ## Регуляризация: dropout
 
@@ -563,7 +564,7 @@ GPT-1 обучался с dropout 0.1 (разд. 4.1 статьи). Соврем
 - `BaseModel.auxiliary_loss()` ([`core/base_model.py`](../llm/src/llm/core/base_model.py)) по умолчанию возвращает `None`.
 - `Mixtral.auxiliary_loss()` возвращает `router_aux_loss_coef * load_balancing_loss(...)` по логитам роутеров, запомненным при последнем прямом проходе, или `None`, если коэффициент равен 0 (**по умолчанию 0** — выключено; в HF `MixtralConfig` коэффициент 0.001).
 - `Trainer.train()` после `compute_lm_loss` вызывает `self.model.auxiliary_loss()` и, если результат не `None`, прибавляет его к loss до `backward()`. В `evaluate()` вспомогательный loss **не** прибавляется: валидационный loss — чистая cross-entropy, его можно сравнивать между моделями.
-- `Trainer` вызывает `model(input_ids)` без `attention_mask`, поэтому pad-токены входят и в статистику загрузки экспертов.
+- `Trainer` передаёт в модель `attention_mask` из батча, и `Mixtral.forward` запоминает по ней маску настоящих токенов: pad-токены в статистику загрузки экспертов не входят.
 
 ## Точность вычислений
 
@@ -642,8 +643,11 @@ Hoffmann et al. (2022, Chinchilla, [arXiv:2203.15556](https://arxiv.org/abs/2203
 `Trainer` ([`training/trainer.py`](../llm/src/llm/training/trainer.py)) — минимальный цикл обучения, общий для всех шести моделей:
 
 ```python
-Trainer(model, train_dataset, val_dataset=None, lr=3e-4, batch_size=8, num_epochs=3, warmup_steps=100)
+Trainer(model, train_dataset, val_dataset=None, lr=3e-4, batch_size=8, num_epochs=3,
+        warmup_steps=None, warmup_ratio=None)
 ```
+
+Длину warmup задают либо числом шагов `warmup_steps`, либо долей `warmup_ratio` от числа шагов обучения: $`W_{\text{w}} = \lceil N_{\text{steps}} \cdot \texttt{warmup\_ratio} \rceil`$, как `warmup_ratio` в HuggingFace `TrainingArguments`. Доля удобнее, когда $`N_{\text{steps}}`$ зависит от размера датасета: warmup не окажется длиннее всего обучения. Оба параметра сразу — `ValueError`; ни одного — 100 шагов, как раньше. Если $`W_{\text{w}} \ge N_{\text{steps}}`$, `train()` выдаёт предупреждение: learning rate не дойдёт до заданного.
 
 Конструктор создаёт `DataLoader` (`shuffle=True` для обучающего, без перемешивания для валидационного), оптимизатор `get_optimizer(model, lr=lr)` (AdamW, $`\lambda = 0.01`$), выбирает устройство (`cuda`, если доступна, иначе `cpu`) и переносит на него модель.
 
@@ -670,7 +674,7 @@ flowchart TD
 
 | Шаг | Код | Что происходит | Раздел главы |
 |---|---|---|---|
-| 0 | `total_steps = len(self.train_loader) * self.num_epochs`; `get_linear_schedule_with_warmup(...)` | число шагов $`N_{\text{steps}}`$ и планировщик | [расписание](#линейный-warmup-и-линейный-спад) |
+| 0 | `total_steps = len(self.train_loader) * self.num_epochs`; `self.num_warmup_steps(total_steps)`; `get_linear_schedule_with_warmup(...)` | число шагов $`N_{\text{steps}}`$, длина warmup (предупреждение, если она не меньше $`N_{\text{steps}}`$) и планировщик | [расписание](#линейный-warmup-и-линейный-спад) |
 | 1 | `self.model.train()` | включить dropout (в начале каждой эпохи) | [dropout](#регуляризация-dropout) |
 | 2 | `self.optimizer.zero_grad()` | обнулить накопленные `.grad` | [backprop](#обратное-распространение-ошибки) |
 | 3 | `outputs = self.model(input_ids)`, `logits = outputs[0]` | forward, логиты $`[B, T, V]`$ | |
@@ -696,8 +700,10 @@ uv run python experiments/llm_only/run_llm_experiment.py --model gpt2 --action t
 Раздел `training` конфига передаётся в `Trainer`:
 
 ```json
-"training": { "learning_rate": 0.0003, "batch_size": 2, "num_epochs": 3, "warmup_steps": 50 }
+"training": { "learning_rate": 0.0003, "batch_size": 2, "num_epochs": 3, "warmup_ratio": 0.1 }
 ```
+
+Вместо `warmup_ratio` можно задать `warmup_steps`; без обоих ключей скрипт обучает без warmup. На учебном корпусе 18 шагов, и `warmup_ratio = 0.1` даёт $`\lceil 1{,}8 \rceil = 2`$ шага warmup.
 
 Скрипт берёт 80% учебного корпуса (`load_training_data`), обучает или загружает BPE-токенизатор, подставляет его `vocab_size` в `model_config`, строит `TextDataset` с `block_size = max_position_embeddings` и вызывает `Trainer(...).train()` без валидационного набора. Веса сохраняются как голый `state_dict` (`torch.save(model.state_dict(), ...)`), а конфиг — отдельным JSON; режим `generate` загружает их через `load_state_dict`.
 
@@ -741,31 +747,20 @@ restored = GPT.load("checkpoints/gpt_tiny.pt", device="cpu")
 
 **Loss не падает или падает очень медленно.**
 
-- Проверьте, какой learning rate реально был: `trainer.optimizer.param_groups[0]["lr"]`. В учебных конфигах `warmup_steps = 50`, а всего шагов 18 (12 примеров, $`B = 2`$, 3 эпохи): обучение целиком проходит внутри warmup, и максимальный множитель — $`\lambda(17) = 17/50 = 0.34`$. В нашем прогоне GPT по этому конфигу средний loss эпох — 6.07 → 5.30 → 3.74, а с `warmup_steps = 5` — 5.34 → 2.02 → 1.33. Warmup должен быть малой долей от $`N_{\text{steps}}`$ (обычно единицы процентов).
+- Проверьте, какой learning rate реально был: `trainer.optimizer.param_groups[0]["lr"]`, а множитель расписания на шаге $`k`$ — `trainer.scheduler.lr_lambdas[0](k)`. Warmup должен быть малой долей от $`N_{\text{steps}}`$ (обычно единицы процентов). Раньше в учебных конфигах стояло `warmup_steps = 50` при 18 шагах (12 примеров, $`B = 2`$, 3 эпохи; пункт 60 [бэклога](backlog.md)): обучение целиком проходило внутри warmup, и максимальный множитель был $`\lambda(17) = 17/50 = 0.34`$. В прогоне GPT по этому конфигу (паддинг исключён из loss) средний loss эпох — 6.08 → 5.98 → 5.79, а с нынешним `warmup_ratio = 0.1` (2 шага warmup) — 6.04 → 5.27 → 4.84. Теперь `Trainer` предупреждает, если warmup не короче всего обучения.
 - Слишком маленький или слишком большой $`\eta`$: loss стоит на месте или скачет. Для маленьких трансформеров с AdamW типичны $`10^{-4}`$–$`10^{-3}`$.
 - Двойной сдвиг меток. `compute_lm_loss` сдвигает сам; если сдвинуть `labels` ещё и в датасете, модель будет предсказывать токен через один.
 - Начальный loss сильно больше $`\ln V`$ — проблема инициализации или масштаба логитов (см. [выше](#начальный-loss--ln-v)).
 
 **Loss падает подозрительно быстро.**
 
-- Pad-токены в loss (см. [«Данные»](#данные-от-текста-к-батчу)). В нашем прогоне с `warmup_steps = 5` валидационный loss опускается до 1.23 (перплексия 3.4) — почти целиком за счёт предсказаний «PAD после PAD». С масками `-100` на паддинге тот же прогон даёт валидационный loss 5.92 при $`\ln V = 6.18`$ ($`V = 484`$ у токенизатора, обученного на всех 15 строках корпуса; скрипт эксперимента обучает токенизатор только на 12 обучающих строках и получает $`V = 426`$, см. [tokenization.md](tokenization.md)) — модель на 12 строках почти ничему не научилась. Честный вариант — замаскировать паддинг:
+- Pad-токены в loss (см. [«Данные»](#данные-от-текста-к-батчу)). Датасеты `llm/datasets` ставят на паддинге `-100` сами, но свой датасет или коллатор может этого не делать. Так было в библиотеке до исправления пункта 57 [бэклога](backlog.md): в прогоне с `warmup_steps = 5` валидационный loss опускался до 1.23 (перплексия 3.4) — почти целиком за счёт предсказаний «PAD после PAD». С метками `-100` на паддинге тот же прогон даёт валидационный loss 5.92 при $`\ln V = 6.18`$ ($`V = 484`$ у токенизатора, обученного на всех 15 строках корпуса; скрипт эксперимента обучает токенизатор только на 12 обучающих строках и получает $`V = 426`$, см. [tokenization.md](tokenization.md)) — модель на 12 строках почти ничему не научилась. Проверить свой датасет — посчитать долю целей, которые входят в loss:
 
 ```python
-from torch.utils.data import Dataset
-
-class MaskPadLabels(Dataset):
-    """Метки на pad-позициях заменяются на -100 — ignore_index в compute_lm_loss."""
-    def __init__(self, dataset, pad_token_id):
-        self.dataset, self.pad_token_id = dataset, pad_token_id
-    def __len__(self):
-        return len(self.dataset)
-    def __getitem__(self, idx):
-        item = self.dataset[idx]
-        labels = item["labels"].clone()
-        labels[item["input_ids"] == self.pad_token_id] = -100
-        return {"input_ids": item["input_ids"], "labels": labels}
-
-train_dataset = MaskPadLabels(TextDataset(texts, tokenizer, block_size=128), tokenizer.pad_token_id)
+batch = next(iter(trainer.train_loader))
+targets = batch["labels"][:, 1:]
+print((targets != -100).float().mean())   # доля целей в loss: при коротких строках и большом T
+                                          # она мала; около 1.0 — паддинг входит в loss
 ```
 
 - Утечка данных: одни и те же строки в обучении и валидации.
@@ -796,12 +791,12 @@ train_dataset = MaskPadLabels(TextDataset(texts, tokenizer, block_size=128), tok
 
 ## Итоги
 
-- Обучение минимизирует среднюю cross-entropy следующего токена; датасеты возвращают `labels = input_ids`, сдвиг делает `compute_lm_loss`, а pad-токены по умолчанию входят в loss.
+- Обучение минимизирует среднюю cross-entropy следующего токена; датасеты возвращают `labels` — копию `input_ids` с `-100` на паддинге — и `attention_mask`, сдвиг делает `compute_lm_loss`, pad-токены в loss не входят.
 - Градиент cross-entropy по логитам — $`p - \mathbf{y}`$; autograd по цепному правилу доводит его до всех весов.
-- Adam нормирует шаг каждого параметра оценкой второго момента, с поправкой смещения в начале; AdamW применяет weight decay мимо этой нормировки. В репозитории — AdamW с $`\lambda = 0.01`$ на все параметры.
-- Learning rate: линейный warmup от 0 и линейный спад до 0; warmup гасит шум ранних оценок Adam и нестабильность post-LN. Косинусного расписания в репозитории нет.
+- Adam нормирует шаг каждого параметра оценкой второго момента, с поправкой смещения в начале; AdamW применяет weight decay мимо этой нормировки. В репозитории — AdamW с $`\lambda = 0.01`$ на матрицах (веса `Linear` и эмбеддинги); bias и веса нормализаций не затухают.
+- Learning rate: линейный warmup от 0 и линейный спад до 0; warmup гасит шум ранних оценок Adam и нестабильность post-LN. Длину warmup удобно задавать долей от числа шагов (`warmup_ratio`). Косинусного расписания в репозитории нет.
 - Gradient clipping ограничивает общую норму градиента единицей и защищает от всплесков.
-- GPT и GPT-2 инициализируются $`\mathcal{N}(0, 0.02^2)`$ (GPT-2 — с масштабом $`1/\sqrt{2L}`$ для residual-проекций), остальные модели — по умолчанию PyTorch; начальный loss $`\approx \ln V + \sigma^2/2`$.
+- Все шесть моделей инициализируются $`\mathcal{N}(0, 0.02^2)`$, как в статьях и HuggingFace (GPT-2 — ещё и с масштабом $`1/\sqrt{2L}`$ для residual-проекций); начальный loss $`\approx \ln V + \sigma^2/2`$.
 - Dropout — $`m \odot h/(1-p)`$ только в режиме train; в современных LLM его обычно нет.
 - Состояние AdamW — 16 байт на параметр; mixed precision в `Trainer` не реализована.
 

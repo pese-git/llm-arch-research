@@ -2,6 +2,7 @@ from torch import nn
 import torch
 import torch.nn.functional as F
 from .rope import RoPE
+from llm.core.padding import Padding
 
 
 class MultiHeadAttention(nn.Module):
@@ -152,6 +153,7 @@ class MultiHeadAttention(nn.Module):
         x: torch.Tensor,
         use_cache: bool = True,
         cache: list = None,
+        padding: Padding = None,
     ):
         """
         Основной шаг \"многоголового внимания\": находит взаимосвязи между токенами 
@@ -173,6 +175,9 @@ class MultiHeadAttention(nn.Module):
             Нужно ли использовать кэш для KV attention (важно для ускорения генерации по одному токену).
         cache : list, опционально
             Предыдущий кэш Key/Value — для генерации текста по частям.
+        padding : Padding, опционально
+            Паддинг батча (core/padding.py): маска ключей по всем слотам и позиции новых
+            токенов для RoPE. None — паддинга нет: только встроенная маска и позиции start_pos, …
 
         Возвращает:
         -----------
@@ -182,7 +187,7 @@ class MultiHeadAttention(nn.Module):
         Важно:
         -------
         - Shape входа всегда [batch, seq_len, emb_size], выход тот же.
-        - Маска только внутренняя (causal); паддинг проверяется в forward модели (check_attention_mask).
+        - Маска внутренняя (causal); с padding к ней добавляется маска ключей паддинга (core/padding.py).
         - При длине кэша + seq_len > max_seq_len выбросит ValueError.
         - При использовании use_cache=True кешируется только последние токены (актуально для LLM).
 
@@ -221,10 +226,11 @@ class MultiHeadAttention(nn.Module):
         v = v.transpose(1, 2)
 
         # Пропустите матрицы запроса и ключа через экземпляр rope, чтобы выполнить поворот.
+        positions = padding.positions if padding is not None else None
         if self._rope is not None:
             # ✅ Применяем RoPE к Q и K (НЕ к V!)
-            q = self._rope(q, start_pos=start_pos)  # [B, T, hs]
-            k = self._rope(k, start_pos=start_pos)  # [B, T, hs]
+            q = self._rope(q, start_pos=start_pos, positions=positions)  # [B, T, hs]
+            k = self._rope(k, start_pos=start_pos, positions=positions)  # [B, T, hs]
 
         # Если cache пришел, то объединяем кэш и одну строку из ключа и значения. Это будут новые key и value  для последующих вычислений.
         # 5. Кэширование (для autoregressive generation)
@@ -241,6 +247,9 @@ class MultiHeadAttention(nn.Module):
         # столбцы — все ключи 0 … start_pos + seq_len − 1 (кэш + новые). Нужна и с кэшем:
         # при нескольких новых токенах (префилл кусками) они не должны видеть друг друга «вперёд».
         causal_mask = self._tril_mask[start_pos:start_pos + seq_len, :start_pos + seq_len]
+        if padding is not None:
+            # + маска ключей паддинга, своя у каждой строки: [B, 1, T, T_kv]
+            causal_mask = padding.apply(causal_mask, start_pos, key_start=0)
         scores = scores.masked_fill(~causal_mask, float("-inf"))
 
         # Применить к матрице внимания (построчно) функцию Softmax.

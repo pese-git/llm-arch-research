@@ -308,19 +308,21 @@ flowchart TB
 3. Создаёт `TokenEmbeddings`, **один** `RoPE` и `nn.Dropout`.
 4. Строит `num_layers` блоков `CachedDecoder`, передавая каждому `norm_layer=partial(RMSNorm, eps=norm_eps)`, свежий `SwiGLU(...)` и общий `rope`.
 5. Финальный `RMSNorm` и голову `nn.Linear(embed_dim, vocab_size, bias=bias)`.
+6. Инициализирует веса как HF: `self.apply(partial(init_normal_, std=initializer_range))` — `Linear` и `Embedding` из $`\mathcal{N}(0, 0.02^2)`$, bias — нули ([training.md](training.md#какие-модели-что-используют)).
 
 `forward(x, use_cache=False, cache=None, attention_mask=None)`:
 
 ```python
-check_sequence_length(x.size(1), cache_start_pos(cache), self._max_seq_len)  # позиции < T_max
-check_attention_mask(attention_mask, x, cache)      # только маски, которых достаточно causal-маске
+start_pos = cache_start_pos(cache)
+check_sequence_length(x.size(1), start_pos, self._max_seq_len)  # позиции < T_max
+padding = padding_from_attention_mask(attention_mask, x, start_pos)  # маска ключей и позиции или None
 out = self._dropout(self._token_embeddings(x))      # H^(0); позиций на входе нет
 for i, decoder in enumerate(self._decoders):        # блоки l = 1..L, у каждого свой кэш
-    out, layer_cache = decoder(out, use_cache=use_cache, cache=cache[i] if cache else None)
+    out, layer_cache = decoder(out, use_cache=use_cache, cache=cache[i] if cache else None, padding=padding)
 logits = self._linear(self._norm(out))              # Z = RMSNorm_f(H^(L)) W_out + b
 ```
 
-(фрагмент упрощён; в исходнике кэш слоёв собирается в список `new_cache` и возвращается как `(logits, new_cache)` или `(logits, None)`). Кэш — список из $`L`$ пар `(K, V)` формы `[B, H, T_cache, d_h]`. Об ограничениях `attention_mask` — в [masks.md](masks.md).
+(фрагмент упрощён; в исходнике кэш слоёв собирается в список `new_cache` и возвращается как `(logits, new_cache)` или `(logits, None)`). Кэш — список из $`L`$ пар `(K, V)` формы `[B, H, T_cache, d_h]`. Как `attention_mask` превращается в маску ключей и позиции RoPE — в [masks.md](masks.md#attention_mask-и-паддинг).
 
 ### Класс `CachedDecoder`
 
@@ -428,6 +430,7 @@ print(count(model))                         # 6738415616
 | `head_size` | (нет в примере) | необязательный $`d_h`$, по умолчанию `embed_dim // num_heads`; должен быть чётным |
 | `rms_norm_eps` | (нет в примере) | необязательный $`\varepsilon`$ всех RMSNorm, по умолчанию `1e-6` — как в LLaMA |
 | `rope_theta` | (нет в примере) | необязательная база частот RoPE, по умолчанию `10000` — как в LLaMA; см. [Скорости вращения и база](#скорости-вращения-и-база-rope_theta) |
+| `initializer_range` | (нет в примере) | необязательное стандартное отклонение начальных весов `Linear` и `Embedding`, по умолчанию `0.02` — как в HF; см. [training.md](training.md#какие-модели-что-используют) |
 | `intermediate_size` | (нет в примере) | необязательный $`d_{ff}`$ SwiGLU, по умолчанию `4 · embed_dim`; в LLaMA — `llama_intermediate_size(embed_dim)`, см. [Размер FFN и bias](#размер-ffn-и-bias) |
 | `bias` | (нет в примере) | необязательный: bias во всех `Linear` (Q/K/V, выход attention, три матрицы SwiGLU, голова), по умолчанию `true`; в LLaMA — `false` |
 

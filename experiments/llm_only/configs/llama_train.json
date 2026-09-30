@@ -2,7 +2,7 @@
     "bpe_tokenizer": "checkpoints/bpe_tokenizer.json",
     "bpe_vocab_size": 1000,
     "bpe_special_tokens": ["<pad>", "<unk>", "<bos>", "<eos>"],
-    "test_prompts": ["Open source AI", "What is Llama?"],
+    "test_prompts": ["Машинное обучение", "Мир программирования"],
     "model_config": {
       "vocab_size": null,
       "embed_dim": 256,
@@ -17,7 +17,7 @@
       "learning_rate": 0.0003,
       "batch_size": 2,
       "num_epochs": 3,
-      "warmup_steps": 50
+      "warmup_ratio": 0.1
     },
     "log_path": "checkpoints/llama_only_training_logs.json"
   }
