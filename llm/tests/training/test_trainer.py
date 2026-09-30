@@ -1,6 +1,7 @@
 import pytest
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.utils.data import Dataset
 from llm.training.trainer import Trainer
 
@@ -129,3 +130,99 @@ def test_trainer_models_without_auxiliary_loss():
     trainer = Trainer(TinyModel(), ToyLMDataset(), lr=1e-3, batch_size=4, num_epochs=1, warmup_steps=1)
     trainer.train()
     assert trainer.loss_history[0] < 100
+
+
+# --- Паддинг в loss (бэклог, пункт 57) ---
+
+from llm.datasets.text_dataset import TextDataset
+from llm.models.gpt import GPT
+from llm.models.mixtral import Mixtral
+
+
+class CharTokenizer:
+    pad_token_id = 0
+
+    def encode(self, text, add_special_tokens=False, **kwargs):
+        return [ord(c) - ord("a") + 1 for c in text]
+
+
+GPT_CONFIG = {"vocab_size": 30, "embed_dim": 16, "num_heads": 2, "num_layers": 1,
+              "max_position_embeddings": 16, "dropout": 0.0}
+TEXTS = ["abcde", "fghijklm", "nop"]
+
+
+def test_compute_lm_loss_ignores_padding():
+    """Loss — среднее только по позициям с меткой, отличной от -100."""
+    torch.manual_seed(0)
+    logits = torch.randn(1, 5, 7)
+    labels = torch.tensor([[3, 1, 4, -100, -100]])
+    trainer = Trainer(TinyModel(), ToyLMDataset(), batch_size=1)
+    expected = F.cross_entropy(logits[0, :2], labels[0, 1:3])
+    assert trainer.compute_lm_loss(logits, labels).item() == pytest.approx(expected.item())
+
+
+def test_compute_lm_loss_no_targets_is_zero_not_nan():
+    """Батч из одного паддинга: loss 0 с графом, а не NaN, который испортил бы веса."""
+    logits = torch.randn(2, 4, 7, requires_grad=True)
+    labels = torch.full((2, 4), -100, dtype=torch.long)
+    trainer = Trainer(TinyModel(), ToyLMDataset(), batch_size=1)
+    loss = trainer.compute_lm_loss(logits, labels)
+    assert loss.item() == 0.0
+    loss.backward()
+    assert torch.equal(logits.grad, torch.zeros_like(logits))
+
+
+def test_trainer_passes_attention_mask_to_model():
+    """attention_mask из батча доходит до модели."""
+    seen = []
+
+    class MaskModel(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.emb = nn.Embedding(30, 30)
+
+        def forward(self, x, attention_mask=None):
+            seen.append(attention_mask)
+            return self.emb(x)
+
+    dataset = TextDataset(TEXTS, CharTokenizer(), block_size=10)
+    Trainer(MaskModel(), dataset, batch_size=3, num_epochs=1, warmup_steps=1).train()
+    # Батч перемешан: сверяем число настоящих токенов в строках
+    assert sorted(seen[0].sum(dim=1).tolist()) == sorted(len(t) for t in TEXTS)
+
+
+def test_validation_loss_does_not_depend_on_padding_length():
+    """Loss на реальной модели не зависит от block_size: паддинг не входит ни в loss,
+    ни (благодаря causal-маске и attention_mask) в выход настоящих токенов."""
+    torch.manual_seed(0)
+    model = GPT(GPT_CONFIG)
+    losses = []
+    for block_size in (8, 16):
+        dataset = TextDataset(TEXTS, CharTokenizer(), block_size=block_size)
+        losses.append(Trainer(model, dataset, dataset, batch_size=3).evaluate())
+    assert losses[0] == pytest.approx(losses[1], abs=1e-5)
+
+
+def test_trainer_trains_real_model_with_padding():
+    """Обучение GPT на примерах с паддингом: loss конечен и падает."""
+    torch.manual_seed(0)
+    dataset = TextDataset(TEXTS * 4, CharTokenizer(), block_size=12)
+    trainer = Trainer(GPT(GPT_CONFIG), dataset, lr=1e-2, batch_size=4, num_epochs=3, warmup_steps=1)
+    trainer.train()
+    assert all(torch.isfinite(torch.tensor(trainer.loss_history)))
+    assert trainer.loss_history[-1] < trainer.loss_history[0]
+
+
+def test_mixtral_aux_loss_ignores_padding_from_trainer():
+    """Trainer передаёт attention_mask, и Mixtral не учитывает паддинг в load-balancing loss."""
+    torch.manual_seed(0)
+    config = {"vocab_size": 30, "embed_dim": 16, "num_q_heads": 2, "num_kv_heads": 1,
+              "num_layers": 1, "max_position_embeddings": 16, "dropout": 0.0,
+              "num_experts": 4, "top_k_experts": 2, "router_aux_loss_coef": 0.01}
+    model = Mixtral(config)
+    dataset = TextDataset(TEXTS, CharTokenizer(), block_size=12)
+    batch = {k: torch.stack([dataset[i][k] for i in range(3)]) for k in dataset[0]}
+    trainer = Trainer(model, dataset, batch_size=3)
+    trainer._forward(batch)
+    assert model._aux_token_mask is not None
+    assert int(model._aux_token_mask.sum()) == sum(len(t) for t in TEXTS)

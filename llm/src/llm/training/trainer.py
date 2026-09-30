@@ -74,7 +74,8 @@ class Trainer:
         model : torch.nn.Module
             Модель для обучения (например, GPT, LLaMA, Mistral).
         train_dataset : torch.utils.data.Dataset
-            Обучающий датасет с полями input_ids и labels.
+            Обучающий датасет с полями input_ids и labels (и, если есть паддинг, attention_mask).
+            Паддинг исключается из loss метками -100 (датасеты llm.datasets ставят их сами).
         val_dataset : torch.utils.data.Dataset, optional
             Валидационный датасет для контроля качества обучения.
         lr : float, default=3e-4
@@ -117,11 +118,17 @@ class Trainer:
         Возвращаемое значение
         ---------------------
         loss : torch.Tensor
-            Средний loss по batch.
+            Средний loss по позициям batch с меткой, отличной от -100.
+            Если таких позиций нет — 0 (со связью с графом), а не NaN.
         """
         # Сдвигаем логиты и метки для языкового моделирования (автогрессия)
         shift_logits = logits[..., :-1, :].contiguous()
         shift_labels = labels[..., 1:].contiguous()
+
+        # Батч без целей (только паддинг и строки из одного токена): среднее по пустому
+        # множеству дало бы NaN, и он испортил бы веса через backward
+        if not bool((shift_labels != -100).any()):
+            return shift_logits.sum() * 0.0
 
         # CrossEntropyLoss (игнорируем паддинги: ignore_index=-100)
         loss = F.cross_entropy(
@@ -130,6 +137,23 @@ class Trainer:
             ignore_index=-100,  # Padding токены не участвуют в loss
         )
         return loss
+
+    def _forward(self, batch):
+        """
+        Прямой проход по батчу: логиты модели.
+
+        attention_mask передаётся в модель, только если она есть в батче: модели llm
+        маскируют по ней паддинг (для Mixtral — и в load-balancing loss), а модели без
+        этого аргумента получают один input_ids, как раньше.
+        """
+        input_ids = batch["input_ids"].to(self.device)
+        attention_mask = batch.get("attention_mask")
+        if attention_mask is not None:
+            outputs = self.model(input_ids, attention_mask=attention_mask.to(self.device))
+        else:
+            outputs = self.model(input_ids)
+        # Универсально обрабатываем выходы модели: tuple или просто tensor (logits)
+        return outputs[0] if isinstance(outputs, tuple) else outputs
 
     def train(self):
         """
@@ -159,15 +183,8 @@ class Trainer:
             for batch in progress_bar:
                 self.optimizer.zero_grad()
 
-                input_ids = batch["input_ids"].to(self.device)
                 labels = batch["labels"].to(self.device)
-
-                # Универсально обрабатываем выходы модели: tuple или просто tensor (logits)
-                outputs = self.model(input_ids)
-                if isinstance(outputs, tuple):
-                    logits = outputs[0]
-                else:
-                    logits = outputs
+                logits = self._forward(batch)
 
                 # Вычисляем loss автогрессивной LM-задачи и вспомогательный loss модели
                 # (например, load-balancing loss роутера MoE), если он есть
@@ -203,14 +220,8 @@ class Trainer:
 
         with torch.no_grad():
             for batch in self.val_loader:
-                input_ids = batch["input_ids"].to(self.device)
                 labels = batch["labels"].to(self.device)
-
-                outputs = self.model(input_ids)
-                if isinstance(outputs, tuple):
-                    logits = outputs[0]
-                else:
-                    logits = outputs
+                logits = self._forward(batch)
                 loss = self.compute_lm_loss(logits, labels)
                 total_loss += loss.item()
 

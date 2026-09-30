@@ -315,7 +315,7 @@ Unigram даёт не одно разбиение, а распределение
 
 | Токен | Назначение | Где в репозитории |
 |---|---|---|
-| `<pad>` | **паддинг**: дополняет короткие последовательности до общей длины батча. На pad-позиции модели смотреть нельзя (маска) и учить их не нужно (метка `-100`) | `TextDataset` дополняет `input_ids` значением `pad_token_id`; маски — в [masks.md](masks.md) |
+| `<pad>` | **паддинг**: дополняет короткие последовательности до общей длины батча. На pad-позиции модели смотреть нельзя (маска) и учить их не нужно (метка `-100`) | `TextDataset` дополняет `input_ids` значением `pad_token_id`, `labels` — значением `-100`, и возвращает `attention_mask`; маски — в [masks.md](masks.md) |
 | `<unk>` | **неизвестный** токен: замена символа, которого нет в словаре | `BPETokenizer.encode` подставляет `unk_token_id` вместо неизвестного символа |
 | `<bos>` | **начало последовательности** (begin of sequence): даёт модели «пустой» контекст, чтобы предсказать первый настоящий токен; отмечает начало документа | `encode(..., add_special_tokens=True)`; `TextWithSpecialTokensDataset(add_bos=True)` |
 | `<eos>` | **конец последовательности** (end of sequence): модель учится его генерировать, когда текст закончен; по нему останавливается генерация и разделяются документы в потоке | `encode(..., add_special_tokens=True)`; `generate(..., eos_token_id=...)` — [generation.md](generation.md) |
@@ -481,7 +481,7 @@ flowchart TB
 1. **`train`**: если по пути `config["bpe_tokenizer"]` (во всех конфигах — `checkpoints/bpe_tokenizer.json`) уже есть файл, токенизатор загружается `BPETokenizer.load`; иначе обучается на train-части корпуса `TRAIN_TEXTS` из `experiments/shared/configs.py` с `vocab_size=config["bpe_vocab_size"]` (1000) и `special_tokens=config["bpe_special_tokens"]` и сохраняется. Токенизатор общий для всех шести моделей: при повторных запусках `bpe_vocab_size` уже не применяется.
 2. Для каждого `test_prompts` печатается `encode` → `decode` — быстрая проверка обратимости.
 3. `model_config["vocab_size"] = tokenizer.get_vocab_size()` — размер словаря модели берётся из токенизатора (с учётом специальных токенов; на встроенном корпусе 422 + 4 = 426).
-4. `TextDataset(train_texts, tokenizer, block_size=model_config["max_position_embeddings"])` кодирует каждую строку (`add_special_tokens=False`), обрезает или дополняет её `pad_token_id` до `block_size`.
+4. `TextDataset(train_texts, tokenizer, block_size=model_config["max_position_embeddings"])` кодирует каждую строку (`add_special_tokens=False`), обрезает или дополняет её `pad_token_id` до `block_size`; на pad-позициях `labels = -100`, так что паддинг не входит в loss.
 5. **`generate`**: `tokenizer.encode(prompt, add_special_tokens=False)` → `model.generate(...)` → `tokenizer.decode(generated_ids[0].tolist())`.
 
 **Тонкость.** Корпус `TRAIN_TEXTS` — русский, а часть `test_prompts` в конфигах — английские (`"GPT language model"`, `"The Llama model is"`). Латинских букв в корпусе почти нет, и такой промпт кодируется в основном в `<unk>`: `"GPT language model"` → `['GPT', ' ', '<unk>', '<unk>', 'n', ...]`. При декодировании `<unk>` выбрасываются, и печатается обрывок `GPT n o`. Это не ошибка токенизатора, а следствие символьного BPE на маленьком корпусе: символов, которых не было при обучении, в словаре нет. Byte-level BPE такой проблемы не имеет.
