@@ -1,0 +1,32 @@
+/* Формулы: длинные выключные не ломают вёрстку, а прокручиваются */
+.sl-markdown-content .math-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-block: 0.25rem;
+}
+.sl-markdown-content .katex {
+  font-size: 1.05em;
+}
+
+/* Диаграммы: широкие прокручиваются по горизонтали */
+.sl-markdown-content pre.mermaid {
+  overflow-x: auto;
+  text-align: center;
+}
+
+/* Ответы к упражнениям */
+.sl-markdown-content details {
+  border: 1px solid var(--sl-color-gray-5);
+  border-radius: 0.5rem;
+  padding: 0.5rem 1rem;
+}
+.sl-markdown-content details summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+/* Широкие таблицы прокручиваются внутри страницы */
+.sl-markdown-content table {
+  display: block;
+  overflow-x: auto;
+}
