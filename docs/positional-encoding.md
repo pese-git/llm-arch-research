@@ -143,9 +143,11 @@ X^{(0)}_{t} = E[x_t] + P[t], \qquad t = 0, 1, \dots, T-1
 
 ### Реализация: `PositionalEmbeddings`
 
-Класс [`PositionalEmbeddings`](../llm/src/llm/core/positional_embeddings.py) — обёртка над `nn.Embedding(max_seq_len, emb_size)`: его матрица весов и есть $`P`$. Метод `forward(seq_len, start_pos=0)` возвращает строки матрицы $`P`$ с номерами `start_pos … start_pos + seq_len − 1` формы `[seq_len, emb_size]`:
+Класс [`PositionalEmbeddings`](../llm/src/llm/core/positional_embeddings.py) — обёртка над `nn.Embedding(max_seq_len, emb_size)`: его матрица весов и есть $`P`$. Метод `forward(seq_len, start_pos=0, positions=None)` возвращает строки матрицы $`P`$ с номерами `start_pos … start_pos + seq_len − 1` формы `[seq_len, emb_size]`, а с `positions` формы `[batch, seq_len]` — строки с этими номерами, `[batch, seq_len, emb_size]`:
 
 ```python
+if positions is not None:          # паддинг: своя позиция у каждой строки
+    return self.embedding(positions)                # [batch, seq_len, emb_size]
 if seq_len < 1 or start_pos + seq_len > self.max_seq_len:
     raise IndexError(...)
 ...
@@ -157,11 +159,14 @@ return self.embedding(positions)
 
 ```python
 tok_out = self._token_embeddings(x)                              # [batch, seq_len, emb_size]
-pos_out = self._position_embeddings(seq_len, start_pos=start_pos)  # [seq_len, emb_size]
-out = self._dropout(tok_out + pos_out.unsqueeze(0))              # broadcast по батчу
+if padding is None:
+    pos_out = self._position_embeddings(seq_len, start_pos=start_pos).unsqueeze(0)  # [1, seq_len, emb_size]
+else:
+    pos_out = self._position_embeddings(seq_len, positions=padding.positions)       # [batch, seq_len, emb_size]
+out = self._dropout(tok_out + pos_out)                           # broadcast по батчу без паддинга
 ```
 
-`unsqueeze(0)` превращает `[seq_len, emb_size]` в `[1, seq_len, emb_size]`, и одна и та же матрица позиций прибавляется ко всем примерам батча. Веса $`P`$ инициализируются вместе с остальными `Embedding`/`Linear` нормальным распределением ($`\mathcal{N}(0, 0.02^2)`$ по умолчанию, `init_normal_` в [`core/weight_init.py`](../llm/src/llm/core/weight_init.py)). При загрузке весов OpenAI/HF матрица приходит из ключа `wpe.weight` (GPT-2) или `positions_embed.weight` (GPT-1), см. [`models/gpt/hf_weights.py`](../llm/src/llm/models/gpt/hf_weights.py).
+Без паддинга `unsqueeze(0)` превращает `[seq_len, emb_size]` в `[1, seq_len, emb_size]`, и одна и та же матрица позиций прибавляется ко всем примерам батча. С паддингом в `attention_mask` позиции у строк разные: позиция токена — его номер среди настоящих токенов строки, `cumsum(mask) − 1` (у строки `[pad, pad, a, b]` токен `a` — на позиции 0). Их считает `padding_from_attention_mask` из [`core/padding.py`](../llm/src/llm/core/padding.py) и передаёт в `positions`; подробно — в [masks.md](masks.md#attention_mask-и-паддинг). Веса $`P`$ инициализируются вместе с остальными `Embedding`/`Linear` нормальным распределением ($`\mathcal{N}(0, 0.02^2)`$ по умолчанию, `init_normal_` в [`core/weight_init.py`](../llm/src/llm/core/weight_init.py)). При загрузке весов OpenAI/HF матрица приходит из ключа `wpe.weight` (GPT-2) или `positions_embed.weight` (GPT-1), см. [`models/gpt/hf_weights.py`](../llm/src/llm/models/gpt/hf_weights.py).
 
 Докстринг `PositionalEmbeddings` упоминает и синусоидальный вариант, но реализован только обучаемый: синусоидального кодирования в репозитории нет.
 
@@ -815,22 +820,27 @@ self.register_buffer("sin_matrix", torch.sin(freq_matrix), persistent=False)
 
 Размер таблиц: $`2 \cdot T_{\max} \cdot d_h / 2 = T_{\max} \cdot d_h`$ чисел — не зависит ни от числа слоёв, ни от числа голов.
 
-### `forward(x, start_pos)`
+### `forward(x, start_pos, positions=None)`
 
 ```python
 assert x.ndim == 4, "RoPE поддерживает только 4D-вход [batch, num_heads, seq_len, head_size]"
 batch_size, num_heads, seq_len, head_size = x.shape
 
-cos = self.cos_matrix[start_pos:start_pos+seq_len].to(x.dtype)  # [seq_len, head_size//2]
-sin = self.sin_matrix[start_pos:start_pos+seq_len].to(x.dtype)
-cos = cos.reshape(1, 1, seq_len, head_size // 2)
-sin = sin.reshape(1, 1, seq_len, head_size // 2)
+if positions is None:
+    cos = self.cos_matrix[start_pos:start_pos+seq_len].to(x.dtype)  # [seq_len, head_size//2]
+    sin = self.sin_matrix[start_pos:start_pos+seq_len].to(x.dtype)
+    cos = cos.reshape(1, 1, seq_len, head_size // 2)
+    sin = sin.reshape(1, 1, seq_len, head_size // 2)
+else:
+    cos = self.cos_matrix[positions].to(x.dtype).unsqueeze(1)  # [batch, 1, seq_len, head_size//2]
+    sin = self.sin_matrix[positions].to(x.dtype).unsqueeze(1)
 ```
 
 1. Вход — $`Q`$ или $`K`$ уже после разбиения на головы: `[B, H, T, d_h]` (для K в GQA — `[B, G, T, d_h]`).
 2. Срез `[start_pos : start_pos + seq_len]` выбирает углы для абсолютных позиций новых токенов. Без кэша `start_pos = 0`.
 3. `.to(x.dtype)` приводит таблицы (они во float32) к типу входа, например bfloat16.
 4. `reshape(1, 1, seq_len, d_h/2)` готовит таблицы к **broadcasting**: одни и те же углы для всех примеров батча и всех голов — позиция токена от головы не зависит.
+5. При паддинге в `attention_mask` вместо `start_pos` передаются `positions` формы `[B, T]` — позиции токенов среди настоящих токенов своей строки (`cumsum(mask) − 1`, см. [masks.md](masks.md#attention_mask-и-паддинг)). Индексация `cos_matrix[positions]` берёт для каждой строки свои углы, `unsqueeze(1)` добавляет ось голов: углы по-прежнему общие для всех голов, но уже свои у каждого примера батча.
 
 Далее — разделение на чётные/нечётные координаты, поворот и обратная склейка, разобранные в разделе [«Эффективная реализация без матриц»](#эффективная-реализация-без-матриц). Результат — новый тензор той же формы и типа, вход не изменяется.
 
@@ -839,9 +849,10 @@ sin = sin.reshape(1, 1, seq_len, head_size // 2)
 В [`MultiHeadAttention`](../llm/src/llm/core/multi_head_attention.py) (LLaMA) и [`GroupedQueryAttention`](../llm/src/llm/core/group_query_attention.py) (Mistral, Mixtral, Gemma) — после разбиения на головы и **до** склейки с кэшем:
 
 ```python
+positions = padding.positions if padding is not None else None
 if self._rope is not None:
-    q = self._rope(q, start_pos=start_pos)
-    k = self._rope(k, start_pos=start_pos)
+    q = self._rope(q, start_pos=start_pos, positions=positions)
+    k = self._rope(k, start_pos=start_pos, positions=positions)
 # затем: k = torch.cat([k_cache, k], dim=2) — в кэше K уже повёрнуты
 ```
 
