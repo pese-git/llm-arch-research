@@ -355,11 +355,17 @@ class HFTokenizerAdapter:
             "eos_token_id": self.eos_token_id,
         }
 
-        # BPETokenizer.encode ищет токены по vocab_list, без него после загрузки
-        # текст распадается на отдельные символы
+        # BPETokenizer.encode применяет слияния по порядку ранга: без них после
+        # загрузки текст кодировался бы иначе. Пары — списком [левый, правый]
+        # в порядке ранга, как в BPETokenizer.save
         vocab_list = getattr(self.llm_tokenizer, "vocab_list", None)
         if vocab_list is not None:
             tokenizer_config["vocab_list"] = vocab_list
+        merges = getattr(self.llm_tokenizer, "merges", None)
+        if merges is not None:
+            tokenizer_config["merges"] = [
+                list(pair) for pair, _ in sorted(merges.items(), key=lambda item: item[1])
+            ]
 
         config_path = os.path.join(save_directory, "tokenizer_config.json")
         with open(config_path, "w", encoding="utf-8") as f:
@@ -443,6 +449,13 @@ class HFTokenizerAdapter:
                         for token, _ in sorted(vocab.items(), key=lambda item: item[1])
                         if token not in special_tokens
                     ]
+
+                # Старые сохранения без merges: BPETokenizer.encode без слияний
+                # кодирует жадным поиском по vocab_list, как раньше
+                llm_tokenizer.merges = {
+                    (left, right): rank
+                    for rank, (left, right) in enumerate(config.get("merges", []))
+                }
 
                 return cls(llm_tokenizer)
             else:
