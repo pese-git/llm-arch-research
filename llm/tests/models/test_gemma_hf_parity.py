@@ -175,7 +175,9 @@ def test_hf_weights_give_same_logits(num_kv_heads, head_dim):
     with torch.no_grad():
         expected = hf_model(tokens).logits
         logits, _ = model(tokens)
-        hf_greedy = hf_model.generate(tokens[:1, :6], max_new_tokens=20, do_sample=False, pad_token_id=0)
+        # Явная маска: иначе HF строит её по pad_token_id и принял бы токен 0 в промпте за паддинг
+        hf_greedy = hf_model.generate(tokens[:1, :6], attention_mask=torch.ones_like(tokens[:1, :6]),
+                                      max_new_tokens=20, do_sample=False, pad_token_id=0)
         greedy = model.generate(tokens[:1, :6], max_new_tokens=20, do_sample=False, use_cache=True)
     assert torch.allclose(logits, expected, atol=1e-4)
     assert torch.equal(greedy, hf_greedy)

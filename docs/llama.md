@@ -308,6 +308,7 @@ flowchart TB
 3. Создаёт `TokenEmbeddings`, **один** `RoPE` и `nn.Dropout`.
 4. Строит `num_layers` блоков `CachedDecoder`, передавая каждому `norm_layer=partial(RMSNorm, eps=norm_eps)`, свежий `SwiGLU(...)` и общий `rope`.
 5. Финальный `RMSNorm` и голову `nn.Linear(embed_dim, vocab_size, bias=bias)`.
+6. Инициализирует веса как HF: `self.apply(partial(init_normal_, std=initializer_range))` — `Linear` и `Embedding` из $`\mathcal{N}(0, 0.02^2)`$, bias — нули ([training.md](training.md#какие-модели-что-используют)).
 
 `forward(x, use_cache=False, cache=None, attention_mask=None)`:
 
@@ -429,6 +430,7 @@ print(count(model))                         # 6738415616
 | `head_size` | (нет в примере) | необязательный $`d_h`$, по умолчанию `embed_dim // num_heads`; должен быть чётным |
 | `rms_norm_eps` | (нет в примере) | необязательный $`\varepsilon`$ всех RMSNorm, по умолчанию `1e-6` — как в LLaMA |
 | `rope_theta` | (нет в примере) | необязательная база частот RoPE, по умолчанию `10000` — как в LLaMA; см. [Скорости вращения и база](#скорости-вращения-и-база-rope_theta) |
+| `initializer_range` | (нет в примере) | необязательное стандартное отклонение начальных весов `Linear` и `Embedding`, по умолчанию `0.02` — как в HF; см. [training.md](training.md#какие-модели-что-используют) |
 | `intermediate_size` | (нет в примере) | необязательный $`d_{ff}`$ SwiGLU, по умолчанию `4 · embed_dim`; в LLaMA — `llama_intermediate_size(embed_dim)`, см. [Размер FFN и bias](#размер-ffn-и-bias) |
 | `bias` | (нет в примере) | необязательный: bias во всех `Linear` (Q/K/V, выход attention, три матрицы SwiGLU, голова), по умолчанию `true`; в LLaMA — `false` |
 

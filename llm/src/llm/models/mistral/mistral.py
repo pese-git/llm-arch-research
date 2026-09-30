@@ -1,3 +1,5 @@
+from functools import partial
+
 import torch
 from torch import nn
 from llm.core.base_model import BaseModel
@@ -11,6 +13,7 @@ from llm.core.token_embeddings import TokenEmbeddings
 from llm.core.rms_norm import RMSNorm
 from llm.core.rope import RoPE
 from llm.core.mistral_decoder import MistralDecoder
+from llm.core.weight_init import DEFAULT_INITIALIZER_RANGE, init_normal_
 
 
 class Mistral(BaseModel):
@@ -103,6 +106,12 @@ class Mistral(BaseModel):
         ) for _ in range(config["num_layers"])])
         self._norm = RMSNorm(config["embed_dim"], eps=norm_eps)
         self._linear = nn.Linear(config["embed_dim"], config["vocab_size"], bias=bias)
+
+        # Инициализация как в HF (_init_weights LLaMA, Mistral, Mixtral, Gemma): Linear и
+        # Embedding — N(0, initializer_range = 0.02), bias — нули; веса RMSNorm уже единицы
+        self.apply(
+            partial(init_normal_, std=config.get("initializer_range", DEFAULT_INITIALIZER_RANGE))
+        )
 
     def forward(
         self,

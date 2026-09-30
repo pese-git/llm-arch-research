@@ -68,6 +68,7 @@ src/llm/
 | `tie_word_embeddings` (необязательный, по умолчанию `false`) | GPT, GPT-2 | | | ✅ |
 | `scale_embeddings` (необязательный, по умолчанию `false`) | | | | ✅ |
 | `intermediate_size` (необязательный, по умолчанию `4 · embed_dim`), `bias` (необязательный, по умолчанию `true`) | LLaMA | ✅ | ✅ | ✅ |
+| `initializer_range` (необязательный, по умолчанию `0.02`): std начальных весов `Linear` и `Embedding` | ✅ | ✅ | ✅ | ✅ |
 | `window_size` (необязательный: без него окна нет) | | ✅ | ✅ | |
 | `num_experts`, `top_k_experts` | | | ✅ | |
 

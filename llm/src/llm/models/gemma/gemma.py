@@ -1,3 +1,5 @@
+from functools import partial
+
 import torch
 from torch import nn
 from llm.core.base_model import BaseModel
@@ -13,6 +15,7 @@ from llm.core.token_embeddings import TokenEmbeddings, output_projection
 from llm.core.rope import RoPE
 from llm.core.rms_norm import RMSNorm
 from llm.core.gemma_decoder import GemmaDecoder
+from llm.core.weight_init import DEFAULT_INITIALIZER_RANGE, init_normal_
     
 
 class Gemma(BaseModel):
@@ -165,6 +168,12 @@ class Gemma(BaseModel):
             self._linear = output_projection(self._token_embeddings, tie_weights=True)
         else:
             self._linear = nn.Linear(config["embed_dim"], config["vocab_size"], bias=bias)
+
+        # Инициализация как в HF (_init_weights LLaMA, Mistral, Mixtral, Gemma): Linear и
+        # Embedding — N(0, initializer_range = 0.02), bias — нули; веса RMSNorm уже единицы
+        self.apply(
+            partial(init_normal_, std=config.get("initializer_range", DEFAULT_INITIALIZER_RANGE))
+        )
 
     def forward(
         self,
