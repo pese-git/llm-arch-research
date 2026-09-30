@@ -60,7 +60,7 @@ export default defineConfig({
     // До Starlight: плагин должен забрать блоки ```mermaid раньше подсветки кода
     mermaid({ theme: 'default', autoTheme: true }),
     starlight({
-      title: 'Архитектуры LLM',
+      title: 'LLM Arch Research',
       logo: { src: './src/assets/logo.svg' },
       favicon: '/favicon.svg',
       description:
