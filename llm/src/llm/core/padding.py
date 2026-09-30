@@ -63,9 +63,10 @@ def padding_from_attention_mask(
     Проверяет attention_mask и строит по ней Padding.
 
     Args:
-        attention_mask: [batch, seq_len] или [batch, start_pos + seq_len] — 1 для настоящих
-            токенов, 0 для паддинга (как в HuggingFace). С кэшем маска с нулями должна
-            покрывать и кэш: паддинг в закэшированных токенах тоже нужно маскировать.
+        attention_mask: без кэша — [batch, seq_len], с кэшем — [batch, start_pos + seq_len]:
+            1 для настоящих токенов, 0 для паддинга (как в HuggingFace). С кэшем маска всегда
+            покрывает и кэш: по одним новым токенам нельзя узнать, был ли паддинг в
+            закэшированных, а незамаскированный паддинг кэша молча исказил бы результат.
         x: входные токены [batch, seq_len].
         start_pos: число закэшированных позиций (слот первого нового токена).
 
@@ -74,31 +75,25 @@ def padding_from_attention_mask(
         маски ключей и с позициями start_pos, start_pos + 1, … Иначе — Padding.
 
     Raises:
-        ValueError: Если форма маски не [batch, seq_len] и не [batch, start_pos + seq_len],
-            или маска с нулями при кэше не покрывает кэш.
+        ValueError: Если форма маски не [batch, seq_len] без кэша или не
+            [batch, start_pos + seq_len] с кэшем.
     """
     if attention_mask is None:
         return None
     batch_size, seq_len = x.shape
     total_len = start_pos + seq_len
-    if (
-        attention_mask.dim() != 2
-        or attention_mask.size(0) != batch_size
-        or attention_mask.size(1) not in (seq_len, total_len)
-    ):
+    if attention_mask.dim() != 2 or attention_mask.shape != (batch_size, total_len):
+        expected = (
+            f"[batch, seq_len] = [{batch_size}, {seq_len}]"
+            if start_pos == 0
+            else f"с кэшем — [batch, cache_len + seq_len] = [{batch_size}, {total_len}]: "
+            "маска покрывает и закэшированные токены, иначе паддинг в кэше не замаскировать"
+        )
         raise ValueError(
-            f"attention_mask должна иметь форму [batch, seq_len] = [{batch_size}, {seq_len}] "
-            f"или, с кэшем, [batch, cache_len + seq_len] = [{batch_size}, {total_len}], "
-            f"получено {list(attention_mask.shape)}"
+            f"attention_mask должна иметь форму {expected}, получено {list(attention_mask.shape)}"
         )
     key_mask = attention_mask != 0
     if bool(key_mask.all()):
         return None
-    if key_mask.size(1) != total_len:
-        raise ValueError(
-            "attention_mask с нулями при кэше должна покрывать и закэшированные токены: "
-            f"форма [batch, cache_len + seq_len] = [{batch_size}, {total_len}], "
-            f"получено {list(attention_mask.shape)}"
-        )
     positions = (key_mask.long().cumsum(dim=-1) - 1).clamp(min=0)
     return Padding(key_mask=key_mask, positions=positions[:, start_pos:])

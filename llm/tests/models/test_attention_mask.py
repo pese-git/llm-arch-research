@@ -131,17 +131,24 @@ def test_left_padding_with_cache(model, tokens):
             assert torch.allclose(step[real, 0], full[real, t], atol=1e-5)
 
 
-def test_mask_with_zeros_and_cache_must_cover_cache(model, tokens):
+def test_mask_with_cache_must_cover_cache(model, tokens):
+    """С кэшем маска покрывает кэш и новые токены, даже если в ней одни единицы."""
     with torch.no_grad():
         _, cache = model(tokens[:, :4], use_cache=True)
-        # Маска из единиц допускается и по новым токенам, и по кэшу + новым
-        model(tokens[:, 4:], cache=cache, attention_mask=torch.ones(2, REAL_LEN - 4))
         model(tokens[:, 4:], cache=cache, attention_mask=torch.ones(2, REAL_LEN))
+        for mask in (torch.ones(2, REAL_LEN - 4), torch.tensor([[0.0, 1.0], [1.0, 1.0]])):
+            with pytest.raises(ValueError, match="кэш"):
+                model(tokens[:, 4:], cache=cache, attention_mask=mask)
 
-        mask = torch.ones(2, REAL_LEN - 4)
-        mask[0, 0] = 0
+
+def test_short_mask_cannot_hide_padding_in_cache(model, tokens):
+    """Кэш с паддингом и маска только по новому токену: ошибка, а не молча неверные логиты."""
+    padded, mask = left_pad(rows_of(tokens))
+    step = padded[:, -1:]
+    with torch.no_grad():
+        _, cache = model(padded[:, :-1], use_cache=True, attention_mask=mask[:, :-1])
         with pytest.raises(ValueError, match="кэш"):
-            model(tokens[:, 4:], cache=cache, attention_mask=mask)
+            model(step, use_cache=True, cache=cache, attention_mask=torch.ones_like(step))
 
 
 @pytest.mark.parametrize("shape", [(2,), (1, REAL_LEN), (2, REAL_LEN + 1)], ids=str)
@@ -174,13 +181,21 @@ def test_generate_left_padded_batch_matches_each_row(model, tokens, use_cache):
             assert torch.equal(batch[i, -new_tokens:], alone[0, -new_tokens:])
 
 
-def test_generate_left_padded_past_max_seq_len(model, tokens):
-    """За пределами max_seq_len маска обрезается вместе с последовательностью."""
-    padded, mask = left_pad(rows_of(tokens))
-    steps = BASE_CONFIG["max_position_embeddings"]
+@pytest.mark.parametrize("use_cache", [True, False], ids=["cache", "no_cache"])
+def test_generate_left_padded_past_max_seq_len(model, tokens, use_cache):
+    """За пределами max_seq_len маска обрезается вместе с последовательностью: каждая
+    строка батча генерирует то же, что её промпт отдельно."""
+    rows = rows_of(tokens)
+    padded, mask = left_pad(rows)
+    steps = BASE_CONFIG["max_position_embeddings"] + 8
     with torch.no_grad():
-        out = model.generate(padded, max_new_tokens=steps, do_sample=False, attention_mask=mask)
-    assert out.shape == (3, padded.size(1) + steps)
+        batch = model.generate(padded, max_new_tokens=steps, do_sample=False,
+                               use_cache=use_cache, attention_mask=mask)
+        assert batch.shape == (3, padded.size(1) + steps)
+        for i, row in enumerate(rows):
+            alone = model.generate(row.unsqueeze(0), max_new_tokens=steps, do_sample=False,
+                                   use_cache=use_cache)
+            assert torch.equal(batch[i, -steps:], alone[0, -steps:])
 
 
 def test_generate_rejects_right_padding(model, tokens):
