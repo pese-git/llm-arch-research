@@ -221,7 +221,8 @@ ffn_out = self._ff(norm2_out)          # GeGLU(RMSNorm2(U^(l)))
 - необязательные ключи: `rms_norm_eps` (`1e-6`), `intermediate_size` (`None` → `4 · embed_dim` внутри `GeGLU`), `bias` (`True`), `num_kv_heads` (`1`), `rope_theta` (`10000`), `scale_embeddings` (`False`), `tie_word_embeddings` (`False`);
 - `self._embedding_scale = math.sqrt(config["embed_dim"])`, если `scale_embeddings`, иначе `None`;
 - `_token_embeddings`, один `_position_embeddings` (`RoPE`) на все слои, `_dropout`, `_decoders` из `num_layers` блоков `GemmaDecoder`, финальная `_norm`;
-- выходная проекция: при `tie_word_embeddings` — `output_projection(self._token_embeddings, tie_weights=True)`: `nn.Linear` без bias, чей `weight` — **тот же объект** `nn.Parameter`, что и матрица эмбеддингов; иначе — отдельный `nn.Linear(embed_dim, vocab_size, bias=bias)`.
+- выходная проекция: при `tie_word_embeddings` — `output_projection(self._token_embeddings, tie_weights=True)`: `nn.Linear` без bias, чей `weight` — **тот же объект** `nn.Parameter`, что и матрица эмбеддингов; иначе — отдельный `nn.Linear(embed_dim, vocab_size, bias=bias)`;
+- инициализация как в HF: `init_normal_` — `Linear` и `Embedding` из $`\mathcal{N}(0, 0.02^2)`$ (ключ `initializer_range`), bias — нули.
 
 `forward(x, use_cache=False, cache=None, attention_mask=None)`:
 
@@ -361,6 +362,7 @@ print(total, emb, total - emb)                       # 2506172416 524288000 1981
 | `max_position_embeddings` | 512 | ✅ |
 | `rms_norm_eps` | (нет в примере) | ✅ необязательный `eps` всех RMSNorm, по умолчанию `1e-6` — как в Gemma |
 | `rope_theta` | (нет в примере) | ✅ необязательная база частот RoPE, по умолчанию `10000` — как в Gemma; см. [llama.md](llama.md#скорости-вращения-и-база-rope_theta) |
+| `initializer_range` | (нет в примере) | ✅ необязательное стандартное отклонение начальных весов `Linear` и `Embedding`, по умолчанию `0.02` — как в HF; см. [training.md](training.md#какие-модели-что-используют) |
 | `dropout` | 0.1 | ✅ после эмбеддингов, в attention и GeGLU; в Gemma dropout нет — для соответствия оригиналу `0` |
 | `head_size` | 64 | ✅ необязательный; по умолчанию `embed_dim // num_q_heads` |
 
@@ -383,7 +385,7 @@ print(total, emb, total - emb)                       # 2506172416 524288000 1981
 
 `scale_embeddings` умножает выход эмбеддингов на `√embed_dim` (множитель приводится к dtype эмбеддингов, как в HF). При tied embeddings одна матрица служит и входом, и выходом, и её норма рассчитана на выходную проекцию; без множителя вход в первый блок был бы на порядок меньше. `tie_word_embeddings` особенно заметен у Gemma: словарь 256 000 токенов, и отдельная голова для 2B — это ещё ~524M параметров.
 
-Эти ключи рассчитаны прежде всего на загрузку весов HF. При обучении **с нуля** учтите инициализацию: `nn.Embedding` в PyTorch по умолчанию инициализируется $`\mathcal{N}(0, 1)`$, а не $`\mathcal{N}(0, 0.02^2)`$, как в HF, и отдельной инициализации у `Gemma` нет. С `tie_word_embeddings` и `scale_embeddings` логиты в начале обучения получаются порядка $`\sqrt{d}`$: на учебном конфиге ($`d = 256`$, $`V = 1000`$) стандартное отклонение логитов ≈18, а начальный cross-entropy ≈258 вместо $`\ln 1000 \approx 6.9`$ (без этих ключей — ≈7.0). Почему нужна дисперсия $`\approx 1/d`$ — в [embeddings.md](embeddings.md) (раздел «Масштабирование эмбеддингов на √d»).
+При обучении **с нуля** важна инициализация. `Gemma`, как HF, инициализирует `Linear` и `Embedding` из $`\mathcal{N}(0, 0.02^2)`$ (`init_normal_`, ключ `initializer_range`), и с `tie_word_embeddings` и `scale_embeddings` начальный cross-entropy на учебном конфиге ($`d = 256`$, $`V = 1000`$) — 7.06 при $`\ln 1000 \approx 6.9`$ (std логитов 0.36). До пункта 62 [бэклога](backlog.md) своей инициализации у `Gemma` не было, эмбеддинги оставались $`\mathcal{N}(0, 1)`$ по умолчанию `nn.Embedding`, и с этими ключами логиты в начале обучения получались порядка $`\sqrt{d}`$: стандартное отклонение ≈18, начальный cross-entropy ≈258. Почему нужны малые эмбеддинги — в [embeddings.md](embeddings.md) (раздел «Масштабирование эмбеддингов на √d»).
 
 ## Загрузка весов HuggingFace
 
