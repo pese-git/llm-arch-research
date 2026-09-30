@@ -2,7 +2,7 @@
     "bpe_tokenizer": "checkpoints/bpe_tokenizer.json",
     "bpe_vocab_size": 1000,
     "bpe_special_tokens": ["<pad>", "<unk>", "<bos>", "<eos>"],
-    "test_prompts": ["Искусственный интеллект", "Python — это"],
+    "test_prompts": ["Искусственный интеллект", "Python является"],
     "model_config": {
       "vocab_size": null,
       "embed_dim": 256,

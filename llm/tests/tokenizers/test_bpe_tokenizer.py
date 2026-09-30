@@ -520,3 +520,34 @@ class TestBPEMergeOrder:
         loaded = BPETokenizer.load(str(path))
         for word, expected in [("nest", ["n", "est"]), ("lowest", ["low", "est"])]:
             assert pieces(loaded, word) == pieces(tokenizer, word) == expected
+
+
+# --- Неизвестный символ без <unk> (бэклог, пункт 59) ---
+
+
+class TestUnknownWithoutUnkToken:
+    @pytest.fixture
+    def tokenizer(self):
+        """Токенизатор, обученный без <unk> в special_tokens: unk_token_id — None."""
+        tokenizer = BPETokenizer()
+        tokenizer.train(["абв абв"], vocab_size=100, special_tokens=["<pad>", "<bos>", "<eos>"])
+        assert tokenizer.unk_token_id is None
+        return tokenizer
+
+    def test_unknown_symbol_raises(self, tokenizer):
+        """Раньше encode возвращал None на месте символа — список не превратить в тензор."""
+        with pytest.raises(ValueError, match=r"\['z', 'щ'\].*<unk>"):
+            tokenizer.encode("абzв щ")
+
+    def test_known_text_encodes(self, tokenizer):
+        ids = tokenizer.encode("абв")
+        assert None not in ids
+        assert tokenizer.decode(ids) == "абв"
+
+    def test_after_load(self, tokenizer, tmp_path):
+        path = tmp_path / "tokenizer.json"
+        tokenizer.save(str(path))
+        loaded = BPETokenizer.load(str(path))
+        assert loaded.unk_token_id is None
+        with pytest.raises(ValueError):
+            loaded.encode("z")

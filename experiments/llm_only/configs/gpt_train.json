@@ -2,7 +2,7 @@
     "bpe_tokenizer": "checkpoints/bpe_tokenizer.json",
     "bpe_vocab_size": 1000,
     "bpe_special_tokens": ["<pad>", "<unk>", "<bos>", "<eos>"],
-    "test_prompts": ["GPT language model", "Machine learning basics"],
+    "test_prompts": ["GPT модели", "Трансформеры"],
     "model_config": {
       "vocab_size": null,
       "embed_dim": 256,
