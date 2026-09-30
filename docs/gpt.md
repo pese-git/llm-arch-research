@@ -482,22 +482,23 @@ model.load_state_dict(convert_hf_state_dict(hf.state_dict()))
 def forward(self, x, attention_mask=None, use_cache=False, cache=None):
     start_pos = cache_start_pos(cache)                              # s — длина кэша
     check_sequence_length(x.size(1), start_pos, self._max_seq_len)  # s + T ≤ T_max
-    check_attention_mask(attention_mask, x, cache)
+    padding = padding_from_attention_mask(attention_mask, x, start_pos)  # None без нулей в маске
     tok_out = self._token_embeddings(x)                             # E[x]     [B, T, d]
-    pos_out = self._position_embeddings(seq_len, start_pos=start_pos)  # P[s:s+T] [T, d]
-    out = self._dropout(tok_out + pos_out.unsqueeze(0))             # H^(0)    [B, T, d]
-    for i, decoder in enumerate(self._decoders):                    # H^(l)
+    pos_out = self._position_embeddings(seq_len, start_pos=start_pos).unsqueeze(0)  # P[s:s+T] [1, T, d]
+    # при паддинге: self._position_embeddings(seq_len, positions=padding.positions)  [B, T, d]
+    out = self._dropout(tok_out + pos_out)                          # H^(0)    [B, T, d]
+    for i, decoder in enumerate(self._decoders):                    # H^(l), padding передаётся в каждый блок
         ...
     logits = self._linear(out)                                      # Z        [B, T, V]
 ```
 
-(фрагмент сокращён: цикл собирает новый KV-кэш по слоям, если `use_cache=True`). Возвращается кортеж `(logits, new_cache)`; при `use_cache=False` второй элемент — `None`.
+(фрагмент сокращён: цикл передаёт в каждый блок `padding` и собирает новый KV-кэш по слоям, если `use_cache=True`). Возвращается кортеж `(logits, new_cache)`; при `use_cache=False` второй элемент — `None`.
 
 Детали:
 
-- `pos_out.unsqueeze(0)` превращает `[T, d]` в `[1, T, d]`, и сложение с `[B, T, d]` проходит по правилам broadcasting: одни и те же позиционные векторы прибавляются к каждой последовательности батча.
+- Без паддинга `.unsqueeze(0)` превращает `[T, d]` в `[1, T, d]`, и сложение с `[B, T, d]` проходит по правилам broadcasting: одни и те же позиционные векторы прибавляются к каждой последовательности батча.
 - `check_sequence_length` запрещает выйти за $`T_{\max}`$: у обучаемых позиций нет строки для позиции $`T_{\max}`$ и дальше.
-- `check_attention_mask` допускает только маски, для которых causal-маски достаточно, — из единиц или с правым паддингом; иначе `NotImplementedError` (см. [masks.md](masks.md)).
+- `padding_from_attention_mask` по маске с нулями строит маску ключей и позиции `cumsum(mask) − 1` для каждой строки батча; паддинг допускается в любом месте строки (см. [masks.md](masks.md#attention_mask-и-паддинг)).
 - Порядок позиционных аргументов у `GPT.forward` — `(x, attention_mask, use_cache, cache)`, а у `GPT2.forward` — `(x, use_cache, cache, attention_mask)`. `generate` передаёт их по имени, так что это безопасно; в своём коде тоже передавайте по имени.
 
 `GptDecoder.forward` реализует шаг 2 буквально: `out = self._norm1(attention + x)` — это $`U^{(l)}`$, `result = self._norm2(ffn_out + out)` — это $`H^{(l)}`$.
@@ -567,9 +568,9 @@ flowchart LR
 
 - `generate(x, max_new_tokens, do_sample, temperature=1.0, top_k=None, top_p=None, use_cache=True, attention_mask=None, eos_token_id=None, pad_token_id=None)` — один метод `BaseModel.generate` ([`core/base_model.py`](../llm/src/llm/core/base_model.py)); выбор токена — `sample_next_token` в [`core/generation.py`](../llm/src/llm/core/generation.py): greedy (`do_sample=False`), sampling с температурой, top-k, top-p.
 - С `eos_token_id` законченные строки дополняются `pad_token_id` (по умолчанию тем же `eos_token_id`); генерация останавливается, когда закончены все строки. Градиенты не считаются; неизвестный именованный аргумент — `TypeError`.
-- С KV-кэшем в `forward` подаётся только новый токен, а его позиция берётся из длины кэша (`cache_start_pos`).
+- С KV-кэшем в `forward` подаётся только новый токен, а его позиция берётся из длины кэша (`cache_start_pos`); при паддинге — из `attention_mask`: номер токена среди настоящих токенов строки.
 - Когда последовательность становится длиннее `max_position_embeddings`, `generate` берёт последние `max_position_embeddings` токенов и пересчитывает их без кэша: при сдвиге окна абсолютные позиции всех токенов меняются, и закэшированные K/V больше не годятся.
-- `attention_mask` в `generate` допускается только из единиц — см. [masks.md](masks.md).
+- Промпты разной длины генерируются одним батчем с левым паддингом и `attention_mask`; каждая строка даёт то же, что её промпт отдельно — см. [masks.md](masks.md#attention_mask-и-паддинг).
 
 ```python
 import torch

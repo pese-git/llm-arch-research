@@ -28,9 +28,9 @@ import torch.nn as nn
 from llm.core.base_model import BaseModel
 from llm.core.config_checks import resolve_head_size
 from llm.core.weight_init import DEFAULT_INITIALIZER_RANGE, init_normal_
+from llm.core.padding import padding_from_attention_mask
 from llm.core.generation import (
     cache_start_pos,
-    check_attention_mask,
     check_sequence_length,
 )
 from llm.core.gpt_decoder import GptDecoder
@@ -168,9 +168,9 @@ class GPT(BaseModel):
         cache : list, optional
             Список старых KV (key/value)-кэшей
         attention_mask : torch.Tensor, optional
-            Маска [batch, seq_len] (1 — токен, 0 — паддинг). Поддерживается правый паддинг:
-            causal-маска и так скрывает от настоящих токенов стоящий после них паддинг.
-            На другие маски с нулями — NotImplementedError (см. docs/masks.md).
+            Маска [batch, seq_len] (1 — токен, 0 — паддинг), с кэшем — [batch, cache_len + seq_len].
+            Паддинг допускается в любом месте строки: маскируются ключи, позиции считаются
+            среди настоящих токенов (см. docs/masks.md).
 
         Returns:
         --------
@@ -178,29 +178,35 @@ class GPT(BaseModel):
         new_cache: кэш KV после прохода
         """
         # Длина с учётом кэша: позиции start_pos … start_pos + seq_len − 1 должны быть < max_seq_len.
-        # attention_mask допускается только такая, при которой causal-маски достаточно.
+        # attention_mask с нулями (паддинг) → маска ключей и позиции каждой строки (core/padding.py).
         start_pos = cache_start_pos(cache)
         check_sequence_length(x.size(1), start_pos, self._max_seq_len)
-        check_attention_mask(attention_mask, x, cache)
+        padding = padding_from_attention_mask(attention_mask, x, start_pos)
 
         seq_len = x.size(1)
 
         # Эмбеддинги токенов и позиций
         tok_out = self._token_embeddings(x)  # [batch, seq_len, emb_size]
-        pos_out = self._position_embeddings(
-            seq_len, start_pos=start_pos
-        )  # [seq_len, emb_size]
+        if padding is None:
+            pos_out = self._position_embeddings(
+                seq_len, start_pos=start_pos
+            ).unsqueeze(0)  # [1, seq_len, emb_size]
+        else:
+            # Позиции среди настоящих токенов своей строки
+            pos_out = self._position_embeddings(
+                seq_len, positions=padding.positions
+            )  # [batch, seq_len, emb_size]
 
         # Комбинирование
         out = self._dropout(
-            tok_out + pos_out.unsqueeze(0)
+            tok_out + pos_out
         )  # [batch, seq_len, emb_size]
 
         # Стек декодеров с передачей кэша
         new_cache = []
         for i, decoder in enumerate(self._decoders):
             decoder_cache = cache[i] if cache is not None else None
-            decoder_result = decoder(out, use_cache=use_cache, cache=decoder_cache)
+            decoder_result = decoder(out, use_cache=use_cache, cache=decoder_cache, padding=padding)
 
             # Извлекаем результат из кортежа
             if use_cache:

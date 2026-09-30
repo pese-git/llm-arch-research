@@ -312,15 +312,16 @@ flowchart TB
 `forward(x, use_cache=False, cache=None, attention_mask=None)`:
 
 ```python
-check_sequence_length(x.size(1), cache_start_pos(cache), self._max_seq_len)  # позиции < T_max
-check_attention_mask(attention_mask, x, cache)      # только маски, которых достаточно causal-маске
+start_pos = cache_start_pos(cache)
+check_sequence_length(x.size(1), start_pos, self._max_seq_len)  # позиции < T_max
+padding = padding_from_attention_mask(attention_mask, x, start_pos)  # маска ключей и позиции или None
 out = self._dropout(self._token_embeddings(x))      # H^(0); позиций на входе нет
 for i, decoder in enumerate(self._decoders):        # блоки l = 1..L, у каждого свой кэш
-    out, layer_cache = decoder(out, use_cache=use_cache, cache=cache[i] if cache else None)
+    out, layer_cache = decoder(out, use_cache=use_cache, cache=cache[i] if cache else None, padding=padding)
 logits = self._linear(self._norm(out))              # Z = RMSNorm_f(H^(L)) W_out + b
 ```
 
-(фрагмент упрощён; в исходнике кэш слоёв собирается в список `new_cache` и возвращается как `(logits, new_cache)` или `(logits, None)`). Кэш — список из $`L`$ пар `(K, V)` формы `[B, H, T_cache, d_h]`. Об ограничениях `attention_mask` — в [masks.md](masks.md).
+(фрагмент упрощён; в исходнике кэш слоёв собирается в список `new_cache` и возвращается как `(logits, new_cache)` или `(logits, None)`). Кэш — список из $`L`$ пар `(K, V)` формы `[B, H, T_cache, d_h]`. Как `attention_mask` превращается в маску ключей и позиции RoPE — в [masks.md](masks.md#attention_mask-и-паддинг).
 
 ### Класс `CachedDecoder`
 

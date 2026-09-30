@@ -2,9 +2,9 @@ import torch
 from torch import nn
 from llm.core.base_model import BaseModel
 from llm.core.config_checks import resolve_head_size
+from llm.core.padding import padding_from_attention_mask
 from llm.core.generation import (
     cache_start_pos,
-    check_attention_mask,
     check_sequence_length,
 )
 from llm.core.token_embeddings import TokenEmbeddings
@@ -205,9 +205,9 @@ class Mixtral(BaseModel):
         cache : list, optional
             (Необязательно) Список (или None) с кэшем KV attention для каждого слоя. Используется для автогенерации текста.
         attention_mask : torch.Tensor, optional
-            Маска [batch, seq_len] (1 — токен, 0 — паддинг). Поддерживается правый паддинг:
-            causal-маска и так скрывает от настоящих токенов стоящий после них паддинг.
-            На другие маски с нулями — NotImplementedError (см. docs/masks.md).
+            Маска [batch, seq_len] (1 — токен, 0 — паддинг), с кэшем — [batch, cache_len + seq_len].
+            Паддинг допускается в любом месте строки: маскируются ключи, позиции считаются
+            среди настоящих токенов (см. docs/masks.md).
 
         Возвращает:
         -----------
@@ -228,9 +228,10 @@ class Mixtral(BaseModel):
 
         """
         # Длина с учётом кэша: позиции start_pos … start_pos + seq_len − 1 должны быть < max_seq_len.
-        # attention_mask допускается только такая, при которой causal-маски достаточно.
-        check_sequence_length(x.size(1), cache_start_pos(cache), self._max_seq_len)
-        check_attention_mask(attention_mask, x, cache)
+        # attention_mask с нулями (паддинг) → маска ключей и позиции каждой строки (core/padding.py).
+        start_pos = cache_start_pos(cache)
+        check_sequence_length(x.size(1), start_pos, self._max_seq_len)
+        padding = padding_from_attention_mask(attention_mask, x, start_pos)
         # Паддинг не должен влиять на статистику загрузки экспертов
         self._aux_token_mask = (
             (attention_mask[:, -x.size(1):] != 0).reshape(-1) if attention_mask is not None else None
@@ -246,7 +247,7 @@ class Mixtral(BaseModel):
         new_cache = []
         for i, decoder in enumerate(self._decoders):
             decoder_cache = cache[i] if cache is not None else None
-            decoder_result = decoder(out, use_cache=use_cache, cache=decoder_cache)
+            decoder_result = decoder(out, use_cache=use_cache, cache=decoder_cache, padding=padding)
 
             # Извлекаем результат из кортежа
             if use_cache:

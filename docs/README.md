@@ -106,12 +106,6 @@ flowchart LR
 
 ## Известные ограничения
 
-Общие для всех архитектур:
-
-- **`attention_mask`: поддерживается только правый паддинг** в `forward`; левый паддинг и генерация батчем промптов разной длины не поддерживаются (`NotImplementedError`), см. [Маски](masks.md#attention_mask-и-паддинг).
-
-Специфичные для архитектуры:
-
 - **Mistral, Mixtral** — окно sliding window шириной `window_size + 1` позиций (как в тексте статьи и prefill эталонного кода), а в HuggingFace — `window_size`; при загрузке весов HF — `window_size = sliding_window − 1`, см. [mistral.md](mistral.md#ширина-окна-w--1).
 
 Полный список технического долга с приоритетами и способами исправления — в [backlog.md](backlog.md).

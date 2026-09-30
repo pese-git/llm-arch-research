@@ -1,6 +1,8 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
+
+from llm.core.padding import Padding
 from llm.core.rope import RoPE
 
 class MultiQueryAttention(nn.Module):
@@ -135,6 +137,7 @@ class MultiQueryAttention(nn.Module):
         x: torch.Tensor,
         use_cache: bool = True,
         cache: list = None,
+        padding: Padding = None,
     ):
         """
         Прямой проход (forward) через слой MultiQueryAttention.
@@ -150,6 +153,9 @@ class MultiQueryAttention(nn.Module):
             Если True, возвращает кэш ключей/значений (для autoregressive inference/generation).
         cache : list, optional
             (K_cache, V_cache) — предварительный кэш KV (для ускоренного инференса). Если None, кэш не используется/создаётся заново.
+        padding : Padding, опционально
+            Паддинг батча (core/padding.py): маска ключей по всем слотам и позиции новых
+            токенов для RoPE. None — паддинга нет: только встроенная маска и позиции start_pos, …
 
         Возвращает:
         -----------
@@ -176,7 +182,7 @@ class MultiQueryAttention(nn.Module):
 
         Примечания:
         -----------
-        - Маска только встроенная, causal; паддинг проверяется в forward модели (check_attention_mask).
+        - Маска встроенная, causal; с padding к ней добавляется маска ключей паддинга (core/padding.py).
         - Для генерации текста с cache передавайте кэш от предыдущих токенов — это ускоряет autoregressive inference.
         - Внимание! Тензоры внутри cache должны иметь форму [batch, heads, seq_len, head_size].
         """
@@ -200,9 +206,10 @@ class MultiQueryAttention(nn.Module):
         v = v.reshape(batch_size, seq_len, 1, self._head_size).transpose(1, 2)
 
         # 3. RoPE поворачивает Q и K (не V) по абсолютным позициям start_pos …
+        positions = padding.positions if padding is not None else None
         if self._rope is not None:
-            q = self._rope(q, start_pos=start_pos)  # [B, H, T, hs]
-            k = self._rope(k, start_pos=start_pos)  # [B, 1, T, hs]
+            q = self._rope(q, start_pos=start_pos, positions=positions)  # [B, H, T, hs]
+            k = self._rope(k, start_pos=start_pos, positions=positions)  # [B, 1, T, hs]
 
         # 4. Ключи и значения из кэша идут перед новыми
         if cache is not None:
@@ -215,6 +222,9 @@ class MultiQueryAttention(nn.Module):
 
         # 6. Causal-маска по абсолютным позициям (с кэшем тоже — см. MultiHeadAttention)
         causal_mask = self._tril_mask[start_pos:start_pos + seq_len, :start_pos + seq_len]
+        if padding is not None:
+            # + маска ключей паддинга, своя у каждой строки: [B, 1, T, T_kv]
+            causal_mask = padding.apply(causal_mask, start_pos, key_start=0)
         scores = scores.masked_fill(~causal_mask, float("-inf"))
 
         # 7. Softmax и взвешенная сумма значений

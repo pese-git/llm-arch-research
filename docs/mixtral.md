@@ -279,10 +279,10 @@ ffn_out = self._ff(norm2_out)          # MoE(RMSNorm2(U^(l)))
 
 `forward(x, use_cache=False, cache=None, attention_mask=None)`:
 
-1. `check_sequence_length` и `check_attention_mask` — длина с учётом кэша не больше `max_position_embeddings`; допускается только правый паддинг ([masks.md](masks.md)).
-2. Запоминает `self._aux_token_mask` — плоскую маску настоящих токенов из `attention_mask` (для aux loss) или `None`.
+1. `check_sequence_length` — длина с учётом кэша не больше `max_position_embeddings`; `padding_from_attention_mask` — маска ключей и позиции при паддинге в любом месте строки ([masks.md](masks.md#attention_mask-и-паддинг)).
+2. Запоминает `self._aux_token_mask` — плоскую маску настоящих новых токенов из `attention_mask` (для aux loss) или `None`.
 3. $`H^{(0)}`$: `self._dropout(self._token_embeddings(x))`.
-4. Цикл по `_decoders` с передачей кэша своего слоя; при `use_cache` собирает новый кэш.
+4. Цикл по `_decoders` с передачей кэша своего слоя и `padding`; при `use_cache` собирает новый кэш.
 5. `logits = self._linear(self._norm(out))`; возвращает `(logits, new_cache)` или `(logits, None)`.
 
 `auxiliary_loss()`:

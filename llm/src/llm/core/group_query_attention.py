@@ -2,6 +2,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
+from llm.core.padding import Padding
 from llm.core.rope import RoPE
 
 class GroupedQueryAttention(nn.Module):
@@ -158,6 +159,7 @@ class GroupedQueryAttention(nn.Module):
         x: torch.Tensor,
         use_cache: bool = True,
         cache: list = None,
+        padding: Padding = None,
     ):
         """
         Шаг внимания в режиме Grouped Query Attention — 
@@ -166,7 +168,7 @@ class GroupedQueryAttention(nn.Module):
         Что происходит в этом методе:
         -----------------------------
         - Преобразует входной тензор x (токеновые эмбеддинги) в Q, K, V-матрицы с учётом разного числа голов для Q и KV.
-        - Накладывает встроенную маску causal + sliding window (внешней маски нет: паддинг проверяется в forward модели).
+        - Накладывает встроенную маску causal + sliding window; с padding — ещё маску ключей паддинга (core/padding.py).
         - Применяет RoPE (если задан) к Q и K, вносит позиционную информацию.
         - При работе с кэшем дополняет ключи и значения предыдущими (ускоряет генерацию).
         - Повторяет K/V головы для соответствия количеству Q (чтобы на каждую Q-head приходился свой KV).
@@ -182,6 +184,9 @@ class GroupedQueryAttention(nn.Module):
             Нужно ли использовать/возвращать кэш KV для быстрых автогенераций.
         cache : list, опционально
             Ранее сохранённый кэш KV (используется для инференса по одному токену)
+        padding : Padding, опционально
+            Паддинг батча (core/padding.py): маска ключей по всем слотам и позиции новых
+            токенов для RoPE. None — паддинга нет: только встроенная маска и позиции start_pos, …
 
         Возвращает:
         -----------
@@ -223,9 +228,10 @@ class GroupedQueryAttention(nn.Module):
         v = v.reshape(batch_size, seq_len, self._num_kv_heads, self._head_size).transpose(1, 2)
 
         # 3. RoPE поворачивает Q и K (не V) по абсолютным позициям start_pos …
+        positions = padding.positions if padding is not None else None
         if self._rope is not None:
-            q = self._rope(q, start_pos=start_pos)  # [B, H_q, T, hs]
-            k = self._rope(k, start_pos=start_pos)  # [B, H_kv, T, hs]
+            q = self._rope(q, start_pos=start_pos, positions=positions)  # [B, H_q, T, hs]
+            k = self._rope(k, start_pos=start_pos, positions=positions)  # [B, H_kv, T, hs]
 
         # 4. Ключи и значения из кэша идут перед новыми (кэш хранится до дублирования голов)
         if cache is not None:
@@ -252,6 +258,9 @@ class GroupedQueryAttention(nn.Module):
         window_mask = self._tril_mask[
             start_pos:start_pos + seq_len, start_pos - cache_len:start_pos + seq_len
         ]
+        if padding is not None:
+            # + маска ключей паддинга, своя у каждой строки: [B, 1, T, T_kv]
+            window_mask = padding.apply(window_mask, start_pos, key_start=start_pos - cache_len)
         scores = scores.masked_fill(~window_mask, float("-inf"))
 
         # 8. Softmax и взвешенная сумма значений
