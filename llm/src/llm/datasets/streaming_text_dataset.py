@@ -2,6 +2,8 @@ import torch
 from torch.utils.data import Dataset
 from typing import List, Any
 
+from llm.datasets.lm_example import lm_example
+
 
 class StreamingTextDataset(Dataset):
     """
@@ -93,7 +95,8 @@ class StreamingTextDataset(Dataset):
         Возвращает:
             dict: Словарь с тензорами для обучения LLM:
                 - 'input_ids': torch.Tensor формы [block_size] — индексы токенов (padding/truncation выполнены)
-                - 'labels': torch.Tensor формы [block_size] — целевые метки (обычно совпадают с input_ids)
+                - 'attention_mask': torch.Tensor формы [block_size] — 1 для токенов, 0 для паддинга
+                - 'labels': torch.Tensor формы [block_size] — копия input_ids с -100 на паддинге (не входит в loss)
 
         Пример:
             >>> item = dataset[10]
@@ -103,18 +106,6 @@ class StreamingTextDataset(Dataset):
         """
         text = self.texts[idx]
 
-        # Токенизация на лету
+        # Токенизация на лету; обрезка, паддинг и метки — в lm_example
         input_ids = self.tokenizer.encode(text, add_special_tokens=False)
-
-        # Обрезаем или дополняем до нужной длины
-        if len(input_ids) > self.block_size:
-            input_ids = input_ids[: self.block_size]
-        else:
-            input_ids = input_ids + [self.pad_token_id] * (
-                self.block_size - len(input_ids)
-            )
-
-        input_ids = torch.tensor(input_ids, dtype=torch.long)
-        labels = input_ids.clone()
-
-        return {"input_ids": input_ids, "labels": labels}
+        return lm_example(input_ids, self.block_size, self.pad_token_id)

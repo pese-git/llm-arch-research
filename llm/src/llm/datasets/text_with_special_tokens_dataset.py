@@ -1,6 +1,7 @@
 import torch
 from torch.utils.data import Dataset
 from typing import List, Any
+from llm.datasets.lm_example import lm_example
 from llm.datasets.text_dataset import TextDataset
 
 
@@ -25,7 +26,8 @@ class TextWithSpecialTokensDataset(TextDataset):
     Особенности:
     ------------
     - Если pad_token_id не задан — по умолчанию паддит нулями.
-    - Все returned примеры — dict с 'input_ids' и 'labels' (shape == block_size).
+    - Все returned примеры — dict с 'input_ids', 'attention_mask' и 'labels' (shape == block_size);
+      на pad-позициях labels = -100. BOS/EOS — настоящие токены: маска 1, входят в loss.
     - Обрезание/дополнение учётное: BOS/EOS не "выдавливаются" обрезкой.
     - Пример вызова:
         >>> texts = ["пример текста", "ещё текст"]
@@ -62,6 +64,7 @@ class TextWithSpecialTokensDataset(TextDataset):
         self.block_size = block_size
         self.add_bos = add_bos
         self.add_eos = add_eos
+        self.pad_token_id = getattr(tokenizer, "pad_token_id", 0)
 
         for text in texts:
             # Кодируем без специальных токенов: bos/eos добавляются ниже ровно
@@ -84,11 +87,7 @@ class TextWithSpecialTokensDataset(TextDataset):
             if use_eos:
                 input_ids = input_ids + [eos_token_id]
 
-            # Дополняем до полной длины
-            pad_token_id = getattr(tokenizer, "pad_token_id", 0)
-            if len(input_ids) < block_size:
-                input_ids = input_ids + [pad_token_id] * (block_size - len(input_ids))
-
+            # Храним без паддинга: дополняет lm_example в __getitem__
             self.examples.append(input_ids)
 
     def __len__(self):
@@ -108,8 +107,7 @@ class TextWithSpecialTokensDataset(TextDataset):
             idx (int): Индекс в dataset.
 
         Returns:
-            dict: {'input_ids': torch.Tensor [block_size], 'labels': torch.Tensor [block_size]}
+            dict: {'input_ids', 'attention_mask', 'labels'} — torch.Tensor [block_size];
+                labels на pad-позициях — -100.
         """
-        input_ids = torch.tensor(self.examples[idx], dtype=torch.long)
-        labels = input_ids.clone()
-        return {"input_ids": input_ids, "labels": labels}
+        return lm_example(self.examples[idx], self.block_size, self.pad_token_id)

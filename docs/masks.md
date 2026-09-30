@@ -338,7 +338,7 @@ print(torch.equal(batch[0, 2:], alone[0]))  # True
 = \frac{1}{2}\,(0{,}1269 + 0{,}6931) = 0{,}4100
 ```
 
-В репозитории это `Trainer.compute_lm_loss` в [`training/trainer.py`](../llm/src/llm/training/trainer.py): логиты и метки сдвигаются на одну позицию (логит позиции $`t`$ предсказывает метку $`t + 1`$), затем `F.cross_entropy(..., ignore_index=-100)`. Метки `-100` при паддинге проставляет `HFTokenizerAdapter.pad` из [hf-proxy](../hf-proxy/README.md). Подробнее о функции потерь — в [Обучение](training.md).
+В репозитории это `Trainer.compute_lm_loss` в [`training/trainer.py`](../llm/src/llm/training/trainer.py): логиты и метки сдвигаются на одну позицию (логит позиции $`t`$ предсказывает метку $`t + 1`$), затем `F.cross_entropy(..., ignore_index=-100)`. Метки `-100` при паддинге проставляют датасеты `llm/datasets` (`lm_example` в [`datasets/lm_example.py`](../llm/src/llm/datasets/lm_example.py)) и `HFTokenizerAdapter.pad` из [hf-proxy](../hf-proxy/README.md). Подробнее о функции потерь — в [Обучение](training.md).
 
 Итого при правом паддинге работают два независимых механизма: causal-маска гарантирует, что настоящие токены не видят паддинг, а `-100` — что паддинг не участвует в loss.
 

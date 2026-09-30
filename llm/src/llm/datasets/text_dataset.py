@@ -2,6 +2,8 @@ import torch
 from torch.utils.data import Dataset
 from typing import List, Any
 
+from llm.datasets.lm_example import lm_example
+
 
 class TextDataset(Dataset):
     """
@@ -26,7 +28,8 @@ class TextDataset(Dataset):
     ------------
     - Класс не работает с файлами напрямую: данные передаются готовым списком строк.
     - При недостаточной длине пример дополняется паддингом (нулём или другим токеном, зависит от реализации).
-    - Может возвращать dict с input_ids, labels и прочими ключами (см. реализацию в функции __getitem__).
+    - Возвращает dict с input_ids, attention_mask и labels; на pad-позициях labels = -100,
+      поэтому паддинг не входит в loss (см. llm/datasets/lm_example.py).
 
     Пример использования:
     ---------------------
@@ -57,7 +60,7 @@ class TextDataset(Dataset):
         Особенности:
             - Строки не фильтруются и не изменяются внутри датасета.
             - Для PAD используется pad_token_id из токенизатора (если есть) либо 0.
-            - Dict, возвращаемый __getitem__, содержит 'input_ids' и 'labels'.
+            - Dict, возвращаемый __getitem__, содержит 'input_ids', 'attention_mask' и 'labels'.
 
         Пример:
             >>> dataset = TextDataset(["hello world", "test string"], tokenizer, block_size=16)
@@ -65,20 +68,12 @@ class TextDataset(Dataset):
         self.examples = []
         self.tokenizer = tokenizer
         self.block_size = block_size
+        self.pad_token_id = getattr(tokenizer, "pad_token_id", 0)
 
+        # Храним токены без паддинга (обрезанные до block_size): дополняет lm_example
         for text in texts:
-            # Кодируем текст в токены
             input_ids = tokenizer.encode(text, add_special_tokens=False)
-
-            # Обрезаем или дополняем до нужной длины
-            if len(input_ids) > block_size:
-                input_ids = input_ids[:block_size]
-            else:
-                # Дополняем pad_token_id
-                pad_token_id = getattr(tokenizer, "pad_token_id", 0)
-                input_ids = input_ids + [pad_token_id] * (block_size - len(input_ids))
-
-            self.examples.append(input_ids)
+            self.examples.append(input_ids[:block_size])
 
     def __len__(self):
         """
@@ -99,7 +94,8 @@ class TextDataset(Dataset):
         Возвращает:
             dict: Словарь с тензорами токенов для модели:
                 - 'input_ids': torch.Tensor shape [block_size], индексы токенов для входа.
-                - 'labels': torch.Tensor shape [block_size], метки для LM задачи (обычно совпадают с input_ids).
+                - 'attention_mask': torch.Tensor shape [block_size], 1 — токен, 0 — паддинг.
+                - 'labels': torch.Tensor shape [block_size], копия input_ids с -100 на паддинге.
 
         Пример:
             >>> item = dataset[7]
@@ -107,6 +103,4 @@ class TextDataset(Dataset):
             >>> assert item['input_ids'].shape == (block_size,)
             >>> assert 'labels' in item
         """
-        input_ids = torch.tensor(self.examples[idx], dtype=torch.long)
-        labels = input_ids.clone()
-        return {"input_ids": input_ids, "labels": labels}
+        return lm_example(self.examples[idx], self.block_size, self.pad_token_id)
