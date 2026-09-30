@@ -1,0 +1,16 @@
+# Контекст сборки — корень репозитория; в образ сайта нужны только исходники
+.git
+.claude
+**/.venv
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+checkpoints
+logs
+site/node_modules
+site/dist
+site/.astro
+site/src/content/docs
+site/src/generated
