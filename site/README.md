@@ -42,3 +42,18 @@ Workflow [`.github/workflows/docs-site.yml`](../.github/workflows/docs-site.yml)
 Pages нужно один раз включить в настройках репозитория: Settings → Pages → Source: GitHub Actions.
 
 Адрес для другого хостинга задают переменные окружения `SITE_URL` и `SITE_BASE`, например `SITE_BASE=/ npm run build` для корня домена.
+
+## Docker
+
+[`Dockerfile`](Dockerfile) собирает сайт в образ nginx. Собирать из **корня репозитория**: сайту нужны `docs/` и файлы репозитория для ссылок на код.
+
+```bash
+docker buildx build --platform linux/amd64 -f site/Dockerfile \
+  -t harbor.openidealab.com/llm-arch-research/site:latest .
+docker run --rm -p 8080:80 harbor.openidealab.com/llm-arch-research/site:latest   # http://localhost:8080/
+```
+
+- Сборка в два этапа: Node собирает сайт, nginx ([`nginx.conf`](nginx.conf)) раздаёт `dist/` на порту 80. Образ — около 30 МБ.
+- По умолчанию сайт собирается для корня домена `https://llm-arch-research.openidealab.com` (`SITE_BASE=/`). Другой адрес — `--build-arg SITE_URL=… --build-arg SITE_BASE=…`.
+- Что попадает в контекст сборки, задаёт [`Dockerfile.dockerignore`](Dockerfile.dockerignore): без `.git`, виртуальных окружений, `checkpoints/` и результатов сборки.
+- Образ публикуется в Harbor: `harbor.openidealab.com/llm-arch-research/site`, теги — короткий SHA коммита и `latest`. Для push нужен `docker login harbor.openidealab.com` и роль Developer или выше в проекте `llm-arch-research`.
