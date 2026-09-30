@@ -186,7 +186,7 @@ def test_trainer_passes_attention_mask_to_model():
             return self.emb(x)
 
     dataset = TextDataset(TEXTS, CharTokenizer(), block_size=10)
-    Trainer(MaskModel(), dataset, batch_size=3, num_epochs=1, warmup_steps=1).train()
+    Trainer(MaskModel(), dataset, batch_size=3, num_epochs=1, warmup_steps=0).train()
     # Батч перемешан: сверяем число настоящих токенов в строках
     assert sorted(seen[0].sum(dim=1).tolist()) == sorted(len(t) for t in TEXTS)
 
@@ -226,3 +226,55 @@ def test_mixtral_aux_loss_ignores_padding_from_trainer():
     trainer._forward(batch)
     assert model._aux_token_mask is not None
     assert int(model._aux_token_mask.sum()) == sum(len(t) for t in TEXTS)
+
+
+# --- Warmup (бэклог, пункт 60) ---
+
+import warnings
+
+
+def test_warmup_default_is_100_steps():
+    trainer = Trainer(TinyModel(), ToyLMDataset(), batch_size=4)
+    assert trainer.warmup_steps == 100 and trainer.warmup_ratio is None
+    assert trainer.num_warmup_steps(1000) == 100
+
+
+@pytest.mark.parametrize("ratio, total, expected", [(0.1, 18, 2), (0.1, 20, 2), (0.05, 1000, 50), (0.0, 18, 0), (1.0, 18, 18)])
+def test_warmup_ratio_is_fraction_of_steps(ratio, total, expected):
+    """warmup_ratio → ceil(N_steps · ratio), как в HuggingFace TrainingArguments."""
+    trainer = Trainer(TinyModel(), ToyLMDataset(), batch_size=4, warmup_ratio=ratio)
+    assert trainer.warmup_steps is None
+    assert trainer.num_warmup_steps(total) == expected
+
+
+@pytest.mark.parametrize("kwargs", [
+    {"warmup_steps": 5, "warmup_ratio": 0.1},
+    {"warmup_steps": -1},
+    {"warmup_ratio": -0.1},
+    {"warmup_ratio": 1.5},
+])
+def test_warmup_invalid_args(kwargs):
+    with pytest.raises(ValueError):
+        Trainer(TinyModel(), ToyLMDataset(), batch_size=4, **kwargs)
+
+
+def test_warmup_ratio_reaches_peak_lr():
+    """С warmup_ratio learning rate доходит до заданного даже при коротком обучении."""
+    torch.manual_seed(0)
+    # 16 примеров, batch 4, 3 эпохи — 12 шагов; warmup ceil(1.2) = 2
+    trainer = Trainer(TinyModel(), ToyLMDataset(), lr=1e-3, batch_size=4, num_epochs=3, warmup_ratio=0.1)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")  # предупреждения о длинном warmup нет
+        trainer.train()
+    # Множитель learning rate на шагах 0 … 11: warmup 0, 0.5, затем спад от 1
+    factors = [trainer.scheduler.lr_lambdas[0](k) for k in range(12)]
+    assert factors[:3] == pytest.approx([0.0, 0.5, 1.0])
+    assert max(factors) == pytest.approx(1.0)
+
+
+def test_warmup_longer_than_training_warns():
+    """warmup_steps ≥ числа шагов — предупреждение: learning rate не дойдёт до заданного."""
+    # 16 примеров, batch 4, 1 эпоха — 4 шага
+    trainer = Trainer(TinyModel(), ToyLMDataset(), batch_size=4, num_epochs=1, warmup_steps=50)
+    with pytest.warns(UserWarning, match="warmup_steps = 50"):
+        trainer.train()

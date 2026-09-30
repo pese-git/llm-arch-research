@@ -204,7 +204,7 @@ def main():
             per_device_train_batch_size=TRAINING_CONFIG["batch_size"],
             per_device_eval_batch_size=TRAINING_CONFIG["batch_size"],
             learning_rate=TRAINING_CONFIG["learning_rate"],
-            warmup_steps=TRAINING_CONFIG["warmup_steps"],
+            warmup_ratio=TRAINING_CONFIG["warmup_ratio"],
             logging_dir="./logs",
             logging_steps=10,
             eval_steps=50,

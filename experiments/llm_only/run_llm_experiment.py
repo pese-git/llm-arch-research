@@ -116,7 +116,9 @@ def main():
             lr=training["learning_rate"],
             batch_size=training["batch_size"],
             num_epochs=training["num_epochs"],
-            warmup_steps=training.get("warmup_steps", 0),
+            # warmup_ratio — доля от числа шагов; без обоих ключей warmup нет, как раньше
+            warmup_steps=training.get("warmup_steps", None if "warmup_ratio" in training else 0),
+            warmup_ratio=training.get("warmup_ratio"),
         )
         trainer.train()
 

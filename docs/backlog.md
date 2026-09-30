@@ -595,6 +595,7 @@
 - **Что:** на учебном корпусе за три эпохи получается около 18 шагов, и learning rate не поднимается выше ≈ 0.34 от заданного — всё обучение проходит внутри warmup. Первый шаг `LambdaLR` делается с `lr = 0`.
 - **Воспроизведено:** средний loss по эпохам с `warmup_steps = 5` — 5.34 → 1.33, с 50 — 6.07 → 3.74 (loss с учётом паддинга, пункт 57).
 - **Исправление:** задавать warmup долей от числа шагов (например, 5–10 %) или уменьшить значение в конфигах.
+- **Статус:** исправлено в ветке `fix/warmup-steps`: `Trainer` принимает `warmup_ratio` — долю warmup от числа шагов, $`\lceil N_{\text{steps}} \cdot \texttt{warmup\_ratio} \rceil`$, как в HF `TrainingArguments` (вместе с `warmup_steps` — `ValueError`; без обоих — 100 шагов, как раньше), и предупреждает, если warmup не короче всего обучения. Учебные конфиги `experiments/llm_only` и `TRAINING_CONFIG` в `experiments/shared/configs.py` (там была та же ошибка, его использует `train_with_hf_trainer.py`) переведены на `warmup_ratio = 0.1`: 2 шага warmup из 18, learning rate доходит до заданного. Прогон GPT с паддингом, исключённым из loss (пункт 57): средний loss эпох 6.08 → 5.98 → 5.79 с `warmup_steps = 50` и 6.04 → 5.27 → 4.84 с `warmup_ratio = 0.1`. Первый шаг с `lr = 0` оставлен: так же устроен линейный warmup в HF.
 
 #### 61. `get_optimizer`: weight decay на всех параметрах — P3
 

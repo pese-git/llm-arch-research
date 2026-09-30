@@ -372,7 +372,7 @@ trainer.train()
 
 - $`k`$ — сколько раз уже был вызван `scheduler.step()`, $`k = 0, 1, \dots`$ (номер шага; не путать с числом экспертов $`k`$ из главы о MoE);
 - $`\eta`$ — базовый learning rate (`lr` оптимизатора);
-- $`W_{\text{w}}`$ — `num_warmup_steps` (в `Trainer` — `warmup_steps`); индекс $`\text{w}`$ — чтобы не путать с шириной окна $`W`$;
+- $`W_{\text{w}}`$ — `num_warmup_steps` (в `Trainer` — `warmup_steps` или, при `warmup_ratio`, $`\lceil N_{\text{steps}} \cdot \texttt{warmup\_ratio} \rceil`$); индекс $`\text{w}`$ — чтобы не путать с шириной окна $`W`$;
 - $`N_{\text{steps}}`$ — `num_training_steps` (в `Trainer` — `len(train_loader) * num_epochs`, то же число, что в формуле выше);
 - $`\lambda(k)`$ — множитель от 0 до 1 (не путать с коэффициентом weight decay).
 
@@ -647,8 +647,11 @@ Hoffmann et al. (2022, Chinchilla, [arXiv:2203.15556](https://arxiv.org/abs/2203
 `Trainer` ([`training/trainer.py`](../llm/src/llm/training/trainer.py)) — минимальный цикл обучения, общий для всех шести моделей:
 
 ```python
-Trainer(model, train_dataset, val_dataset=None, lr=3e-4, batch_size=8, num_epochs=3, warmup_steps=100)
+Trainer(model, train_dataset, val_dataset=None, lr=3e-4, batch_size=8, num_epochs=3,
+        warmup_steps=None, warmup_ratio=None)
 ```
+
+Длину warmup задают либо числом шагов `warmup_steps`, либо долей `warmup_ratio` от числа шагов обучения: $`W_{\text{w}} = \lceil N_{\text{steps}} \cdot \texttt{warmup\_ratio} \rceil`$, как `warmup_ratio` в HuggingFace `TrainingArguments`. Доля удобнее, когда $`N_{\text{steps}}`$ зависит от размера датасета: warmup не окажется длиннее всего обучения. Оба параметра сразу — `ValueError`; ни одного — 100 шагов, как раньше. Если $`W_{\text{w}} \ge N_{\text{steps}}`$, `train()` выдаёт предупреждение: learning rate не дойдёт до заданного.
 
 Конструктор создаёт `DataLoader` (`shuffle=True` для обучающего, без перемешивания для валидационного), оптимизатор `get_optimizer(model, lr=lr)` (AdamW, $`\lambda = 0.01`$), выбирает устройство (`cuda`, если доступна, иначе `cpu`) и переносит на него модель.
 
@@ -675,7 +678,7 @@ flowchart TD
 
 | Шаг | Код | Что происходит | Раздел главы |
 |---|---|---|---|
-| 0 | `total_steps = len(self.train_loader) * self.num_epochs`; `get_linear_schedule_with_warmup(...)` | число шагов $`N_{\text{steps}}`$ и планировщик | [расписание](#линейный-warmup-и-линейный-спад) |
+| 0 | `total_steps = len(self.train_loader) * self.num_epochs`; `self.num_warmup_steps(total_steps)`; `get_linear_schedule_with_warmup(...)` | число шагов $`N_{\text{steps}}`$, длина warmup (предупреждение, если она не меньше $`N_{\text{steps}}`$) и планировщик | [расписание](#линейный-warmup-и-линейный-спад) |
 | 1 | `self.model.train()` | включить dropout (в начале каждой эпохи) | [dropout](#регуляризация-dropout) |
 | 2 | `self.optimizer.zero_grad()` | обнулить накопленные `.grad` | [backprop](#обратное-распространение-ошибки) |
 | 3 | `outputs = self.model(input_ids)`, `logits = outputs[0]` | forward, логиты $`[B, T, V]`$ | |
@@ -701,8 +704,10 @@ uv run python experiments/llm_only/run_llm_experiment.py --model gpt2 --action t
 Раздел `training` конфига передаётся в `Trainer`:
 
 ```json
-"training": { "learning_rate": 0.0003, "batch_size": 2, "num_epochs": 3, "warmup_steps": 50 }
+"training": { "learning_rate": 0.0003, "batch_size": 2, "num_epochs": 3, "warmup_ratio": 0.1 }
 ```
+
+Вместо `warmup_ratio` можно задать `warmup_steps`; без обоих ключей скрипт обучает без warmup. На учебном корпусе 18 шагов, и `warmup_ratio = 0.1` даёт $`\lceil 1{,}8 \rceil = 2`$ шага warmup.
 
 Скрипт берёт 80% учебного корпуса (`load_training_data`), обучает или загружает BPE-токенизатор, подставляет его `vocab_size` в `model_config`, строит `TextDataset` с `block_size = max_position_embeddings` и вызывает `Trainer(...).train()` без валидационного набора. Веса сохраняются как голый `state_dict` (`torch.save(model.state_dict(), ...)`), а конфиг — отдельным JSON; режим `generate` загружает их через `load_state_dict`.
 
@@ -746,7 +751,7 @@ restored = GPT.load("checkpoints/gpt_tiny.pt", device="cpu")
 
 **Loss не падает или падает очень медленно.**
 
-- Проверьте, какой learning rate реально был: `trainer.optimizer.param_groups[0]["lr"]`. В учебных конфигах `warmup_steps = 50`, а всего шагов 18 (12 примеров, $`B = 2`$, 3 эпохи): обучение целиком проходит внутри warmup, и максимальный множитель — $`\lambda(17) = 17/50 = 0.34`$. В нашем прогоне GPT по этому конфигу средний loss эпох — 6.07 → 5.30 → 3.74, а с `warmup_steps = 5` — 5.34 → 2.02 → 1.33. Warmup должен быть малой долей от $`N_{\text{steps}}`$ (обычно единицы процентов).
+- Проверьте, какой learning rate реально был: `trainer.optimizer.param_groups[0]["lr"]`, а множитель расписания на шаге $`k`$ — `trainer.scheduler.lr_lambdas[0](k)`. Warmup должен быть малой долей от $`N_{\text{steps}}`$ (обычно единицы процентов). Раньше в учебных конфигах стояло `warmup_steps = 50` при 18 шагах (12 примеров, $`B = 2`$, 3 эпохи; пункт 60 [бэклога](backlog.md)): обучение целиком проходило внутри warmup, и максимальный множитель был $`\lambda(17) = 17/50 = 0.34`$. В прогоне GPT по этому конфигу (паддинг исключён из loss) средний loss эпох — 6.08 → 5.98 → 5.79, а с нынешним `warmup_ratio = 0.1` (2 шага warmup) — 6.04 → 5.27 → 4.84. Теперь `Trainer` предупреждает, если warmup не короче всего обучения.
 - Слишком маленький или слишком большой $`\eta`$: loss стоит на месте или скачет. Для маленьких трансформеров с AdamW типичны $`10^{-4}`$–$`10^{-3}`$.
 - Двойной сдвиг меток. `compute_lm_loss` сдвигает сам; если сдвинуть `labels` ещё и в датасете, модель будет предсказывать токен через один.
 - Начальный loss сильно больше $`\ln V`$ — проблема инициализации или масштаба логитов (см. [выше](#начальный-loss--ln-v)).
@@ -793,7 +798,7 @@ print((targets != -100).float().mean())   # доля целей в loss: при 
 - Обучение минимизирует среднюю cross-entropy следующего токена; датасеты возвращают `labels` — копию `input_ids` с `-100` на паддинге — и `attention_mask`, сдвиг делает `compute_lm_loss`, pad-токены в loss не входят.
 - Градиент cross-entropy по логитам — $`p - \mathbf{y}`$; autograd по цепному правилу доводит его до всех весов.
 - Adam нормирует шаг каждого параметра оценкой второго момента, с поправкой смещения в начале; AdamW применяет weight decay мимо этой нормировки. В репозитории — AdamW с $`\lambda = 0.01`$ на все параметры.
-- Learning rate: линейный warmup от 0 и линейный спад до 0; warmup гасит шум ранних оценок Adam и нестабильность post-LN. Косинусного расписания в репозитории нет.
+- Learning rate: линейный warmup от 0 и линейный спад до 0; warmup гасит шум ранних оценок Adam и нестабильность post-LN. Длину warmup удобно задавать долей от числа шагов (`warmup_ratio`). Косинусного расписания в репозитории нет.
 - Gradient clipping ограничивает общую норму градиента единицей и защищает от всплесков.
 - GPT и GPT-2 инициализируются $`\mathcal{N}(0, 0.02^2)`$ (GPT-2 — с масштабом $`1/\sqrt{2L}`$ для residual-проекций), остальные модели — по умолчанию PyTorch; начальный loss $`\approx \ln V + \sigma^2/2`$.
 - Dropout — $`m \odot h/(1-p)`$ только в режиме train; в современных LLM его обычно нет.
