@@ -17,7 +17,7 @@
       "learning_rate": 0.0003,
       "batch_size": 2,
       "num_epochs": 3,
-      "warmup_steps": 50
+      "warmup_ratio": 0.1
     },
     "log_path": "checkpoints/gpt2_only_training_logs.json"
   }

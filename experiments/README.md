@@ -60,7 +60,7 @@ uv run python experiments/llm_only/run_llm_experiment.py --model llama --action 
   "model_config": { "vocab_size": null, "embed_dim": 256, "...": "ключи зависят от модели" },
   "model_weights": "checkpoints/llama-bpe/model.pt",
   "model_config_path": "checkpoints/llama-bpe/config.json",
-  "training": { "learning_rate": 0.0003, "batch_size": 2, "num_epochs": 3, "warmup_steps": 50 },
+  "training": { "learning_rate": 0.0003, "batch_size": 2, "num_epochs": 3, "warmup_ratio": 0.1 },
   "log_path": "checkpoints/llama_only_training_logs.json"
 }
 ```

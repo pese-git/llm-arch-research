@@ -17,6 +17,9 @@
 >>> trainer = Trainer(model, train_dataset, val_dataset, lr=3e-4, batch_size=8, num_epochs=3, warmup_steps=100)
 >>> trainer.train()
 """
+import math
+import warnings
+
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
@@ -52,8 +55,10 @@ class Trainer:
         Устройство (CPU или CUDA), куда помещается модель
     num_epochs : int
         Количество эпох обучения
-    warmup_steps : int
-        Число шагов warmup для scheduler
+    warmup_steps : int или None
+        Число шагов warmup для scheduler (None, если задан warmup_ratio)
+    warmup_ratio : float или None
+        Доля warmup от общего числа шагов (None, если задан warmup_steps)
     """
 
     def __init__(
@@ -64,7 +69,8 @@ class Trainer:
         lr=3e-4,
         batch_size=8,
         num_epochs=3,
-        warmup_steps=100,
+        warmup_steps=None,
+        warmup_ratio=None,
     ):
         """
         Инициализация обучающего класса Trainer.
@@ -84,9 +90,28 @@ class Trainer:
             Размер обучающего мини-батча.
         num_epochs : int, default=3
             Количество эпох обучения.
-        warmup_steps : int, default=100
-            Количество шагов разогрева (warmup) learning rate.
+        warmup_steps : int, optional
+            Количество шагов разогрева (warmup) learning rate. Если не задан ни он,
+            ни warmup_ratio — 100.
+        warmup_ratio : float, optional
+            Warmup как доля от общего числа шагов, от 0 до 1: ceil(N_steps · warmup_ratio),
+            как warmup_ratio в HuggingFace TrainingArguments. Удобнее warmup_steps, когда
+            число шагов зависит от размера датасета. Нельзя вместе с warmup_steps.
+
+        Raises
+        ------
+        ValueError
+            Если заданы и warmup_steps, и warmup_ratio, warmup_steps < 0 или
+            warmup_ratio вне [0, 1].
         """
+        if warmup_steps is not None and warmup_ratio is not None:
+            raise ValueError("Задайте warmup_steps или warmup_ratio, но не оба")
+        if warmup_steps is not None and warmup_steps < 0:
+            raise ValueError(f"warmup_steps должен быть ≥ 0, получено {warmup_steps}")
+        if warmup_ratio is not None and not 0 <= warmup_ratio <= 1:
+            raise ValueError(f"warmup_ratio должен быть от 0 до 1, получено {warmup_ratio}")
+        if warmup_steps is None and warmup_ratio is None:
+            warmup_steps = 100
         self.model = model
         self.train_loader = DataLoader(
             train_dataset, batch_size=batch_size, shuffle=True
@@ -100,6 +125,16 @@ class Trainer:
         self.model.to(self.device)
         self.num_epochs = num_epochs
         self.warmup_steps = warmup_steps
+        self.warmup_ratio = warmup_ratio
+
+    def num_warmup_steps(self, num_training_steps):
+        """
+        Число шагов warmup для обучения из num_training_steps шагов: warmup_steps
+        или ceil(num_training_steps · warmup_ratio).
+        """
+        if self.warmup_ratio is not None:
+            return math.ceil(num_training_steps * self.warmup_ratio)
+        return self.warmup_steps
 
     def compute_lm_loss(self, logits, labels):
         """
@@ -168,8 +203,16 @@ class Trainer:
         Параметры задаются на этапе инициализации Trainer.
         """
         total_steps = len(self.train_loader) * self.num_epochs
+        warmup_steps = self.num_warmup_steps(total_steps)
+        if warmup_steps > 0 and warmup_steps >= total_steps:
+            # Всё обучение внутри warmup: learning rate не дойдёт до заданного
+            warnings.warn(
+                f"warmup_steps = {warmup_steps} не меньше числа шагов обучения {total_steps}: "
+                f"learning rate не поднимется выше {(total_steps - 1) / max(1, warmup_steps):.2f} "
+                f"от заданного. Уменьшите warmup_steps или задайте warmup_ratio."
+            )
         self.scheduler = get_linear_schedule_with_warmup(
-            self.optimizer, self.warmup_steps, total_steps
+            self.optimizer, warmup_steps, total_steps
         )
         self.loss_history = []  # добавлено: лог средних потерь
 
