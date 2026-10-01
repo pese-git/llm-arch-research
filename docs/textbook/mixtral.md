@@ -3,8 +3,7 @@
 
 Часть II · [← Mistral](mistral.md) · [Оглавление](README.md) · [Gemma →](gemma.md)
 
-> Реализация: [`llm/src/llm/models/mixtral/mixtral.py`](../../llm/src/llm/models/mixtral/mixtral.py) · класс `Mixtral`
-> Ноутбук: [`notebooks/mixtral.ipynb`](../../notebooks/mixtral.ipynb)
+> Реализация: [`llm/src/llm/models/mixtral/mixtral.py`](../../llm/src/llm/models/mixtral/mixtral.py) · класс `Mixtral` · ноутбук: [`notebooks/mixtral.ipynb`](../../notebooks/mixtral.ipynb)
 
 Место в линейке: [GPT-1](gpt.md) → [GPT-2](gpt2.md) → [LLaMA](llama.md) → [Mistral](mistral.md) → **Mixtral** · [Gemma](gemma.md)
 

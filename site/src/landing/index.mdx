@@ -37,7 +37,7 @@ import { Card, CardGrid, LinkCard, Tabs, TabItem } from '@astrojs/starlight/comp
   <LinkCard title="LLaMA · Meta, 2023" description="RoPE, RMSNorm и SwiGLU — основа современных открытых моделей." href="textbook/llama/" />
   <LinkCard title="Mistral · Mistral AI, 2023" description="Grouped Query Attention и скользящее окно внимания." href="textbook/mistral/" />
   <LinkCard title="Mixtral · Mistral AI, 2024" description="Mixture-of-Experts: роутер выбирает два эксперта из восьми." href="textbook/mixtral/" />
-  <LinkCard title="Gemma · Google DeepMind, 2024" description="Multi-Query Attention, GeGLU, масштаб эмбеддингов на √d." href="textbook/gemma/" />
+  <LinkCard title="Gemma · Google DeepMind, 2024" description="Multi-Query Attention (2B), GeGLU, масштаб эмбеддингов на √d." href="textbook/gemma/" />
 </CardGrid>
 
 ## Почему этот проект
@@ -47,7 +47,7 @@ import { Card, CardGrid, LinkCard, Tabs, TabItem } from '@astrojs/starlight/comp
     Каждый блок трансформера — небольшой самостоятельный модуль. Библиотека зависит только от PyTorch и NumPy: никакой магии фреймворков между формулой и кодом.
   </Card>
   <Card title="Сверено с эталоном" icon="star">
-    На весах HuggingFace логиты всех шести моделей совпадают до 1e-5–1e-4, greedy-генерация с KV-кэшем — токен в токен. Больше 1150 тестов.
+    На весах HuggingFace логиты всех шести моделей совпадают с точностью порядка 1e-5–1e-4, greedy-генерация с KV-кэшем — токен в токен. Больше 1150 тестов.
   </Card>
   <Card title="Три уровня объяснения" icon="puzzle">
     Каждый механизм — идея и статья, затем формулы с числовыми примерами, затем конкретная строка кода, которая их реализует.

@@ -1,12 +1,11 @@
 # Gemma
 <!-- description: Gemma (Google DeepMind, 2024): Multi-Query Attention, GeGLU, словарь 256k и масштаб эмбеддингов на √d. -->
 
-Часть II · [← Mixtral](mixtral.md) · [Оглавление](README.md) · [Глоссарий →](glossary.md)
+Часть II · [← Mixtral](mixtral.md) · [Оглавление](README.md) · [Обозначения →](notation.md)
 
-> Реализация: [`llm/src/llm/models/gemma/gemma.py`](../../llm/src/llm/models/gemma/gemma.py) · класс `Gemma`
-> Ноутбук: [`notebooks/gemma.ipynb`](../../notebooks/gemma.ipynb)
+> Реализация: [`llm/src/llm/models/gemma/gemma.py`](../../llm/src/llm/models/gemma/gemma.py) · класс `Gemma` · ноутбук: [`notebooks/gemma.ipynb`](../../notebooks/gemma.ipynb)
 
-Место в линейке: развивает ту же базу (RoPE + RMSNorm), что и [LLaMA](llama.md)/[Mistral](mistral.md), но с собственным вариантом attention и FFN — не входит в основную цепочку GPT → Mixtral. Это последняя глава части II; дальше — [глоссарий](glossary.md) и [оглавление](README.md).
+Место в линейке: [GPT-1](gpt.md) → [GPT-2](gpt2.md) → [LLaMA](llama.md) → [Mistral](mistral.md) → [Mixtral](mixtral.md) · **Gemma**. Gemma не продолжает Mixtral, а развивает ту же базу RoPE + RMSNorm, что LLaMA и Mistral, со своими вариантами attention и FFN. Это последняя глава части II; дальше — справочник: [обозначения](notation.md) и [глоссарий](glossary.md).
 
 ## Что вы узнаете
 

@@ -3,8 +3,7 @@
 
 Часть II · [← Генерация текста](generation.md) · [Оглавление](README.md) · [GPT-2 →](gpt2.md)
 
-> Реализация: [`llm/src/llm/models/gpt/gpt.py`](../../llm/src/llm/models/gpt/gpt.py) · класс `GPT`
-> Ноутбук: [`notebooks/gpt.ipynb`](../../notebooks/gpt.ipynb)
+> Реализация: [`llm/src/llm/models/gpt/gpt.py`](../../llm/src/llm/models/gpt/gpt.py) · класс `GPT` · ноутбук: [`notebooks/gpt.ipynb`](../../notebooks/gpt.ipynb)
 
 Место в линейке: **GPT-1** → [GPT-2](gpt2.md) → [LLaMA](llama.md) → [Mistral](mistral.md) → [Mixtral](mixtral.md) · [Gemma](gemma.md)
 

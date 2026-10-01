@@ -3,8 +3,7 @@
 
 Часть II · [← GPT-2](gpt2.md) · [Оглавление](README.md) · [Mistral →](mistral.md)
 
-> Реализация: [`llm/src/llm/models/llama/llama.py`](../../llm/src/llm/models/llama/llama.py) · класс `Llama`
-> Ноутбук: [`notebooks/llama.ipynb`](../../notebooks/llama.ipynb)
+> Реализация: [`llm/src/llm/models/llama/llama.py`](../../llm/src/llm/models/llama/llama.py) · класс `Llama` · ноутбук: [`notebooks/llama.ipynb`](../../notebooks/llama.ipynb)
 
 Место в линейке: [GPT-1](gpt.md) → [GPT-2](gpt2.md) → **LLaMA** → [Mistral](mistral.md) → [Mixtral](mixtral.md) · [Gemma](gemma.md)
 
