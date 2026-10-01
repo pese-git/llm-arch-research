@@ -46,7 +46,7 @@ Attention в оригинале — GQA + RoPE с плотным внимани�
 %%{init: {"flowchart": {"rankSpacing": 28, "nodeSpacing": 28}}}%%
 flowchart TB
     accTitle: Архитектура Mixtral
-    accDescr: Как у Mistral, но вместо плотного SwiGLU в каждом блоке слой Mixture-of-Experts: роутер выбирает top-k из num_experts SwiGLU-экспертов. Затем финальный RMSNorm, проекция на словарь и logits.
+    accDescr: Как у Mistral, но скользящее окно внимания включается только ключом window_size, а вместо плотного SwiGLU в каждом блоке слой Mixture-of-Experts: роутер выбирает top-k из num_experts SwiGLU-экспертов. Затем финальный RMSNorm, проекция на словарь и logits.
     Ids(["token ids"]):::io --> TokEmb["Token Embedding"]:::blue
     TokEmb --> Drop["Dropout"]:::gray
     subgraph Dec["MixtralDecoder × num_layers · pre-RMSNorm"]

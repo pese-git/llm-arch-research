@@ -456,7 +456,7 @@ if self._embedding_scale is not None:
 %%{init: {"flowchart": {"rankSpacing": 28, "nodeSpacing": 28}}}%%
 flowchart TB
     accTitle: Путь от токенов к logits
-    accDescr: Индексы токенов выбирают строки матрицы эмбеддингов, у Gemma результат умножается на корень из d, у GPT прибавляются позиционные эмбеддинги, затем dropout, блоки декодера, финальная нормализация и выходная проекция в logits.
+    accDescr: Индексы токенов выбирают строки матрицы эмбеддингов, у Gemma результат умножается на корень из d, у GPT-1 и GPT-2 прибавляются позиционные эмбеддинги, затем dropout, блоки декодера, финальная нормализация (кроме GPT-1) и выходная проекция в logits. При tie_word_embeddings выходная проекция использует ту же матрицу эмбеддингов.
     Ids(["token ids [B, T]"]):::io --> Emb["TokenEmbeddings<br/>строки E [V, d]"]:::blue
     Emb --> Scale["× √d<br/>(Gemma, scale_embeddings)"]:::dim
     Scale --> Pos(("+")):::add
