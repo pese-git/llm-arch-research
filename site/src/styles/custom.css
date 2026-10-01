@@ -30,3 +30,11 @@
   display: block;
   overflow-x: auto;
 }
+
+/* Главная на телефоне: логотип меньше, чтобы заголовок и кнопки были видны сразу.
+   Starlight до 50rem ставит его шириной min(70%, 20rem) — около трети экрана */
+@media (max-width: 49.99rem) {
+  .hero > img {
+    width: min(35%, 9rem);
+  }
+}

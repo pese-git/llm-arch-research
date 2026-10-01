@@ -111,6 +111,8 @@ FFN GPT-2 — два линейных слоя с GELU между ними. В L
 ```mermaid
 %%{init: {"flowchart": {"rankSpacing": 28, "nodeSpacing": 28}}}%%
 flowchart TB
+    accTitle: Архитектура LLaMA
+    accDescr: Эмбеддинги токенов (позиционных эмбеддингов нет) и dropout. Стек блоков pre-RMSNorm: masked multi-head attention с RoPE и SwiGLU, каждый с residual-связью. Затем финальный RMSNorm, проекция на словарь и logits.
     Ids(["token ids"]):::io --> TokEmb["Token Embedding"]:::blue
     TokEmb --> Drop["Dropout"]:::gray
     subgraph Dec["CachedDecoder × num_layers · pre-RMSNorm"]
@@ -222,6 +224,8 @@ Dropout в коде — после эмбеддингов, после $`W_O`$ и
 ```mermaid
 %%{init: {"flowchart": {"rankSpacing": 28, "nodeSpacing": 28}}}%%
 flowchart TB
+    accTitle: Attention с RoPE
+    accDescr: Вход проецируется в Q, K и V. Q и K поворачиваются на углы, зависящие от позиции, поэтому их произведение зависит только от расстояния между позициями. K попадает в KV-кэш уже повёрнутым, далее деление на корень из размера головы, causal-маска, softmax и умножение на V.
     X(["x"]):::io --> Wq["W_q"]:::gray --> Q["Q"]:::blue
     X --> Wk["W_k"]:::gray --> K["K"]:::blue
     X --> Wv["W_v"]:::gray --> V["V"]:::blue

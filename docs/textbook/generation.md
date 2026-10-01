@@ -50,6 +50,8 @@ x ← промпт                                    # [B, P]
 ```mermaid
 %%{init: {"flowchart": {"rankSpacing": 26, "nodeSpacing": 26}}}%%
 flowchart TB
+    accTitle: Авторегрессивный цикл генерации
+    accDescr: На каждом шаге модель получает вход с учётом кэша, из logits последней позиции выбирается следующий токен, законченные строки заполняются pad_token_id, токен дописывается к последовательности, цикл повторяется.
     P(["промпт x [B, P]"]):::io --> In["вход шага<br/>next_generation_input"]:::gray
     In --> M["model(x_input, cache)<br/>→ logits [B, T, V]"]:::blue
     M --> Last["logits[:, −1, :]<br/>[B, V]"]:::gray
@@ -259,6 +261,8 @@ c_r (включая)     0.50   0.80   0.95   1.00
 ```mermaid
 %%{init: {"flowchart": {"rankSpacing": 22, "nodeSpacing": 22}}}%%
 flowchart LR
+    accTitle: Порядок обработки logits при выборе токена
+    accDescr: Без сэмплирования берётся argmax. С сэмплированием logits делятся на температуру, затем применяется top-k или top-p, после чего softmax и выбор токена через multinomial.
     Z(["logits [B, V]"]):::io --> D{"do_sample?"}:::add
     D -- нет --> G["argmax"]:::gray
     D -- да --> T["logits / temperature"]:::purple

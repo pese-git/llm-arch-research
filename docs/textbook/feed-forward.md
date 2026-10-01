@@ -72,6 +72,8 @@ Attention — единственное место блока, где токен�
 
 ```mermaid
 flowchart LR
+    accTitle: Классическая FFN
+    accDescr: Вход размерности d проходит через линейный слой в 4d, активацию, линейный слой обратно в d и dropout.
     X(["x · [B, T, d]"]):::io --> L1["Linear W1<br/>d → 4d"]:::gray --> Act["активация"]:::purple --> L2["Linear W2<br/>4d → d"]:::gray --> Drop["Dropout"]:::gray --> Out(["out · [B, T, d]"]):::io
 
     classDef io fill:#ffffff,stroke:#999999,color:#1a1a1a;
@@ -298,6 +300,8 @@ SwiGLU используют LLaMA, Mistral и Mixtral (в каждом эксп�
 
 ```mermaid
 flowchart LR
+    accTitle: GLU-вариант FFN
+    accDescr: Две параллельные проекции входа в d_ff: вентиль через SiLU или GELU и линейная ветвь, их поэлементное произведение проецируется обратно в d и проходит dropout.
     X(["x · [B, T, d]"]):::io --> G["Linear W (gate)<br/>d → d_ff"]:::gray --> Act["SiLU или GELU"]:::purple --> Mul(("×")):::add
     X --> U["Linear V (up)<br/>d → d_ff"]:::gray --> Mul
     Mul --> D["Linear W2 (down)<br/>d_ff → d"]:::gray --> Drop["Dropout"]:::gray --> Out(["out · [B, T, d]"]):::io

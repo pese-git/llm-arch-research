@@ -61,6 +61,8 @@ GPT-1 показал, что предобученную языковую мод�
 ```mermaid
 %%{init: {"flowchart": {"rankSpacing": 28, "nodeSpacing": 28}}}%%
 flowchart TB
+    accTitle: Архитектура GPT-2
+    accDescr: Как у GPT-1, но блоки pre-LN: LayerNorm стоит перед attention и перед FFN, residual-связь обходит подблок. После стека добавлен финальный LayerNorm, затем проекция на словарь и logits.
     Ids(["token ids"]):::io --> TokEmb["Token Embedding"]:::blue
     Ids --> PosEmb["Position Embedding<br/>(обучаемые)"]:::purple
     TokEmb --> Sum(("+")):::add

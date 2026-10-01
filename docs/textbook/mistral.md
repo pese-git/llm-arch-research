@@ -67,6 +67,8 @@
 ```mermaid
 %%{init: {"flowchart": {"rankSpacing": 28, "nodeSpacing": 28}}}%%
 flowchart TB
+    accTitle: Архитектура Mistral
+    accDescr: Как у LLaMA, но attention — grouped query attention со скользящим окном: эмбеддинги, стек блоков pre-RMSNorm с GQA и SwiGLU и residual-связями, финальный RMSNorm, проекция на словарь и logits.
     Ids(["token ids"]):::io --> TokEmb["Token Embedding"]:::blue
     TokEmb --> Drop["Dropout"]:::gray
     subgraph Dec["MistralDecoder × num_layers · pre-RMSNorm"]

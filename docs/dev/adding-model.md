@@ -34,7 +34,7 @@
 - добавьте модель в словарь `MODELS` в `tests/models/test_model_contract.py` — общие проверки позиций, лимита длины и конфига;
 - `tests/models/test_<name>.py` — формы выхода, кэш (префилл кусками и генерация с кэшем совпадают с полным `forward`), конфиг;
 - добавьте модель в тесты, которые перебирают все модели: `test_attention_mask.py`, `test_kv_cache.py`, `test_save_load.py`, `test_state_dict.py`, `test_generate_args.py`, `test_llama_family_init.py` (или аналог инициализации);
-- `tests/models/test_<name>_hf_parity.py` — случайная модель `transformers` той же конфигурации, `convert_hf_state_dict`, совпадение логитов (`atol=1e-4`) и greedy-генерации с KV-кэшем.
+- сверка с HuggingFace — случайная модель `transformers` той же конфигурации, `convert_hf_state_dict`, совпадение логитов (`atol=1e-4`) и greedy-генерации с KV-кэшем. Обычно это отдельный файл `tests/models/test_<name>_hf_parity.py` (`test_llama_hf_parity.py`, `test_gemma_hf_parity.py`); близкие модели можно сверять в общем файле, как Mistral и Mixtral в `test_mistral_mixtral_hf_parity.py`, а GPT-1 и GPT-2 сверяются в `test_gpt_weight_tying.py`.
 
 ## 5. Эксперименты
 

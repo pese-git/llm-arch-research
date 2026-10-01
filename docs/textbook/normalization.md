@@ -350,6 +350,8 @@ print(RMSNorm(4).half()(h))   # tensor([[2.0000, 0.0067, 0.0067, 0.0067]], dtype
 ```mermaid
 %%{init: {"flowchart": {"rankSpacing": 28, "nodeSpacing": 28}}}%%
 flowchart TB
+    accTitle: Блок post-LN
+    accDescr: Как в GPT-1: attention, сложение с входом, LayerNorm, затем FFN, сложение и снова LayerNorm. Нормализация стоит на пути residual-связи.
     subgraph Post["Блок post-LN (GPT-1)"]
         direction TB
         X(["x"]):::io --> Attn["Attention"]:::blue
@@ -402,6 +404,8 @@ flowchart TB
 ```mermaid
 %%{init: {"flowchart": {"rankSpacing": 28, "nodeSpacing": 28}}}%%
 flowchart TB
+    accTitle: Блок pre-LN
+    accDescr: Как в GPT-2 и следующих моделях: нормализация перед attention и перед FFN, residual-связь обходит подблок без нормализации. После всего стека — одна финальная нормализация перед проекцией на словарь.
     subgraph Pre["Блок pre-LN (GPT-2, LLaMA, Mistral, Mixtral, Gemma)"]
         direction TB
         X(["x"]):::io --> N1["LayerNorm / RMSNorm"]:::grayHl

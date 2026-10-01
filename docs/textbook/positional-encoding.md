@@ -729,6 +729,8 @@ Mixtral 8x7B сразу обучен с базой $`10^6`$ под контек�
 ```mermaid
 %%{init: {"flowchart": {"rankSpacing": 28, "nodeSpacing": 28}}}%%
 flowchart TB
+    accTitle: Где позиция входит в модель
+    accDescr: В GPT-1 и GPT-2 обучаемый позиционный эмбеддинг прибавляется к эмбеддингу токена на входе, а attention позиций не видит. В LLaMA, Mistral, Mixtral и Gemma позиция входит внутри attention каждого слоя: RoPE поворачивает Q и K, а V не меняется.
     subgraph GPT["GPT-1, GPT-2: сложение на входе"]
         direction TB
         I1(["token ids"]):::io --> TE1["Token Embedding"]:::blue
