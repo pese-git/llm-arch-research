@@ -26,7 +26,8 @@ npm run preview   # просмотр собранного сайта
   - ссылки на код (`../../llm/src/...`) ведут на файлы в ветке `master` на GitHub;
   - подпись ссылки, которая совпадает с именем файла (`[attention.md](attention.md)`), заменяется названием страницы — её заголовком `# …`.
 - Диаграммы ` ```mermaid ` рисует в браузере [astro-mermaid](https://github.com/joesaby/astro-mermaid), со светлой и тёмной темой.
-- Поиск — Pagefind, встроен в Starlight.
+- Поиск — Pagefind, встроен в Starlight. Вес страницы в результатах задаёт `searchWeights` в `sync-docs.mjs`: у бэклога он понижен до 0.2, иначе журнал, где упомянут почти каждый термин, выходит выше глав. Проверять поиск нужно на собранном сайте (`npm run build && npm run preview`): в `npm run dev` индекса нет.
+- `robots.txt` собирает [`src/pages/robots.txt.ts`](src/pages/robots.txt.ts): в нём абсолютный адрес `sitemap-index.xml`, зависящий от `SITE_URL` и `SITE_BASE`.
 
 Меню читается при старте: после правки оглавления в `docs/<раздел>/README.md` перезапустите `npm run dev`.
 
