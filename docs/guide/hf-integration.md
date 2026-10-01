@@ -1,4 +1,5 @@
 # Интеграция с HuggingFace
+<!-- description: Пакет hf-proxy оборачивает модели библиотеки в интерфейсы transformers: обучение через transformers.Trainer и HF-формат (только GPT). -->
 
 [← Загрузка весов HuggingFace](hf-weights.md) · [Оглавление](README.md) · [Ограничения →](limitations.md)
 

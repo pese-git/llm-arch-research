@@ -6,7 +6,8 @@
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
-    "check": "astro check"
+    "check": "astro check",
+    "og-image": "node scripts/og-image.mjs"
   },
   "dependencies": {
     "@astrojs/markdown-remark": "^7.3.1",

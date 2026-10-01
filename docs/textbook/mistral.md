@@ -1,4 +1,5 @@
 # Mistral
+<!-- description: Mistral 7B (Mistral AI, 2023): Grouped Query Attention, скользящее окно внимания и KV-кэш, ограниченный окном. -->
 
 Часть II · [← LLaMA](llama.md) · [Оглавление](README.md) · [Mixtral →](mixtral.md)
 

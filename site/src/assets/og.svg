@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <!-- Картинка превью ссылок (og:image). PNG собирается командой npm run og-image -->
+  <rect width="1200" height="630" fill="#f6f7fb"/>
+  <rect x="0" y="0" width="1200" height="10" fill="#6c8ebf"/>
+  <g font-family="Helvetica Neue, Helvetica, Arial, sans-serif" fill="#17181c">
+    <text x="80" y="150" font-size="34" font-weight="600" fill="#4b5fc4">LLM Arch Research</text>
+    <text x="80" y="250" font-size="76" font-weight="700">Архитектуры LLM</text>
+    <text x="80" y="340" font-size="76" font-weight="700">с нуля</text>
+    <text x="80" y="420" font-size="32" fill="#3d4049">GPT-1, GPT-2, LLaMA, Mistral, Mixtral и Gemma</text>
+    <text x="80" y="465" font-size="32" fill="#3d4049">на PyTorch — с формулами и разбором кода</text>
+    <text x="80" y="560" font-size="26" fill="#6b6f7a">Учебное пособие · Руководство · Для разработчиков</text>
+  </g>
+  <!-- Логотип: src/assets/logo.svg, масштаб 2.6 -->
+  <g transform="translate(790 150) scale(2.6)">
+    <rect x="14" y="16" width="100" height="22" rx="7" fill="#6c8ebf"/>
+    <rect x="14" y="44" width="100" height="22" rx="7" fill="#9673a6"/>
+    <rect x="14" y="72" width="100" height="22" rx="7" fill="#3a9e8f"/>
+    <g fill="none" stroke="#d6b656" stroke-width="3.5" stroke-linecap="round">
+      <path d="M100 106 C92 128 36 128 28 106"/>
+      <path d="M100 106 C94 121 58 121 52 106"/>
+      <path d="M100 106 C97 115 79 115 76 106"/>
+    </g>
+    <g fill="#d6b656">
+      <circle cx="28" cy="106" r="6"/>
+      <circle cx="52" cy="106" r="6"/>
+      <circle cx="76" cy="106" r="6"/>
+      <circle cx="100" cy="106" r="7.5"/>
+    </g>
+    <g fill="#ffffff" fill-opacity="0.85">
+      <circle cx="28" cy="27" r="3.5"/><circle cx="52" cy="27" r="3.5"/><circle cx="76" cy="27" r="3.5"/><circle cx="100" cy="27" r="3.5"/>
+      <circle cx="28" cy="55" r="3.5"/><circle cx="52" cy="55" r="3.5"/><circle cx="76" cy="55" r="3.5"/><circle cx="100" cy="55" r="3.5"/>
+      <circle cx="28" cy="83" r="3.5"/><circle cx="52" cy="83" r="3.5"/><circle cx="76" cy="83" r="3.5"/><circle cx="100" cy="83" r="3.5"/>
+    </g>
+  </g>
+</svg>

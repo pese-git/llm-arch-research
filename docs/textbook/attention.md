@@ -1,4 +1,5 @@
 # Механизм внимания
+<!-- description: Scaled dot-product и multi-head attention, MHA, GQA и MQA, скользящее окно и KV-кэш — с формулами и кодом. -->
 
 Часть I · [← Позиционное кодирование](positional-encoding.md) · [Оглавление](README.md) · [Маски →](masks.md)
 

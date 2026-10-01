@@ -1,4 +1,5 @@
 # Mixtral
+<!-- description: Mixtral 8x7B (Mistral AI, 2024): Mixture-of-Experts — роутер выбирает два эксперта из восьми для каждого токена. -->
 
 Часть II · [← Mistral](mistral.md) · [Оглавление](README.md) · [Gemma →](gemma.md)
 

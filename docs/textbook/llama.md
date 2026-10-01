@@ -1,4 +1,5 @@
 # LLaMA
+<!-- description: LLaMA (Meta, 2023): RoPE, RMSNorm и SwiGLU — статья, формулы, подсчёт параметров, код и загрузка весов HuggingFace. -->
 
 Часть II · [← GPT-2](gpt2.md) · [Оглавление](README.md) · [Mistral →](mistral.md)
 

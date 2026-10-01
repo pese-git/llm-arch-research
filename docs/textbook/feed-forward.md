@@ -1,4 +1,5 @@
 # Feed-forward сеть и активации
+<!-- description: Feed-forward сеть трансформера: активации GELU и SiLU, вентильные SwiGLU и GeGLU, размер скрытого слоя. -->
 
 Часть I · [← Нормализация и residual-связи](normalization.md) · [Оглавление](README.md) · [Mixture-of-Experts →](mixture-of-experts.md)
 
