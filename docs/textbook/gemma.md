@@ -1,5 +1,5 @@
 # Gemma
-<!-- description: Gemma (Google DeepMind, 2024): Multi-Query Attention, GeGLU, словарь 256k и масштаб эмбеддингов на √d. -->
+<!-- description: Gemma (Google DeepMind, 2024): Multi-Query Attention в 2B, GeGLU, словарь 256k и масштаб эмбеддингов на √d. -->
 
 Часть II · [← Mixtral](mixtral.md) · [Оглавление](README.md) · [Обозначения →](notation.md)
 
