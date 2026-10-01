@@ -4,11 +4,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'astro/config';
 import { unified } from '@astrojs/markdown-remark';
+import sitemap from '@astrojs/sitemap';
 import starlight from '@astrojs/starlight';
 import mermaid from 'astro-mermaid';
 import rehypeKatex from 'rehype-katex';
 import remarkGithubDocs from './src/plugins/remark-github-docs.mjs';
-import { branch, docsDir, outDir, removeFile, repoUrl, syncDocs, syncFile } from './scripts/sync-docs.mjs';
+import { branch, docsDir, listDocs, outDir, removeFile, repoUrl, slugOf, syncDocs, syncFile } from './scripts/sync-docs.mjs';
+import { lastModified } from './scripts/lastmod.mjs';
 
 const siteDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(siteDir, '..');
@@ -21,6 +23,21 @@ const base = process.env.SITE_BASE ?? '/';
 const ogImage = new URL(`${base.replace(/\/$/, '')}/og.png`, site).href;
 
 syncDocs();
+
+// <lastmod> в карте сайта: адрес страницы → её исходник → дата последнего коммита.
+// Главная — визитка из site/, остальные страницы — из docs/
+const pageSources = new Map(listDocs().map((rel) => [slugOf(rel), `docs/${rel}`]));
+pageSources.set('', 'site/src/landing/index.mdx');
+const lastmod = lastModified(repoRoot, [...pageSources.values()]);
+const basePath = base.endsWith('/') ? base : `${base}/`;
+const sitemapWithLastmod = sitemap({
+  serialize(item) {
+    const slug = new URL(item.url).pathname.slice(basePath.length).replace(/\/$/, '');
+    const date = lastmod.get(pageSources.get(slug));
+    if (date) item.lastmod = date;
+    return item;
+  },
+});
 const sidebar = JSON.parse(fs.readFileSync(path.join(siteDir, 'src/generated/sidebar.json'), 'utf8'));
 
 /** Путь файла → путь относительно docs/ через «/», или null, если файл не .md из docs/. */
@@ -58,6 +75,9 @@ export default defineConfig({
   trailingSlash: 'always',
   integrations: [
     docsWatcher,
+    // Своя карта сайта вместо встроенной в Starlight (та же, но с lastmod): Starlight
+    // не добавляет свою, если @astrojs/sitemap уже подключён
+    sitemapWithLastmod,
     // До Starlight: плагин должен забрать блоки ```mermaid раньше подсветки кода
     mermaid({ theme: 'default', autoTheme: true }),
     starlight({

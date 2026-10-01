@@ -7,6 +7,10 @@
 # SITE_URL — адрес сайта (канонические ссылки и sitemap), SITE_BASE — путь от корня домена.
 
 FROM node:24-slim AS build
+# git — для дат <lastmod> в карте сайта (scripts/lastmod.mjs); .git попадает в контекст сборки,
+# но в образ nginx уходит только dist/
+RUN apt-get update && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /repo/site
 COPY site/package.json site/package-lock.json ./
 RUN npm ci --no-audit --no-fund

@@ -26,6 +26,7 @@ npm run preview   # просмотр собранного сайта
   - ссылки на код (`../../llm/src/...`) ведут на файлы в ветке `master` на GitHub;
   - подпись ссылки, которая совпадает с именем файла (`[attention.md](attention.md)`), заменяется названием страницы — её заголовком `# …`.
 - Диаграммы ` ```mermaid ` рисует в браузере [astro-mermaid](https://github.com/joesaby/astro-mermaid), со светлой и тёмной темой.
+- Карта сайта — `@astrojs/sitemap`, подключена явно ради `<lastmod>`: дата последнего коммита исходника страницы (`docs/…` или визитки), её считает [`scripts/lastmod.mjs`](scripts/lastmod.mjs) по `git log`. Без git сайт собирается без `<lastmod>`.
 - Поиск — Pagefind, встроен в Starlight. Вес страницы в результатах задаёт `searchWeights` в `sync-docs.mjs`: у бэклога он понижен до 0.2, иначе журнал, где упомянут почти каждый термин, выходит выше глав. Проверять поиск нужно на собранном сайте (`npm run build && npm run preview`): в `npm run dev` индекса нет.
 - `robots.txt` собирает [`src/pages/robots.txt.ts`](src/pages/robots.txt.ts): в нём абсолютный адрес `sitemap-index.xml`, зависящий от `SITE_URL` и `SITE_BASE`.
 
@@ -59,5 +60,5 @@ docker run --rm -p 8080:80 harbor.openidealab.com/llm-arch-research/site:latest 
 
 - Сборка в два этапа: Node собирает сайт, nginx ([`nginx.conf`](nginx.conf)) раздаёт `dist/` на порту 80. Образ — около 30 МБ.
 - По умолчанию сайт собирается для корня домена `https://llm-arch-research.openidealab.com` (`SITE_BASE=/`). Другой адрес — `--build-arg SITE_URL=… --build-arg SITE_BASE=…`.
-- Что попадает в контекст сборки, задаёт [`Dockerfile.dockerignore`](Dockerfile.dockerignore): без `.git`, виртуальных окружений, `checkpoints/` и результатов сборки.
+- Что попадает в контекст сборки, задаёт [`Dockerfile.dockerignore`](Dockerfile.dockerignore): без виртуальных окружений, `checkpoints/` и результатов сборки. `.git` нужен: по нему считаются даты `<lastmod>`, в образ nginx он не попадает.
 - Образ публикуется в Harbor: `harbor.openidealab.com/llm-arch-research/site`, теги — короткий SHA коммита и `latest`. Для push нужен `docker login harbor.openidealab.com` и роль Developer или выше в проекте `llm-arch-research`.
