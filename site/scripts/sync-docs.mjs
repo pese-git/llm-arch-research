@@ -12,6 +12,9 @@ import { fileURLToPath } from 'node:url';
 const siteDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const docsDir = path.resolve(siteDir, '../docs');
 export const outDir = path.join(siteDir, 'src/content/docs');
+// Репозиторий и ветка, на которые ведут ссылки на код и «Редактировать страницу»
+export const repoUrl = 'https://github.com/pese-git/llm-arch-research';
+export const branch = 'master';
 const sidebarFile = path.join(siteDir, 'src/generated/sidebar.json');
 const landingFile = path.join(siteDir, 'src/landing/index.mdx');
 
@@ -54,6 +57,7 @@ const descriptionRe = /^<!--\s*description:\s*([\s\S]+?)\s*-->\s*$/;
 /**
  * Markdown главы → страница Starlight: заголовок первого уровня становится `title`,
  * комментарий `<!-- description: … -->` — `description` (поисковики и превью ссылок),
+ * `editUrl` ведёт на исходник в docs/ на GitHub, а не на сгенерированный файл,
  * строка навигации под ним убирается — её заменяют боковое меню и ссылки «Назад/Далее»
  * внизу страницы. Оглавление справа у README раздела — только если в нём от трёх разделов.
  */
@@ -77,6 +81,7 @@ function toPage(rel, source) {
   }
   const front = ['---', `title: ${yamlString(title)}`];
   if (description) front.push(`description: ${yamlString(description)}`);
+  front.push(`editUrl: ${yamlString(`${repoUrl}/edit/${branch}/docs/${rel}`)}`);
   const sectionCount = body.filter((l) => l.startsWith('## ')).length;
   if (rel.endsWith('README.md') && sectionCount < 3) front.push('tableOfContents: false');
   front.push('---', '');
