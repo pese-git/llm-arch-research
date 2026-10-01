@@ -27,7 +27,7 @@ gpt2 = GPT2({"vocab_size": 50257, "embed_dim": 768, "num_heads": 12, "num_layers
 gpt2.load_state_dict(convert_hf_state_dict(hf.state_dict()))
 ```
 
-Активация по умолчанию (`"gelu_tanh"`) совпадает с оригиналом у обеих моделей. Подробности — [GPT-1](../textbook/gpt.md#weight-tying-и-веса-openai), [GPT-2](../textbook/gpt2.md).
+Активация по умолчанию (`"gelu_tanh"`) совпадает с оригиналом у обеих моделей. Подробности — [GPT-1](../textbook/gpt.md#загрузка-весов-huggingface), [GPT-2](../textbook/gpt2.md).
 
 ## LLaMA
 

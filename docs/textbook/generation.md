@@ -489,7 +489,7 @@ model.generate(x, 5, do_sample=True, temperature=0)       # ValueError
 model.generate(x, 5, do_sample=False, temperature=0)      # можно: greedy температуру не использует
 ```
 
-С токенизатором (см. [tokenization.md](tokenization.md)) промпт получается кодированием текста, а выход декодируется обратно; для моделей с весами HF — примеры в [gpt.md](gpt.md#weight-tying-и-веса-openai) и [gemma.md](gemma.md#загрузка-весов-huggingface).
+С токенизатором (см. [tokenization.md](tokenization.md)) промпт получается кодированием текста, а выход декодируется обратно; для моделей с весами HF — примеры в [gpt.md](gpt.md#загрузка-весов-huggingface) и [gemma.md](gemma.md#загрузка-весов-huggingface).
 
 ## Другие методы декодирования
 

@@ -29,7 +29,7 @@ Gemma (Google DeepMind, 2024, [arXiv:2403.08295](https://arxiv.org/abs/2403.0829
 
 По сравнению с LLaMA у Gemma четыре заметных отличия: GeGLU вместо SwiGLU, MQA в модели 2B, словарь 256k с общей матрицей эмбеддингов и выходной проекции, умножение эмбеддингов на $`\sqrt{d}`$. Ещё одна деталь реализации — вес RMSNorm хранится как добавка к единице, $`(1 + w)`$.
 
-## Научный вклад
+### Научный вклад
 
 Gemma Team (2024) выпустили семейство открытых моделей, построенных, по словам авторов, на исследованиях и технологиях, созданных для Gemini:
 
@@ -165,7 +165,7 @@ Z = \mathrm{RMSNorm}_f\big(H^{(L)}\big)\, E^{\top} \in \mathbb{R}^{T \times V}
 
 где $`Z`$ — логиты, $`\mathrm{RMSNorm}_f`$ — финальная нормализация. Логит токена $`v`$ — скалярное произведение нормализованного скрытого состояния со строкой $`E[v]`$ ([embeddings.md](embeddings.md#weight-tying)). Bias нет нигде.
 
-### Multi-Query Attention vs GQA
+### Multi-Query Attention и GQA
 
 MQA предложена в [Shazeer, 2019](https://arxiv.org/abs/1911.02150), GQA — в [Ainslie et al., 2023](https://arxiv.org/abs/2305.13245) как обобщение между MQA и MHA. Gemma 2B использует MQA (одна K/V-голова), Gemma 7B — обычный MHA (16 K/V-голов, по одной на Q-голову). Поэтому блок Gemma строится на `GroupedQueryAttention` ([`core/group_query_attention.py`](../../llm/src/llm/core/group_query_attention.py)) без скользящего окна с `num_kv_heads` из конфига: `1` (по умолчанию) — MQA, `num_q_heads` — MHA. При одной K/V-голове она не копируется на все Q-головы, а транслируется в матричном умножении, так что результат побитово совпадает с прежним `MultiQueryAttention` ([`core/multi_query_attention.py`](../../llm/src/llm/core/multi_query_attention.py)); тот остался в `llm.core` как отдельный учебный модуль. KV-кэш слоя — тройка `(K, V, next_pos)`, как у Mistral. Сравнение MHA, GQA и MQA — в [attention.md](attention.md#виды-по-числу-голов-kv-mha-gqa-mqa).
 
@@ -334,22 +334,6 @@ print(total, emb, total - emb)                       # 2506172416 524288000 1981
 | эмбеддинги + выход с bias + финальная норма | 513 256 |
 | **всего** $`4 \cdot 953\,728 + 513\,256`$ | **4 328 168** |
 
-## Отличия от Gemma
-
-Сравнение с Gemma 2B/7B (статья и `GemmaConfig`/`GemmaModel` в HF). Подробности, воспроизведение и варианты исправления — в [бэклоге](../dev/backlog.md#gemma) (номера пунктов в скобках).
-
-| | Gemma | Здесь |
-|---|---|---|
-| Масштаб эмбеддингов | умножаются на `√d` перед первым блоком | по умолчанию нет; `scale_embeddings: true` — как в оригинале (42) |
-| Выходная проекция | привязана к эмбеддингам (`tie_word_embeddings`) | по умолчанию отдельный `Linear`; `tie_word_embeddings: true` — как в оригинале (43) |
-| Bias | нет ни в одной проекции | по умолчанию во всех `Linear`; `bias: false` — как в оригинале (43) |
-| Скрытый слой GeGLU | 8·d на каждую из `gate`/`up` (16384 при d = 2048) | по умолчанию 4·d; `intermediate_size` — любой (44) |
-| Attention | 2B — MQA, 7B — MHA с 16 головами и `head_dim = 256` ≠ d / heads | по умолчанию MQA; `num_kv_heads` и `head_size` из конфига (45) |
-| RMSNorm | вес с нуля, множитель `(1 + w)`, вычисление во float32 | вес с единиц, множитель `w` — при загрузке весов HF к ним прибавляется 1; для float16/bfloat16 нормализация во float32 (46) |
-| Dropout | нет | после эмбеддингов, в attention и в GeGLU (55); `dropout: 0` убирает его полностью |
-
-Активация GeGLU — tanh-аппроксимация GELU — совпадает с оригиналом (`gelu_pytorch_tanh` в HF).
-
 ## Конфигурация
 
 Пример из [`experiments/llm_only/configs/gemma_train.json`](../../experiments/llm_only/configs/gemma_train.json):
@@ -409,11 +393,36 @@ model.load_state_dict(convert_hf_state_dict(hf.state_dict(), num_heads=c.num_att
 
 В bfloat16 возможна разница в последних битах: `GemmaRMSNorm` умножает на вес ещё во float32, а `RMSNorm` здесь — после приведения к dtype входа, как `LlamaRMSNorm`.
 
+## Отличия от оригинала
+
+Сравнение с Gemma 2B/7B (статья и `GemmaConfig`/`GemmaModel` в HF). Подробности, воспроизведение и варианты исправления — в [бэклоге](../dev/backlog.md#gemma) (номера пунктов в скобках).
+
+| | Gemma | Здесь |
+|---|---|---|
+| Масштаб эмбеддингов | умножаются на `√d` перед первым блоком | по умолчанию нет; `scale_embeddings: true` — как в оригинале (42) |
+| Выходная проекция | привязана к эмбеддингам (`tie_word_embeddings`) | по умолчанию отдельный `Linear`; `tie_word_embeddings: true` — как в оригинале (43) |
+| Bias | нет ни в одной проекции | по умолчанию во всех `Linear`; `bias: false` — как в оригинале (43) |
+| Скрытый слой GeGLU | 8·d на каждую из `gate`/`up` (16384 при d = 2048) | по умолчанию 4·d; `intermediate_size` — любой (44) |
+| Attention | 2B — MQA, 7B — MHA с 16 головами и `head_dim = 256` ≠ d / heads | по умолчанию MQA; `num_kv_heads` и `head_size` из конфига (45) |
+| RMSNorm | вес с нуля, множитель `(1 + w)`, вычисление во float32 | вес с единиц, множитель `w` — при загрузке весов HF к ним прибавляется 1; для float16/bfloat16 нормализация во float32 (46) |
+| Dropout | нет | после эмбеддингов, в attention и в GeGLU (55); `dropout: 0` убирает его полностью |
+
+Активация GeGLU — tanh-аппроксимация GELU — совпадает с оригиналом (`gelu_pytorch_tanh` в HF).
+
 ## Генерация
 
-`Gemma.generate(...)` — унифицированная сигнатура (см. [gpt.md](gpt.md#генерация) и [generation.md](generation.md)). Благодаря MQA KV-кэш Gemma 2B в 8 раз меньше, чем при MHA с тем же числом голов Q (см. [выше](#multi-query-attention-vs-gqa)).
+`Gemma.generate(...)` — унифицированная сигнатура (см. [gpt.md](gpt.md#генерация) и [generation.md](generation.md)). Благодаря MQA KV-кэш Gemma 2B в 8 раз меньше, чем при MHA с тем же числом голов Q (см. [выше](#multi-query-attention-и-gqa)).
 
-## Итоги линейки
+## Типичные ошибки и тонкости
+
+- **Загрузка без `scale_embeddings` или без +1 к весам RMSNorm.** Формы совпадут, ошибки не будет, но результат HF не воспроизведётся. `+1` прибавляет `convert_hf_state_dict`, а `"scale_embeddings": true` нужно задать в конфиге.
+- **Gemma 7B без `head_size`.** У 7B $`H d_h = 16 \cdot 256 = 4096 \ne d = 3072`$; без явного `head_size: 256` получится $`d_h = 3072 / 16 = 192`$, и веса не загрузятся.
+- **Gemma 7B с `num_kv_heads` по умолчанию.** По умолчанию `1` — MQA, как у 2B; у 7B 16 голов K/V.
+- **Эмбеддинги с инициализацией `nn.Embedding` по умолчанию.** С `scale_embeddings` и `tie_word_embeddings` $`\mathcal{N}(0, 1)`$ даёт логиты со стандартным отклонением ≈18 и начальный cross-entropy ≈258; при обучении с нуля оставьте `init_normal_` с `initializer_range`.
+- **Сравнение с HF в bfloat16.** `GemmaRMSNorm` умножает на вес во float32, а `RMSNorm` здесь — после приведения к dtype входа; разница в последних битах — не ошибка.
+- **Собственный BPE с весами Google.** Индексы токенов не совпадут: нужен токенизатор Gemma из `transformers` со словарём 256 000.
+
+## Линейка от GPT-1 до Gemma
 
 Шесть моделей части II — это одна и та же схема decoder-only трансформера ([language-modeling.md](language-modeling.md)), в которой менялись отдельные узлы:
 

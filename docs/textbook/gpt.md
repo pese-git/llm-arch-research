@@ -30,7 +30,7 @@
 - [feed-forward](feed-forward.md) — FFN и GELU;
 - [обучение](training.md) и [генерация](generation.md).
 
-## Исторический контекст и вклад статьи
+## Обзор
 
 К 2018 году в обработке естественного языка было два подхода. Первый — обучать отдельную модель под каждую задачу (классификация, логический вывод, ответы на вопросы) на размеченных данных; таких данных мало, и они дорогие. Второй — брать из неразмеченного текста только представления слов или контекстные представления и подавать их в модель, архитектура которой всё равно подбирается под задачу (обзор этих работ — в разд. 2 статьи GPT-1).
 
@@ -39,7 +39,11 @@ Radford, Narasimhan, Salimans, Sutskever в статье *Improving Language Und
 1. **Генеративное предобучение (generative pre-training)** — трансформер-декодер обучается как языковая модель, предсказывать следующий токен на большом неразмеченном корпусе.
 2. **Дискриминативное дообучение (discriminative fine-tuning)** — к той же модели добавляется один линейный слой, и она дообучается на размеченных данных конкретной задачи. Структурированные входы (пара предложений, вопрос с вариантами ответа) преобразуются в одну последовательность токенов, поэтому архитектура под задачу почти не меняется (см. [Дообучение на задачах](#дообучение-на-задачах)).
 
-Главный научный вклад — показать, что такое предобучение трансформера на длинных связных текстах даёт универсальную модель: по аннотации статьи, общая задаче-независимая модель улучшила лучший известный результат в 9 из 12 исследованных задач. В разделе 5 статьи авторы также показали, что качество на задачах без дообучения (zero-shot, по эвристикам вроде сравнения вероятностей) растёт в ходе предобучения — эта линия станет центральной в [GPT-2](gpt2.md).
+### Научный вклад
+
+Главное — показать, что такое предобучение трансформера на длинных связных текстах даёт универсальную модель: по аннотации статьи, общая задаче-независимая модель улучшила лучший известный результат в 9 из 12 исследованных задач. В разделе 5 статьи авторы также показали, что качество на задачах без дообучения (zero-shot, по эвристикам вроде сравнения вероятностей) растёт в ходе предобучения — эта линия станет центральной в [GPT-2](gpt2.md).
+
+### Модель в статье
 
 Факты о модели и обучении из статьи (разд. 4.1, «Model specifications»):
 
@@ -132,7 +136,7 @@ H^{(l)} &= \mathrm{LN}_2\big(U^{(l)} + \mathrm{FFN}(U^{(l)})\big),
 
 где:
 - $`H^{(l-1)} \in \mathbb{R}^{T \times d}`$ — вход блока $`l`$, $`H^{(l)} \in \mathbb{R}^{T \times d}`$ — его выход;
-- $`\mathrm{MHA} : \mathbb{R}^{T \times d} \to \mathbb{R}^{T \times d}`$ — masked multi-head attention (формулы — в [Устройство компонентов](#устройство-компонентов));
+- $`\mathrm{MHA} : \mathbb{R}^{T \times d} \to \mathbb{R}^{T \times d}`$ — masked multi-head attention (формулы — в [Формулы компонентов](#формулы-компонентов));
 - $`\mathrm{FFN} : \mathbb{R}^{T \times d} \to \mathbb{R}^{T \times d}`$ — позиционно-независимая двухслойная сеть, применяется к каждой строке отдельно;
 - $`U^{(l)} \in \mathbb{R}^{T \times d}`$ — промежуточное состояние после attention-подблока;
 - $`\mathrm{LN}_1, \mathrm{LN}_2`$ — два LayerNorm со своими параметрами $`\gamma, \beta \in \mathbb{R}^{d}`$, применяются к каждой строке.
@@ -147,7 +151,7 @@ Z = H^{(L)} W_{\text{out}} + b_{\text{out}}, \qquad p(x_{t+1} \mid x_{\le t}) = 
 
 где:
 - $`H^{(L)} \in \mathbb{R}^{T \times d}`$ — выход последнего блока;
-- $`W_{\text{out}} \in \mathbb{R}^{d \times V}`$, $`b_{\text{out}} \in \mathbb{R}^{V}`$ — веса выходной проекции; при weight tying $`W_{\text{out}} = E^{\top}`$ и $`b_{\text{out}}`$ нет (см. [Weight tying и веса OpenAI](#weight-tying-и-веса-openai));
+- $`W_{\text{out}} \in \mathbb{R}^{d \times V}`$, $`b_{\text{out}} \in \mathbb{R}^{V}`$ — веса выходной проекции; при weight tying $`W_{\text{out}} = E^{\top}`$ и $`b_{\text{out}}`$ нет (см. [Weight tying](#weight-tying));
 - $`Z \in \mathbb{R}^{T \times V}`$ — логиты; строка $`Z_t`$ — ненормированные оценки всех токенов словаря как продолжения префикса $`x_0, \dots, x_t`$;
 - $`p(x_{t+1} \mid x_{\le t}) \in \mathbb{R}^{V}`$ — распределение следующего токена.
 
@@ -165,7 +169,7 @@ H^(l), l = 1..4         [2, 16, 256]
 Z (logits)              [2, 16, 1000]
 ```
 
-## Устройство компонентов
+## Формулы компонентов
 
 Этот раздел напоминает формулы компонентов с подробными схемами; выводы и обоснования — в главах части I: [attention.md](attention.md), [masks.md](masks.md), [feed-forward.md](feed-forward.md), [normalization.md](normalization.md).
 
@@ -347,6 +351,52 @@ result         = Norm2(ffn_out + out)
 
 Важная деталь: после последнего блока декодера **нет** финальной нормализации — `GPT.forward` идёт напрямую из стека декодеров в `Linear`-проекцию на словарь. (GPT-2 в этом смысле отличается — см. [gpt2.md](gpt2.md).)
 
+## Разбор кода
+
+### `GPT.__init__`
+
+[`models/gpt/gpt.py`](../../llm/src/llm/models/gpt/gpt.py), класс `GPT` (наследник `BaseModel` из [`core/base_model.py`](../../llm/src/llm/core/base_model.py), который даёт `generate`, `save`, `load`):
+
+| Строка кода | Что создаёт | В формулах |
+|---|---|---|
+| `head_size = resolve_head_size(config, "num_heads")` | размер головы с проверкой делимости ([`core/config_checks.py`](../../llm/src/llm/core/config_checks.py)) | $`d_h`$ |
+| `self._max_seq_len = config["max_position_embeddings"]` | предел длины для проверок и `generate` | $`T_{\max}`$ |
+| `self._token_embeddings = TokenEmbeddings(...)` | `nn.Embedding(V, d)` | $`E`$ |
+| `self._position_embeddings = PositionalEmbeddings(...)` | `nn.Embedding(T_max, d)` | $`P`$ |
+| `self._dropout = nn.Dropout(config["dropout"])` | dropout на сумме эмбеддингов | Dropout шага 1 |
+| `self._decoders = nn.ModuleList([GptDecoder(...) ...])` | $`L`$ блоков | шаг 2 |
+| `self._linear = output_projection(...)` | `Linear(d, V)`; при tying — без bias и с общим весом | $`W_{\text{out}}, b_{\text{out}}`$ |
+| `self.apply(partial(init_normal_, std=...))` | инициализация $`\mathcal{N}(0,\ 0{,}02^2)`$ | |
+
+`GptDecoder.__init__` ([`core/gpt_decoder.py`](../../llm/src/llm/core/gpt_decoder.py)) создаёт `_heads = MultiHeadAttention(...)`, `_ff = FeedForward(..., activation=activation)`, `_norm1`, `_norm2 = nn.LayerNorm(emb_size)`. Отдельный класс `GptDecoder` нужен именно из-за post-LN: остальные блоки декодера в репозитории — pre-LN.
+
+### `GPT.forward`
+
+```python
+def forward(self, x, attention_mask=None, use_cache=False, cache=None):
+    start_pos = cache_start_pos(cache)                              # s — длина кэша
+    check_sequence_length(x.size(1), start_pos, self._max_seq_len)  # s + T ≤ T_max
+    padding = padding_from_attention_mask(attention_mask, x, start_pos)  # None без нулей в маске
+    tok_out = self._token_embeddings(x)                             # E[x]     [B, T, d]
+    pos_out = self._position_embeddings(seq_len, start_pos=start_pos).unsqueeze(0)  # P[s:s+T] [1, T, d]
+    # при паддинге: self._position_embeddings(seq_len, positions=padding.positions)  [B, T, d]
+    out = self._dropout(tok_out + pos_out)                          # H^(0)    [B, T, d]
+    for i, decoder in enumerate(self._decoders):                    # H^(l), padding передаётся в каждый блок
+        ...
+    logits = self._linear(out)                                      # Z        [B, T, V]
+```
+
+(фрагмент сокращён: цикл передаёт в каждый блок `padding` и собирает новый KV-кэш по слоям, если `use_cache=True`). Возвращается кортеж `(logits, new_cache)`; при `use_cache=False` второй элемент — `None`.
+
+Детали:
+
+- Без паддинга `.unsqueeze(0)` превращает `[T, d]` в `[1, T, d]`, и сложение с `[B, T, d]` проходит по правилам broadcasting: одни и те же позиционные векторы прибавляются к каждой последовательности батча.
+- `check_sequence_length` запрещает выйти за $`T_{\max}`$: у обучаемых позиций нет строки для позиции $`T_{\max}`$ и дальше.
+- `padding_from_attention_mask` по маске с нулями строит маску ключей и позиции `cumsum(mask) − 1` для каждой строки батча; паддинг допускается в любом месте строки (см. [masks.md](masks.md#attention_mask-и-паддинг)).
+- Порядок позиционных аргументов у `GPT.forward` — `(x, attention_mask, use_cache, cache)`, а у `GPT2.forward` — `(x, use_cache, cache, attention_mask)`. `generate` передаёт их по имени, так что это безопасно; в своём коде тоже передавайте по имени.
+
+`GptDecoder.forward` реализует шаг 2 буквально: `out = self._norm1(attention + x)` — это $`U^{(l)}`$, `result = self._norm2(ffn_out + out)` — это $`H^{(l)}`$.
+
 ## Подсчёт параметров
 
 Посчитаем параметры по компонентам. Предполагаем $`H d_h = d`$ (так по умолчанию) и $`d_{ff} = 4d`$ (так в коде всегда).
@@ -426,13 +476,15 @@ print(sum(p.numel() for p in GPT(cfg).parameters()))  # 116534784
 
 Из-за post-LN и малых весов у свежей модели скалярные произведения Q·K почти нулевые и внимание почти равномерное — модель начинает учитывать порядок токенов по мере обучения. Общая теория инициализации — в [training.md](training.md).
 
-### Weight tying и веса OpenAI
+### Weight tying
 
 В GPT-1 логиты считаются умножением скрытого состояния на ту же матрицу, что хранит токенные эмбеддинги: $`Z = H^{(L)} E^{\top}`$, без bias. Это **weight tying** (связывание весов). Оно видно в формуле (2) статьи — $`P(u) = \mathrm{softmax}(h_n W_e^{\top})`$, где $`W_e`$ — матрица эмбеддингов токенов, — и в оригинальном коде OpenAI (`finetune-transformer-lm/train.py`: `tf.matmul(h, we, transpose_b=True)`), и в HuggingFace (`OpenAIGPTLMHeadModel`). Зачем это нужно и почему это разумно, разобрано в [embeddings.md](embeddings.md).
 
 Здесь tying включается ключом `"tie_word_embeddings": true` (функция `output_projection` в [`core/token_embeddings.py`](../../llm/src/llm/core/token_embeddings.py)): `_linear.weight` — тот же параметр, что `_token_embeddings._embedding.weight`, и градиенты от входа и от выхода складываются в нём. Модель становится меньше на `vocab_size · embed_dim + vocab_size` параметров. По умолчанию ключ выключен, чтобы загружались чекпоинты, сохранённые раньше: в них есть отдельные `_linear.weight` и `_linear.bias`. Чекпоинт одного вида в модель другого не загружается.
 
 `nn.Linear` хранит вес в форме `[out, in]` и считает $`x W^{\top} + b`$. У выходной проекции `weight` имеет форму `[V, d]` — ровно как таблица эмбеддингов, поэтому связывание — это просто один и тот же тензор в двух модулях, без транспонирования.
+
+## Загрузка весов HuggingFace
 
 С `tie_word_embeddings` загружаются веса [`openai-community/openai-gpt`](https://huggingface.co/openai-community/openai-gpt) — через `convert_hf_state_dict` из [`models/gpt/hf_weights.py`](../../llm/src/llm/models/gpt/hf_weights.py):
 
@@ -458,51 +510,38 @@ model.load_state_dict(convert_hf_state_dict(hf.state_dict()))
 
 Неизвестный ключ даёт `KeyError` — так не получится молча загрузить чекпоинт другой архитектуры.
 
-## Как это устроено в коде
+## Отличия от оригинала
 
-### `GPT.__init__`
-
-[`models/gpt/gpt.py`](../../llm/src/llm/models/gpt/gpt.py), класс `GPT` (наследник `BaseModel` из [`core/base_model.py`](../../llm/src/llm/core/base_model.py), который даёт `generate`, `save`, `load`):
-
-| Строка кода | Что создаёт | В формулах |
+| Что | Статья / код OpenAI | Этот репозиторий |
 |---|---|---|
-| `head_size = resolve_head_size(config, "num_heads")` | размер головы с проверкой делимости ([`core/config_checks.py`](../../llm/src/llm/core/config_checks.py)) | $`d_h`$ |
-| `self._max_seq_len = config["max_position_embeddings"]` | предел длины для проверок и `generate` | $`T_{\max}`$ |
-| `self._token_embeddings = TokenEmbeddings(...)` | `nn.Embedding(V, d)` | $`E`$ |
-| `self._position_embeddings = PositionalEmbeddings(...)` | `nn.Embedding(T_max, d)` | $`P`$ |
-| `self._dropout = nn.Dropout(config["dropout"])` | dropout на сумме эмбеддингов | Dropout шага 1 |
-| `self._decoders = nn.ModuleList([GptDecoder(...) ...])` | $`L`$ блоков | шаг 2 |
-| `self._linear = output_projection(...)` | `Linear(d, V)`; при tying — без bias и с общим весом | $`W_{\text{out}}, b_{\text{out}}`$ |
-| `self.apply(partial(init_normal_, std=...))` | инициализация $`\mathcal{N}(0,\ 0{,}02^2)`$ | |
+| Weight tying | есть (формула (2) статьи) | ключ `tie_word_embeddings`, по умолчанию выключен (отдельный `Linear` с bias) |
+| Dropout внимания | 0,1 | `attention_dropout`, по умолчанию 0 |
+| Токенизатор | BPE с 40 000 слияний, предобработка ftfy и spaCy | собственный BPE ([tokenization.md](tokenization.md)); для весов OpenAI нужен токенизатор HF |
+| Регуляризация | модифицированная L2 с $`w = 0{,}01`$ | не реализована в модели (относится к оптимизатору, см. [training.md](training.md)) |
+| Дообучение | классификационная голова, специальные токены, потеря $`L_3`$ | нет |
+| Размер FFN | 3072 = $`4d`$ | всегда $`4d`$, не настраивается |
+| Активация | GELU (в коде OpenAI — tanh-аппроксимация) | `"gelu_tanh"` по умолчанию, можно `"gelu"` или `"relu"` |
 
-`GptDecoder.__init__` ([`core/gpt_decoder.py`](../../llm/src/llm/core/gpt_decoder.py)) создаёт `_heads = MultiHeadAttention(...)`, `_ff = FeedForward(..., activation=activation)`, `_norm1`, `_norm2 = nn.LayerNorm(emb_size)`. Отдельный класс `GptDecoder` нужен именно из-за post-LN: остальные блоки декодера в репозитории — pre-LN.
+## Генерация
 
-### `GPT.forward`
+Генерация одинакова для всех моделей репозитория и подробно разобрана в главе [generation.md](generation.md). Кратко:
+
+- `generate(x, max_new_tokens, do_sample, temperature=1.0, top_k=None, top_p=None, use_cache=True, attention_mask=None, eos_token_id=None, pad_token_id=None)` — один метод `BaseModel.generate` ([`core/base_model.py`](../../llm/src/llm/core/base_model.py)); выбор токена — `sample_next_token` в [`core/generation.py`](../../llm/src/llm/core/generation.py): greedy (`do_sample=False`), sampling с температурой, top-k, top-p.
+- С `eos_token_id` законченные строки дополняются `pad_token_id` (по умолчанию тем же `eos_token_id`); генерация останавливается, когда закончены все строки. Градиенты не считаются; неизвестный именованный аргумент — `TypeError`.
+- С KV-кэшем в `forward` подаётся только новый токен, а его позиция берётся из длины кэша (`cache_start_pos`); при паддинге — из `attention_mask`: номер токена среди настоящих токенов строки.
+- Когда последовательность становится длиннее `max_position_embeddings`, `generate` берёт последние `max_position_embeddings` токенов и пересчитывает их без кэша: при сдвиге окна абсолютные позиции всех токенов меняются, и закэшированные K/V больше не годятся.
+- Промпты разной длины генерируются одним батчем с левым паддингом и `attention_mask`; каждая строка даёт то же, что её промпт отдельно — см. [masks.md](masks.md#attention_mask-и-паддинг).
 
 ```python
-def forward(self, x, attention_mask=None, use_cache=False, cache=None):
-    start_pos = cache_start_pos(cache)                              # s — длина кэша
-    check_sequence_length(x.size(1), start_pos, self._max_seq_len)  # s + T ≤ T_max
-    padding = padding_from_attention_mask(attention_mask, x, start_pos)  # None без нулей в маске
-    tok_out = self._token_embeddings(x)                             # E[x]     [B, T, d]
-    pos_out = self._position_embeddings(seq_len, start_pos=start_pos).unsqueeze(0)  # P[s:s+T] [1, T, d]
-    # при паддинге: self._position_embeddings(seq_len, positions=padding.positions)  [B, T, d]
-    out = self._dropout(tok_out + pos_out)                          # H^(0)    [B, T, d]
-    for i, decoder in enumerate(self._decoders):                    # H^(l), padding передаётся в каждый блок
-        ...
-    logits = self._linear(out)                                      # Z        [B, T, V]
+import torch
+from llm.models.gpt import GPT
+
+model = GPT({"vocab_size": 1000, "embed_dim": 256, "num_heads": 4, "num_layers": 4,
+             "max_position_embeddings": 128, "dropout": 0.1})
+model.eval()
+prompt = torch.randint(0, 1000, (2, 4))
+out = model.generate(prompt, max_new_tokens=5, do_sample=False)  # [2, 9]
 ```
-
-(фрагмент сокращён: цикл передаёт в каждый блок `padding` и собирает новый KV-кэш по слоям, если `use_cache=True`). Возвращается кортеж `(logits, new_cache)`; при `use_cache=False` второй элемент — `None`.
-
-Детали:
-
-- Без паддинга `.unsqueeze(0)` превращает `[T, d]` в `[1, T, d]`, и сложение с `[B, T, d]` проходит по правилам broadcasting: одни и те же позиционные векторы прибавляются к каждой последовательности батча.
-- `check_sequence_length` запрещает выйти за $`T_{\max}`$: у обучаемых позиций нет строки для позиции $`T_{\max}`$ и дальше.
-- `padding_from_attention_mask` по маске с нулями строит маску ключей и позиции `cumsum(mask) − 1` для каждой строки батча; паддинг допускается в любом месте строки (см. [masks.md](masks.md#attention_mask-и-паддинг)).
-- Порядок позиционных аргументов у `GPT.forward` — `(x, attention_mask, use_cache, cache)`, а у `GPT2.forward` — `(x, use_cache, cache, attention_mask)`. `generate` передаёт их по имени, так что это безопасно; в своём коде тоже передавайте по имени.
-
-`GptDecoder.forward` реализует шаг 2 буквально: `out = self._norm1(attention + x)` — это $`U^{(l)}`$, `result = self._norm2(ffn_out + out)` — это $`H^{(l)}`$.
 
 ## Дообучение на задачах
 
@@ -563,38 +602,15 @@ flowchart LR
 
 Чтобы воспроизвести это на `GPT` из репозитория, пришлось бы добавить специальные токены в словарь (строки в $`E`$), получить скрытые состояния последнего блока (сейчас `forward` возвращает только логиты) и добавить $`W_y`$ с функцией потерь $`L_3`$.
 
-## Генерация
+## Типичные ошибки и тонкости
 
-Генерация одинакова для всех моделей репозитория и подробно разобрана в главе [generation.md](generation.md). Кратко:
-
-- `generate(x, max_new_tokens, do_sample, temperature=1.0, top_k=None, top_p=None, use_cache=True, attention_mask=None, eos_token_id=None, pad_token_id=None)` — один метод `BaseModel.generate` ([`core/base_model.py`](../../llm/src/llm/core/base_model.py)); выбор токена — `sample_next_token` в [`core/generation.py`](../../llm/src/llm/core/generation.py): greedy (`do_sample=False`), sampling с температурой, top-k, top-p.
-- С `eos_token_id` законченные строки дополняются `pad_token_id` (по умолчанию тем же `eos_token_id`); генерация останавливается, когда закончены все строки. Градиенты не считаются; неизвестный именованный аргумент — `TypeError`.
-- С KV-кэшем в `forward` подаётся только новый токен, а его позиция берётся из длины кэша (`cache_start_pos`); при паддинге — из `attention_mask`: номер токена среди настоящих токенов строки.
-- Когда последовательность становится длиннее `max_position_embeddings`, `generate` берёт последние `max_position_embeddings` токенов и пересчитывает их без кэша: при сдвиге окна абсолютные позиции всех токенов меняются, и закэшированные K/V больше не годятся.
-- Промпты разной длины генерируются одним батчем с левым паддингом и `attention_mask`; каждая строка даёт то же, что её промпт отдельно — см. [masks.md](masks.md#attention_mask-и-паддинг).
-
-```python
-import torch
-from llm.models.gpt import GPT
-
-model = GPT({"vocab_size": 1000, "embed_dim": 256, "num_heads": 4, "num_layers": 4,
-             "max_position_embeddings": 128, "dropout": 0.1})
-model.eval()
-prompt = torch.randint(0, 1000, (2, 4))
-out = model.generate(prompt, max_new_tokens=5, do_sample=False)  # [2, 9]
-```
-
-## Отличия от оригинала
-
-| Что | Статья / код OpenAI | Этот репозиторий |
-|---|---|---|
-| Weight tying | есть (формула (2) статьи) | ключ `tie_word_embeddings`, по умолчанию выключен (отдельный `Linear` с bias) |
-| Dropout внимания | 0,1 | `attention_dropout`, по умолчанию 0 |
-| Токенизатор | BPE с 40 000 слияний, предобработка ftfy и spaCy | собственный BPE ([tokenization.md](tokenization.md)); для весов OpenAI нужен токенизатор HF |
-| Регуляризация | модифицированная L2 с $`w = 0{,}01`$ | не реализована в модели (относится к оптимизатору, см. [training.md](training.md)) |
-| Дообучение | классификационная голова, специальные токены, потеря $`L_3`$ | нет |
-| Размер FFN | 3072 = $`4d`$ | всегда $`4d`$, не настраивается |
-| Активация | GELU (в коде OpenAI — tanh-аппроксимация) | `"gelu_tanh"` по умолчанию, можно `"gelu"` или `"relu"` |
+- **Веса OpenAI без `"tie_word_embeddings": true`.** В модели будут отдельные `_linear.weight` и `_linear.bias`, и `load_state_dict` не примет результат `convert_hf_state_dict`: чекпоинт одного вида в модель другого не загружается.
+- **Собственный BPE с весами OpenAI.** Ошибки не будет, но индексы токенов не совпадут, и модель получит бессмыслицу. Нужен токенизатор этой модели — `OpenAIGPTTokenizer` из `transformers`.
+- **`"activation": "gelu"` для весов OpenAI.** `afn="gelu"` в конфиге HF этой модели означает tanh-аппроксимацию, то есть `"gelu_tanh"` — значение по умолчанию. Точный GELU даст небольшое расхождение логитов.
+- **Финальная нормализация «как в GPT-2».** В post-LN выход каждого блока уже нормализован; лишний LayerNorm перед выходной проекцией ломает совместимость с весами GPT-1.
+- **Аргументы `forward` по позиции.** У `GPT.forward(x, attention_mask, use_cache, cache)` и `GPT2.forward(x, use_cache, cache, attention_mask)` разный порядок аргументов; передавайте их по имени.
+- **`embed_dim`, не делящийся на `num_heads`.** Без явного `head_size` конструктор бросает `ValueError`.
+- **Контекст длиннее `max_position_embeddings`.** В таблице позиций всего $`T_{\max}`$ строк: `forward` бросает `ValueError`, `generate` продолжает по последним $`T_{\max}`$ токенам без кэша.
 
 ## Что изменилось в GPT-2
 

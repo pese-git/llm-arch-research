@@ -287,7 +287,7 @@ for key in result:
         result[key] = result[key] + 1
 ```
 
-Подробнее — [gemma.md](gemma.md#отличия-от-gemma) и [бэклог, пункт 46](../dev/backlog.md#46-rmsnorm-без-1--w-и-вычислений-во-float32--p3).
+Подробнее — [gemma.md](gemma.md#отличия-от-оригинала) и [бэклог, пункт 46](../dev/backlog.md#46-rmsnorm-без-1--w-и-вычислений-во-float32--p3).
 
 ## Нормализация в половинной точности
 
