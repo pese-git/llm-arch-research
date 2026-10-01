@@ -3,8 +3,7 @@
 
 Часть II · [← LLaMA](llama.md) · [Оглавление](README.md) · [Mixtral →](mixtral.md)
 
-> Реализация: [`llm/src/llm/models/mistral/mistral.py`](../../llm/src/llm/models/mistral/mistral.py) · класс `Mistral`
-> Ноутбук: [`notebooks/mistral.ipynb`](../../notebooks/mistral.ipynb)
+> Реализация: [`llm/src/llm/models/mistral/mistral.py`](../../llm/src/llm/models/mistral/mistral.py) · класс `Mistral` · ноутбук: [`notebooks/mistral.ipynb`](../../notebooks/mistral.ipynb)
 
 Место в линейке: [GPT-1](gpt.md) → [GPT-2](gpt2.md) → [LLaMA](llama.md) → **Mistral** → [Mixtral](mixtral.md) · [Gemma](gemma.md)
 
@@ -278,7 +277,7 @@ window_mask = self._tril_mask[start_pos : start_pos + seq_len,              # с
 
 Без `window_size` кэш не обрезается и растёт, как у LLaMA, но тоже остаётся тройкой.
 
-## Pre-fill и chunking
+## Префилл кусками
 
 При генерации промпт известен целиком, поэтому его K и V можно вычислить за один проход — **pre-fill** — и только потом генерировать по токену. Если промпт очень длинный, матрица внимания $`T \times T`$ не помещается в память; статья предлагает делить промпт на куски (**chunking**) размером с окно $`W`$ и заполнять кэш кусок за куском (разд. 2, рис. 3). Каждый кусок длины $`C`$ (в статье $`C = W`$) смотрит на кэш (предыдущее окно, не больше $`W`$ позиций) и на себя с causal-маской, поэтому матрица оценок внимания куска имеет размер не больше $`C \times (W + C)`$ вместо $`T \times T`$.
 

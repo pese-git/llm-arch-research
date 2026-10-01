@@ -1,7 +1,7 @@
 # Mixture-of-Experts
 <!-- description: Mixture-of-Experts: роутер, выбор top-k экспертов, разреженные вычисления и load-balancing loss. -->
 
-Часть I · [← предыдущая](feed-forward.md) · [Оглавление](README.md) · [следующая →](training.md)
+Часть I · [← Feed-forward сеть](feed-forward.md) · [Оглавление](README.md) · [Обучение →](training.md)
 
 > Реализация: [`llm/src/llm/core/moe.py`](../../llm/src/llm/core/moe.py) · класс `MoE`, функция `load_balancing_loss`
 > Где используется: [Mixtral](mixtral.md)
