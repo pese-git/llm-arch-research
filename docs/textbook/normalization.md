@@ -1,4 +1,5 @@
 # Нормализация и residual-связи
+<!-- description: LayerNorm и RMSNorm, residual-связи, post-LN и pre-LN: почему глубокие трансформеры обучаются стабильно. -->
 
 Часть I · [← Маски](masks.md) · [Оглавление](README.md) · [Feed-forward сеть →](feed-forward.md)
 

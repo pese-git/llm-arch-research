@@ -1,4 +1,5 @@
 # Загрузка весов HuggingFace
+<!-- description: Рецепты загрузки весов HuggingFace во все шесть моделей: GPT-1, GPT-2, LLaMA, Mistral, Mixtral и Gemma. -->
 
 [← Сохранение и загрузка](checkpoints.md) · [Оглавление](README.md) · [Интеграция с HuggingFace →](hf-integration.md)
 

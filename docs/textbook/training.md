@@ -1,4 +1,5 @@
 # Обучение
+<!-- description: Обучение языковой модели: градиент cross-entropy, AdamW, warmup, gradient clipping, инициализация и точность вычислений. -->
 
 Часть I · [← Mixture-of-Experts](mixture-of-experts.md) · [Оглавление](README.md) · [Генерация →](generation.md)
 
