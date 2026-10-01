@@ -13,10 +13,10 @@ import { branch, docsDir, outDir, removeFile, repoUrl, syncDocs, syncFile } from
 const siteDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(siteDir, '..');
 
-// GitHub Pages проекта: https://pese-git.github.io/llm-arch-research/.
-// Для другого хостинга — SITE_URL и SITE_BASE (например, SITE_BASE=/ для корня домена).
-const site = process.env.SITE_URL ?? 'https://pese-git.github.io';
-const base = process.env.SITE_BASE ?? '/llm-arch-research';
+// Сайт живёт в корне домена на кластере (Docker-образ, site/Dockerfile).
+// Для другого хостинга — SITE_URL и SITE_BASE (например, SITE_BASE=/docs для подпути).
+const site = process.env.SITE_URL ?? 'https://llm-arch-research.openidealab.com';
+const base = process.env.SITE_BASE ?? '/';
 // Картинка превью ссылок — public/og.png (npm run og-image); соцсети требуют абсолютный адрес
 const ogImage = new URL(`${base.replace(/\/$/, '')}/og.png`, site).href;
 

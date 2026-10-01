@@ -1,5 +1,5 @@
-# Сборка сайта из docs/ (site/, Astro + Starlight) и публикация на GitHub Pages.
-# Нужно один раз включить Pages: Settings → Pages → Source: GitHub Actions.
+# Проверка сборки сайта из docs/ (site/, Astro + Starlight). Сайт публикуется Docker-образом
+# на кластере — см. раздел «Docker» в site/README.md.
 name: Docs site
 
 on:
@@ -32,21 +32,3 @@ jobs:
           cache-dependency-path: site/package-lock.json
       - run: npm ci
       - run: npm run build
-      - if: github.event_name != 'pull_request'
-        uses: actions/upload-pages-artifact@v5
-        with:
-          path: site/dist
-
-  deploy:
-    if: github.event_name != 'pull_request'
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v5
