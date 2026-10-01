@@ -19,20 +19,22 @@
 
 Глава опирается на [GPT-1](gpt.md): эмбеддинги, attention и FFN у GPT-2 те же, и их формулы здесь только напоминаются. Нужны также [нормализация](normalization.md) (post-LN и pre-LN), [токенизация](tokenization.md) (BPE) и [обучение](training.md) (инициализация).
 
-## Исторический контекст и вклад статьи
+## Обзор
 
 GPT-1 показал, что предобученную языковую модель выгодно дообучать на каждой задаче. Radford, Wu, Child, Luan, Amodei, Sutskever в статье *Language Models are Unsupervised Multitask Learners* (OpenAI, 2019) пошли дальше: можно ли обойтись **без дообучения вообще**?
 
 Идея (разд. 2 статьи): модель, решающая задачу, оценивает $`p(\text{output} \mid \text{input})`$; универсальная система должна оценивать $`p(\text{output} \mid \text{input}, \text{task})`$. В тексте задача часто описана естественным языком прямо рядом с примером — «переведи на французский», пары «английская фраза = французская фраза». Поэтому достаточно большая языковая модель, обученная на достаточно разнообразном тексте, может научиться выполнять такие задачи, просто предсказывая следующий токен. Задача тогда задаётся **промптом** (prompt), а не новой головой и не градиентными шагами: например, для суммаризации в статье к статье дописывается `TL;DR:`.
 
-Вклад статьи:
+### Научный вклад
 
 1. **Корпус WebText** (разд. 2.1). Вместо книг (GPT-1) или неотфильтрованного Common Crawl авторы собрали исходящие ссылки с Reddit, получившие не меньше 3 karma, — как грубый фильтр «люди сочли это интересным». Около 45 млн ссылок; после дедупликации и очистки — чуть больше 8 млн документов, 40 ГБ текста. Все документы Википедии удалены, чтобы не пересекаться с тестовыми наборами.
 2. **Byte-level BPE** (разд. 2.2). BPE работает не над символами Unicode, а над байтами UTF-8: базовый словарь — 256 байтов, поэтому любую строку можно закодировать, и неизвестных токенов (`<unk>`) нет. Чтобы не появлялись токены вроде `dog.`, `dog!`, `dog?`, слияния между разными категориями символов запрещены, кроме пробелов. Итоговый словарь — 50 257 токенов (подробно — в [tokenization.md](tokenization.md)).
 3. **Масштаб** (разд. 2.3, табл. 2). Четыре модели одной архитектуры, от размера GPT-1 до в 10 с лишним раз большей; самую большую авторы и называют GPT-2.
 4. **Zero-shot-результаты** (разд. 3). По аннотации статьи, самая большая модель получила лучший известный результат на 7 из 8 проверенных наборов языкового моделирования без обучения на них, при этом всё ещё недообучена на WebText. На задачах вроде ответов на вопросы, перевода и суммаризации zero-shot-качество было ниже специализированных систем, но устойчиво росло с размером модели.
 
-Размеры моделей из табл. 2 статьи и подсчёт параметров по формуле ниже (для конфигурации кода с tying):
+### Размеры моделей
+
+Модели из табл. 2 статьи и подсчёт параметров по формуле ниже (для конфигурации кода с tying):
 
 | Модель в статье | $`L`$ | $`d`$ | Параметров по формуле |
 |---|---|---|---|
@@ -43,7 +45,7 @@ GPT-1 показал, что предобученную языковую мод�
 
 Цифры статьи и точный подсчёт расходятся (117M против 124,4M). Точный подсчёт для 124M совпадает с числом параметров HF-чекпоинта `openai-community/gpt2` ([backlog.md](../dev/backlog.md)), а для 345M проверен созданием модели в репозитории; в статье расхождение не объясняется. Общими для всех четырёх моделей в статье указаны словарь 50 257, контекст 1024 токена (у GPT-1 было 512) и батч 512.
 
-## Изменения архитектуры относительно GPT-1
+## Изменения относительно GPT-1
 
 Статья перечисляет их в разд. 2.3; механизмы (эмбеддинги, MHA, GELU-FFN) те же, что в GPT-1, меняется их **расстановка** и инициализация.
 
@@ -119,7 +121,7 @@ H^{(l)} &= U^{(l)} + \mathrm{FFN}\big(\mathrm{LN}_2(U^{(l)})\big),
 где:
 - $`H^{(l-1)}, U^{(l)}, H^{(l)} \in \mathbb{R}^{T \times d}`$ — вход блока, состояние после attention-подблока и выход блока;
 - $`\mathrm{LN}_1, \mathrm{LN}_2`$ — LayerNorm со своими $`\gamma, \beta \in \mathbb{R}^{d}`$ ([normalization.md](normalization.md));
-- $`\mathrm{MHA}`$ — тот же masked multi-head attention, что в GPT-1 ([формулы](gpt.md#устройство-компонентов), [attention.md](attention.md));
+- $`\mathrm{MHA}`$ — тот же masked multi-head attention, что в GPT-1 ([формулы](gpt.md#формулы-компонентов), [attention.md](attention.md));
 - $`\mathrm{FFN}(x) = \mathrm{Dropout}\big(\mathrm{GELU}(x W_1 + b_1) W_2 + b_2\big)`$, $`W_1 \in \mathbb{R}^{d \times 4d}`$, $`W_2 \in \mathbb{R}^{4d \times d}`$, GELU в tanh-аппроксимации ([feed-forward.md](feed-forward.md)).
 
 **Шаг 3. Финальная нормализация и выходная проекция:**
@@ -193,6 +195,33 @@ result    = ffn_out + out
 
 `Gpt2Decoder` — самостоятельный класс, а не переиспользование параметризуемого `CachedDecoder` (которым, например, пользуются LLaMA и другие более новые архитектуры в этом репозитории): FFN и pre-LN расстановка захардкожены внутри него.
 
+## Разбор кода
+
+### `GPT2.__init__`
+
+[`models/gpt/gpt2.py`](../../llm/src/llm/models/gpt/gpt2.py), класс `GPT2`. Конструктор повторяет `GPT.__init__` ([разбор](gpt.md#разбор-кода)) с тремя отличиями:
+
+| Строка кода | Что делает | Отличие от GPT-1 |
+|---|---|---|
+| `Gpt2Decoder(num_heads=..., emb_size=..., head_size=..., max_seq_len=..., dropout=..., attention_dropout=...)` | $`L`$ pre-LN блоков | нет аргумента `activation` — GELU (tanh) зашит в блоке |
+| `self._norm = nn.LayerNorm(config["embed_dim"])` | $`\mathrm{LN}_f`$ | новый модуль |
+| `scale_residual_projections_([...], num_layers=..., std=std)` | std $`/\sqrt{2L}`$ для $`W_O`$ и $`W_2`$ | новая инициализация |
+
+`Gpt2Decoder.__init__` ([`core/gpt2_decoder.py`](../../llm/src/llm/core/gpt2_decoder.py)) создаёт те же четыре модуля, что `GptDecoder`: `_heads`, `_ff` (с `activation="gelu_tanh"`), `_norm1`, `_norm2`. Имена модулей совпадают, поэтому `convert_hf_state_dict` годится для обеих моделей, а `scale_residual_projections_` находит проекции по `decoder._heads._layer` и `decoder._ff._layer2`.
+
+### `GPT2.forward`
+
+Отличается от `GPT.forward` одной строкой перед проекцией:
+
+```python
+for i, decoder in enumerate(self._decoders):   # H^(l) = pre-LN блок
+    ...
+out = self._norm(out)                          # LN_f(H^(L))   [B, T, d]
+logits = self._linear(out)                     # Z             [B, T, V]
+```
+
+`Gpt2Decoder.forward` реализует шаг 2 буквально: `out = attention + x` — это $`U^{(l)}`$ (attention применён к `self._norm1(x)`), `result = ffn_out + out` — это $`H^{(l)}`$ (FFN применён к `self._norm2(out)`).
+
 ## Подсчёт параметров
 
 По сравнению с GPT-1 ([подсчёт](gpt.md#подсчёт-параметров)) добавляется только финальный LayerNorm — $`2d`$ параметров ($`\gamma`$ и $`\beta`$). Блок по-прежнему содержит $`12d^2 + 13d`$: attention $`4d^2 + 4d`$, FFN $`8d^2 + 5d`$, два LayerNorm $`4d`$.
@@ -250,11 +279,13 @@ print(sum(p.numel() for p in GPT2(cfg).parameters()))  # 124439808
 
 В коде это две строки `GPT2.__init__`: сначала `self.apply(partial(init_normal_, std=std))` для всех модулей, затем `scale_residual_projections_` ([`core/weight_init.py`](../../llm/src/llm/core/weight_init.py)) переинициализирует `decoder._heads._layer` и `decoder._ff._layer2` каждого блока со std $`= \text{std} / \sqrt{2L}`$. Bias этих слоёв остаются нулевыми.
 
-### Weight tying и веса OpenAI
+### Weight tying
 
-В оригинале (`gpt-2/src/model.py`: `tf.matmul(h, wte, transpose_b=True)`) и в HF (`GPT2LMHeadModel`) выходная проекция — та же матрица, что `wte`, без bias. Здесь это ключ `"tie_word_embeddings": true`, как в GPT-1 ([gpt.md](gpt.md#weight-tying-и-веса-openai)). Для конфигурации 124M он экономит около 38,6M параметров (`50257 · 768` плюс bias): 124,4M вместо 163,1M.
+В оригинале (`gpt-2/src/model.py`: `tf.matmul(h, wte, transpose_b=True)`) и в HF (`GPT2LMHeadModel`) выходная проекция — та же матрица, что `wte`, без bias. Здесь это ключ `"tie_word_embeddings": true`, как в GPT-1 ([gpt.md](gpt.md#weight-tying)). Для конфигурации 124M он экономит около 38,6M параметров (`50257 · 768` плюс bias): 124,4M вместо 163,1M.
 
-С ним загружаются веса [`openai-community/gpt2`](https://huggingface.co/openai-community/gpt2):
+## Загрузка весов HuggingFace
+
+С `tie_word_embeddings` загружаются веса [`openai-community/gpt2`](https://huggingface.co/openai-community/gpt2):
 
 ```python
 from transformers import GPT2LMHeadModel
@@ -268,39 +299,7 @@ model.load_state_dict(convert_hf_state_dict(hf.state_dict()))
 
 Логиты совпадают с HF с точностью до ~1e-4 (при значениях логитов порядка 100), greedy-генерация — токен в токен. Для текста нужен токенизатор GPT-2 из `transformers` (`GPT2Tokenizer`): собственный BPE репозитория ([tokenization.md](tokenization.md)) даёт другие индексы.
 
-`convert_hf_state_dict` ([`models/gpt/hf_weights.py`](../../llm/src/llm/models/gpt/hf_weights.py)) — та же функция, что для GPT-1; как она переименовывает ключи, транспонирует веса `Conv1D` и режет `c_attn` на Q, K, V, разобрано в [gpt.md](gpt.md#weight-tying-и-веса-openai). Специфичны для GPT-2 только верхнеуровневые имена: `wte` → `_token_embeddings._embedding`, `wpe` → `_position_embeddings.embedding`, `ln_f` → `_norm`. Имена внутри блоков (`h.{i}.attn.c_attn`, `h.{i}.mlp.c_fc`, `h.{i}.ln_1` …) у GPT-1 и GPT-2 в HF совпадают, различается только смысл `ln_1`/`ln_2`: в GPT-2 они стоят перед подблоками, а не после. Функции это безразлично — она переносит параметры, а расстановку задаёт класс блока.
-
-## Как это устроено в коде
-
-### `GPT2.__init__`
-
-[`models/gpt/gpt2.py`](../../llm/src/llm/models/gpt/gpt2.py), класс `GPT2`. Конструктор повторяет `GPT.__init__` ([разбор](gpt.md#как-это-устроено-в-коде)) с тремя отличиями:
-
-| Строка кода | Что делает | Отличие от GPT-1 |
-|---|---|---|
-| `Gpt2Decoder(num_heads=..., emb_size=..., head_size=..., max_seq_len=..., dropout=..., attention_dropout=...)` | $`L`$ pre-LN блоков | нет аргумента `activation` — GELU (tanh) зашит в блоке |
-| `self._norm = nn.LayerNorm(config["embed_dim"])` | $`\mathrm{LN}_f`$ | новый модуль |
-| `scale_residual_projections_([...], num_layers=..., std=std)` | std $`/\sqrt{2L}`$ для $`W_O`$ и $`W_2`$ | новая инициализация |
-
-`Gpt2Decoder.__init__` ([`core/gpt2_decoder.py`](../../llm/src/llm/core/gpt2_decoder.py)) создаёт те же четыре модуля, что `GptDecoder`: `_heads`, `_ff` (с `activation="gelu_tanh"`), `_norm1`, `_norm2`. Имена модулей совпадают, поэтому `convert_hf_state_dict` годится для обеих моделей, а `scale_residual_projections_` находит проекции по `decoder._heads._layer` и `decoder._ff._layer2`.
-
-### `GPT2.forward`
-
-Отличается от `GPT.forward` одной строкой перед проекцией:
-
-```python
-for i, decoder in enumerate(self._decoders):   # H^(l) = pre-LN блок
-    ...
-out = self._norm(out)                          # LN_f(H^(L))   [B, T, d]
-logits = self._linear(out)                     # Z             [B, T, V]
-```
-
-`Gpt2Decoder.forward` реализует шаг 2 буквально: `out = attention + x` — это $`U^{(l)}`$ (attention применён к `self._norm1(x)`), `result = ffn_out + out` — это $`H^{(l)}`$ (FFN применён к `self._norm2(out)`).
-
-Две тонкости:
-
-- Сигнатура `GPT2.forward(x, use_cache=False, cache=None, attention_mask=None)` отличается порядком аргументов от `GPT.forward(x, attention_mask=None, use_cache=False, cache=None)`. Передавайте их по имени.
-- У `Gpt2Decoder.forward` `use_cache` по умолчанию `True` (у `GptDecoder` — `False`). `GPT2.forward` всегда передаёт его явно, так что на модель это не влияет, но при прямом вызове блока вернётся кэш.
+`convert_hf_state_dict` ([`models/gpt/hf_weights.py`](../../llm/src/llm/models/gpt/hf_weights.py)) — та же функция, что для GPT-1; как она переименовывает ключи, транспонирует веса `Conv1D` и режет `c_attn` на Q, K, V, разобрано в [gpt.md](gpt.md#загрузка-весов-huggingface). Специфичны для GPT-2 только верхнеуровневые имена: `wte` → `_token_embeddings._embedding`, `wpe` → `_position_embeddings.embedding`, `ln_f` → `_norm`. Имена внутри блоков (`h.{i}.attn.c_attn`, `h.{i}.mlp.c_fc`, `h.{i}.ln_1` …) у GPT-1 и GPT-2 в HF совпадают, различается только смысл `ln_1`/`ln_2`: в GPT-2 они стоят перед подблоками, а не после. Функции это безразлично — она переносит параметры, а расстановку задаёт класс блока.
 
 ## Отличия от оригинала
 
@@ -328,13 +327,23 @@ out = model.generate(torch.randint(0, 1000, (1, 8)), max_new_tokens=20,
                      do_sample=True, temperature=0.8, top_k=40)  # [1, 28]
 ```
 
+## Типичные ошибки и тонкости
+
+- **Аргументы `forward` по позиции.** Сигнатура `GPT2.forward(x, use_cache=False, cache=None, attention_mask=None)` отличается порядком аргументов от `GPT.forward(x, attention_mask=None, use_cache=False, cache=None)`. Передавайте их по имени.
+- **`use_cache` у блока.** У `Gpt2Decoder.forward` `use_cache` по умолчанию `True` (у `GptDecoder` — `False`). `GPT2.forward` всегда передаёт его явно, так что на модель это не влияет, но при прямом вызове блока вернётся кэш.
+- **Ключ `activation`.** `GPT2` его не читает: значение молча игнорируется, FFN всегда использует GELU с tanh-аппроксимацией.
+- **Веса OpenAI без `"tie_word_embeddings": true`.** Как и у GPT-1, `load_state_dict` не примет результат `convert_hf_state_dict`: в модели будут отдельные `_linear.weight` и `_linear.bias`.
+- **Собственный BPE с весами OpenAI.** Индексы токенов не совпадут; нужен `GPT2Tokenizer` из `transformers`.
+- **Сверка логитов с HF.** Разница до ~1e-4 при логитах порядка 100 — погрешность вычислений во float32, а не ошибка реализации.
+- **Масштаб инициализации residual-проекций.** Он влияет только на обучение с нуля: загрузка чекпоинта перезаписывает веса.
+
 ## Что изменилось в LLaMA
 
 - обучаемые абсолютные позиционные эмбеддинги → **RoPE** (относительное, ротационное позиционное кодирование, встроено в attention);
 - `LayerNorm` → **RMSNorm**;
 - GELU-FFN → **SwiGLU**;
 - pre-LN и финальная нормализация сохраняются;
-- attention остаётся стандартным multi-head (см. [llama.md](llama.md#отличия-от-llama)) — GQA появится только в Mistral.
+- attention остаётся стандартным multi-head (см. [llama.md](llama.md#отличия-от-оригинала)) — GQA появится только в Mistral.
 
 Подробности — в [llama.md](llama.md).
 

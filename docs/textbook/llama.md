@@ -49,7 +49,7 @@
 
 Во всех моделях $`d_h = d / H = 128`$. Контекст — 2048 токенов, словарь — 32 000 токенов BPE (SentencePiece). Обучение (разд. 2.3): AdamW с $`\beta_1 = 0{,}9`$, $`\beta_2 = 0{,}95`$, weight decay 0,1, gradient clipping 1,0, 2000 шагов warmup и косинусное затухание до 10 % от максимальной скорости (подробнее об этих приёмах — в [training.md](training.md)). Модель 65B обучалась около 21 дня на 2048 GPU A100 80GB (разд. 2.4).
 
-## Три изменения относительно GPT-2
+## Изменения относительно GPT-2
 
 Остальное — decoder-only стек, causal-attention, residual-связи, pre-norm, финальная нормализация — то же, что в [GPT-2](gpt2.md). Ниже каждое изменение кратко: формула, смысл, ссылка на главу с полным разбором.
 
@@ -148,7 +148,7 @@ flowchart TB
 
 Отдельного блока позиционных эмбеддингов на входе больше нет. RoPE стоит сбоку и подключён к attention пунктиром: он не прибавляется к основному потоку, а поворачивает Q и K внутри attention каждого слоя.
 
-## Полный forward в формулах
+## Прямой проход в формулах
 
 Вход — токены $`x_0, \dots, x_{T-1}`$. Прямой проход `Llama.forward` (без кэша, режим обучения):
 
@@ -458,7 +458,7 @@ config = {..., "embed_dim": 4096, "intermediate_size": llama_intermediate_size(4
 
 **Bias.** У Meta все проекции без bias. По умолчанию здесь bias есть в Q/K/V, выходной проекции attention, трёх матрицах SwiGLU и голове на словарь; `"bias": false` убирает все.
 
-### Загрузка весов HuggingFace
+## Загрузка весов HuggingFace
 
 С этими ключами загружаются веса `LlamaForCausalLM` — через `convert_hf_state_dict` из [`models/llama/hf_weights.py`](../../llm/src/llm/models/llama/hf_weights.py):
 
@@ -508,7 +508,7 @@ W^{\text{здесь}}\big[h d_h + 2i + s\big] = W^{\text{HF}}\big[h d_h + s \cdo
 
 Чекпоинты с GQA (Llama 2 70B и производные) в `Llama` не загрузятся — см. [LLaMA 2 и GQA](#llama-2-и-gqa).
 
-## Отличия от LLaMA
+## Отличия от оригинала
 
 Реализован **LLaMA-1** в исходном виде: RoPE + RMSNorm + SwiGLU + обычный MHA. `Llama.__init__` читает из конфига только `num_heads` и строит `MultiHeadAttention` через `CachedDecoder`; GQA появилась только в Llama 2 (34B и 70B), а в этом репозитории реализована в [Mistral](mistral.md).
 
@@ -549,15 +549,6 @@ out = model.generate(tokens, max_new_tokens=20, do_sample=True, temperature=0.8,
 
 Класс `Llama` здесь GQA не поддерживает. Но блок `Mistral` без ключа `window_size` — это ровно LLaMA с GQA (RoPE, RMSNorm, SwiGLU, полное causal-внимание), и `convert_hf_state_dict` принимает `num_kv_heads`. Проверено на случайной `LlamaForCausalLM` с `num_key_value_heads < num_attention_heads`: после загрузки в `Mistral` логиты совпадают с HF до ~1e-7.
 
-## Что изменилось в Mistral
-
-- обычный MHA → **Grouped Query Attention** (раздельное число голов Q и K/V);
-- добавляется **Sliding Window Attention** — окно внимания ограниченной ширины вместо полной causal-маски — и KV-кэш, ограниченный окном;
-- $`d_{ff} = 14\,336 = 3{,}5d`$ вместо $`\tfrac{8}{3}d`$ при $`d = 4096`$;
-- RMSNorm, SwiGLU и RoPE остаются без изменений.
-
-Подробности — в [mistral.md](mistral.md).
-
 ## Типичные ошибки и тонкости
 
 - **Загрузка весов без `"bias": false` и `intermediate_size`.** Формы не совпадут, `load_state_dict` упадёт. Значения по умолчанию сохранены ради старых чекпоинтов, а не ради совпадения с LLaMA.
@@ -566,6 +557,15 @@ out = model.generate(tokens, max_new_tokens=20, do_sample=True, temperature=0.8,
 - **Нечётный `head_size`.** RoPE поворачивает пары; конструктор отклонит такой конфиг с `ValueError`.
 - **Контекст длиннее `max_position_embeddings`.** Таблицы RoPE не содержат этих позиций: `forward` бросает `ValueError`, `generate` обрезает контекст до последних $`T_{\max}`$ токенов и сбрасывает кэш.
 - **Привязанные эмбеддинги в HF-чекпоинте.** Голова получает копию; дальнейшее дообучение будет менять две матрицы независимо.
+
+## Что изменилось в Mistral
+
+- обычный MHA → **Grouped Query Attention** (раздельное число голов Q и K/V);
+- добавляется **Sliding Window Attention** — окно внимания ограниченной ширины вместо полной causal-маски — и KV-кэш, ограниченный окном;
+- $`d_{ff} = 14\,336 = 3{,}5d`$ вместо $`\tfrac{8}{3}d`$ при $`d = 4096`$;
+- RMSNorm, SwiGLU и RoPE остаются без изменений.
+
+Подробности — в [mistral.md](mistral.md).
 
 ## Итоги
 

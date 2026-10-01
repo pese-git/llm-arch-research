@@ -102,7 +102,9 @@ flowchart TB
     classDef dim fill:#f5f5f5,stroke:#bbbbbb,color:#999999,stroke-dasharray:4 3;
 ```
 
-Прямой проход тот же, что у LLaMA (формулы — в [llama.md](llama.md#полный-forward-в-формулах)), с заменой $`\mathrm{MHA}_{\text{RoPE}}`$ на $`\mathrm{GQA}_{\text{RoPE}}`$ с маской окна:
+## Прямой проход в формулах
+
+Прямой проход тот же, что у LLaMA (формулы — в [llama.md](llama.md#прямой-проход-в-формулах)), с заменой $`\mathrm{MHA}_{\text{RoPE}}`$ на $`\mathrm{GQA}_{\text{RoPE}}`$ с маской окна:
 
 ```math
 \begin{aligned}
@@ -443,24 +445,7 @@ print(count(model))                             # 7241732096
 
 Все ключи используются конструктором `Mistral.__init__`. `intermediate_size` и `bias` меняют форму весов: по умолчанию сохранена прежняя структура, чтобы загружались старые чекпоинты. Неверные сочетания отклоняются с `ValueError` уже в конструкторе: `embed_dim`, не делящийся на `num_q_heads` без явного `head_size`, `num_q_heads`, не делящееся на `num_kv_heads`, нечётный `head_size`.
 
-## Отличия от Mistral 7B
-
-Подробности, воспроизведение и варианты исправления — в [бэклоге](../dev/backlog.md#mistral) (номера пунктов в скобках).
-
-| | Mistral 7B | Здесь |
-|---|---|---|
-| Скрытый слой SwiGLU | `hidden_dim = 14336` при `dim = 4096` (3.5·d) | 4·d по умолчанию; `intermediate_size: 14336` — как в оригинале (30) |
-| Bias | нет ни в одной проекции | во всех `Linear` по умолчанию; `bias: false` — как в оригинале (24) |
-| Dropout | нет | после эмбеддингов, на выходах attention и SwiGLU (51); `dropout: 0` убирает его полностью |
-| Ширина окна | `W + 1` позиций в тексте статьи и prefill эталона, `W` в HF | `W + 1` (см. [выше](#ширина-окна-w--1)) |
-| `eps` RMSNorm | `1e-5` | `1e-6` по умолчанию, задаётся ключом `rms_norm_eps` |
-| KV-кэш | кольцевой буфер (запись по `pos % W`) | `torch.cat` и обрезка срезом; результат тот же |
-| Внимание в окне | ядра, считающие только полосу окна ($`O(TW)`$) | полная матрица $`QK^\top`$ и маска ($`O(T^2)`$) |
-| Префилл кусками | размером с окно | `generate` — весь промпт сразу; кусками — вручную через `forward` с кэшем |
-
-Скользящее окно есть только в Mistral 7B v0.1 (`sliding_window: 4096`); в v0.2 и v0.3 его убрали (`sliding_window: null` в конфиге HF). Здесь это ключ `window_size`: без него окна нет.
-
-### Загрузка весов HuggingFace
+## Загрузка весов HuggingFace
 
 С ключами `intermediate_size` и `"bias": false` загружаются веса `MistralForCausalLM` — той же функцией `convert_hf_state_dict`, что у [LLaMA](llama.md#загрузка-весов-huggingface) (реэкспорт в `llm.models.mistral`); строки `q_proj` переставляются по `num_attention_heads`, `k_proj` — по `num_key_value_heads`.
 
@@ -486,17 +471,26 @@ model.load_state_dict(convert_hf_state_dict(hf.state_dict(), num_heads=c.num_att
 
 `Mistral` без `window_size` — это LLaMA с GQA, поэтому так же загружаются и чекпоинты `LlamaForCausalLM` с `num_key_value_heads < num_attention_heads` (Llama 2 70B и производные): проверено на случайной модели, логиты совпадают до ~1e-7.
 
+## Отличия от оригинала
+
+Подробности, воспроизведение и варианты исправления — в [бэклоге](../dev/backlog.md#mistral) (номера пунктов в скобках).
+
+| | Mistral 7B | Здесь |
+|---|---|---|
+| Скрытый слой SwiGLU | `hidden_dim = 14336` при `dim = 4096` (3.5·d) | 4·d по умолчанию; `intermediate_size: 14336` — как в оригинале (30) |
+| Bias | нет ни в одной проекции | во всех `Linear` по умолчанию; `bias: false` — как в оригинале (24) |
+| Dropout | нет | после эмбеддингов, на выходах attention и SwiGLU (51); `dropout: 0` убирает его полностью |
+| Ширина окна | `W + 1` позиций в тексте статьи и prefill эталона, `W` в HF | `W + 1` (см. [выше](#ширина-окна-w--1)) |
+| `eps` RMSNorm | `1e-5` | `1e-6` по умолчанию, задаётся ключом `rms_norm_eps` |
+| KV-кэш | кольцевой буфер (запись по `pos % W`) | `torch.cat` и обрезка срезом; результат тот же |
+| Внимание в окне | ядра, считающие только полосу окна ($`O(TW)`$) | полная матрица $`QK^\top`$ и маска ($`O(T^2)`$) |
+| Префилл кусками | размером с окно | `generate` — весь промпт сразу; кусками — вручную через `forward` с кэшем |
+
+Скользящее окно есть только в Mistral 7B v0.1 (`sliding_window: 4096`); в v0.2 и v0.3 его убрали (`sliding_window: null` в конфиге HF). Здесь это ключ `window_size`: без него окна нет.
+
 ## Генерация
 
 `Mistral.generate(...)` — унифицированная сигнатура `BaseModel.generate` (см. [gpt.md](gpt.md#генерация) и [generation.md](generation.md)). Отличия от LLaMA — в кэше: при заданном `window_size` он не растёт дальше $`W`$ позиций на слой, а позиция следующего токена хранится в нём явно (`next_pos`). Позиции по-прежнему ограничены `max_position_embeddings`: когда текст длиннее, `generate` продолжает по последним $`T_{\max}`$ токенам без кэша — как у всех моделей.
-
-## Что изменилось в Mixtral
-
-- плотный `SwiGLU`-FFN → **Mixture-of-Experts**: 8 параллельных SwiGLU-экспертов и роутер, на каждый токен работают 2 из них;
-- GQA, RoPE и RMSNorm остаются; блок декодера отличается только FFN-частью;
-- скользящего окна в Mixtral 8x7B нет, а база RoPE увеличена до $`10^6`$ под контекст 32K (в репозитории `window_size` у Mixtral остаётся необязательным ключом).
-
-Подробности — в [mixtral.md](mixtral.md) и [mixture-of-experts.md](mixture-of-experts.md).
 
 ## Типичные ошибки и тонкости
 
@@ -506,6 +500,14 @@ model.load_state_dict(convert_hf_state_dict(hf.state_dict(), num_heads=c.num_att
 - **`num_q_heads`, не кратное `num_kv_heads`.** Группы не получатся равными; конструктор бросает `ValueError`.
 - **Путаница голов Q и K/V при перестановке строк.** `q_proj` переставляется по числу голов Q, `k_proj` — по числу голов K/V; `convert_hf_state_dict` без `num_kv_heads` для GQA-чекпоинта даст неверные K.
 - **Рецептивное поле ≠ контекст.** $`L \cdot W`$ может быть и больше, и меньше $`T_{\max}`$ (у учебного конфига — 64 против 512).
+
+## Что изменилось в Mixtral
+
+- плотный `SwiGLU`-FFN → **Mixture-of-Experts**: 8 параллельных SwiGLU-экспертов и роутер, на каждый токен работают 2 из них;
+- GQA, RoPE и RMSNorm остаются; блок декодера отличается только FFN-частью;
+- скользящего окна в Mixtral 8x7B нет, а база RoPE увеличена до $`10^6`$ под контекст 32K (в репозитории `window_size` у Mixtral остаётся необязательным ключом).
+
+Подробности — в [mixtral.md](mixtral.md) и [mixture-of-experts.md](mixture-of-experts.md).
 
 ## Итоги
 

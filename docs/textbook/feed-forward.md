@@ -384,7 +384,7 @@ print(llama_intermediate_size(288, multiple_of=32))   # 768 (llama2.c stories15M
 
 Не все модели следуют правилу ⅔:
 
-- **Mistral 7B** и эксперты **Mixtral 8x7B**: $`d_{ff} = 14336 = 3.5d`$ при $`d = 4096`$ ([mistral.md](mistral.md#отличия-от-mistral-7b)). FFN в $`3 \cdot 3.5 / 8 = 1.3125`$ раза тяжелее классического FFN с $`d_{ff} = 4d`$ при том же $`d`$.
+- **Mistral 7B** и эксперты **Mixtral 8x7B**: $`d_{ff} = 14336 = 3.5d`$ при $`d = 4096`$ ([mistral.md](mistral.md#отличия-от-оригинала)). FFN в $`3 \cdot 3.5 / 8 = 1.3125`$ раза тяжелее классического FFN с $`d_{ff} = 4d`$ при том же $`d`$.
 - **Gemma**: $`d_{ff} = 8d`$ на каждую из матриц `gate` и `up` — 16384 при $`d = 2048`$ (2B) и 24576 при $`d = 3072`$ (7B) ([gemma.md](gemma.md#как-в-статье)). Это $`24d^2`$ параметров — втрое больше классического FFN. В табл. 1 статьи Gemma указаны вдвое большие «feedforward hidden dims» (32768 и 49152) — это сумма gate и up ([бэклог, пункт 44](../dev/backlog.md)).
 
 ### Модель → FFN → d_ff
@@ -411,7 +411,7 @@ print(llama_intermediate_size(288, multiple_of=32))   # 768 (llama2.c stories15M
 - `FeedForward`, `SwiGLU`, `GeGLU`: `return self._dropout(out)` в конце `forward`; вероятность — параметр `dropout` конструктора (из `config["dropout"]`).
 - `MoE`: эксперты-`SwiGLU` создаются с `dropout=0.0`, dropout — один, на выходе всего слоя, иначе выход прорежался бы дважды ([`core/moe.py`](../../llm/src/llm/core/moe.py)).
 
-Современные LLM (LLaMA, Mistral, Gemma) предобучаются на огромных корпусах почти за одну эпоху и dropout не используют: переобучение там не главная проблема. В репозитории он есть везде и отключается `"dropout": 0` в конфиге — см. [mistral.md](mistral.md#отличия-от-mistral-7b), [gemma.md](gemma.md#отличия-от-gemma).
+Современные LLM (LLaMA, Mistral, Gemma) предобучаются на огромных корпусах почти за одну эпоху и dropout не используют: переобучение там не главная проблема. В репозитории он есть везде и отключается `"dropout": 0` в конфиге — см. [mistral.md](mistral.md#отличия-от-оригинала), [gemma.md](gemma.md#отличия-от-оригинала).
 
 ## Реализация в репозитории
 

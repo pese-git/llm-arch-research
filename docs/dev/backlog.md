@@ -231,7 +231,7 @@
 
 ### Отклонения от LLaMA
 
-Докстринг `Llama` и [llama.md](../textbook/llama.md#отличия-от-llama) уже упоминают bias и dropout; ниже — что из этого следует и чего там нет.
+Докстринг `Llama` и [llama.md](../textbook/llama.md#отличия-от-оригинала) уже упоминают bias и dropout; ниже — что из этого следует и чего там нет.
 
 #### 23. SwiGLU с hidden = 4·d вместо ⅔·4·d — P2
 
@@ -330,9 +330,9 @@
 
 #### 51. Dropout в attention и FFN — P3
 
-- **Что:** в Mistral 7B dropout нет (в `mistral-inference` его нет вовсе, в HF `attention_dropout=0.0`). Здесь dropout есть в `GroupedQueryAttention` и в `SwiGLU`. Для LLaMA это указано в докстринге и [llama.md](../textbook/llama.md#отличия-от-llama), для Mistral — нигде.
+- **Что:** в Mistral 7B dropout нет (в `mistral-inference` его нет вовсе, в HF `attention_dropout=0.0`). Здесь dropout есть в `GroupedQueryAttention` и в `SwiGLU`. Для LLaMA это указано в докстринге и [llama.md](../textbook/llama.md#отличия-от-оригинала), для Mistral — нигде.
 - **Исправление:** задокументировать в [mistral.md](../textbook/mistral.md) или ставить `dropout=0.0` по умолчанию.
-- **Статус:** сделано в ветке `docs/mistral-gemma-dropout`: задокументировано в [mistral.md](../textbook/mistral.md#отличия-от-mistral-7b) (новый раздел «Отличия от Mistral 7B») и в таблице конфигурации. Значение по умолчанию поменять нельзя: `dropout` — обязательный ключ конфига. Проверено, что `dropout: 0` обнуляет все пять dropout модели (после эмбеддингов и в attention и SwiGLU каждого блока), так что для соответствия оригиналу достаточно конфига. Dropout в attention у Mistral не на весах внимания, а на выходе — как и был.
+- **Статус:** сделано в ветке `docs/mistral-gemma-dropout`: задокументировано в [mistral.md](../textbook/mistral.md#отличия-от-оригинала) (новый раздел «Отличия от Mistral 7B») и в таблице конфигурации. Значение по умолчанию поменять нельзя: `dropout` — обязательный ключ конфига. Проверено, что `dropout: 0` обнуляет все пять dropout модели (после эмбеддингов и в attention и SwiGLU каждого блока), так что для соответствия оригиналу достаточно конфига. Dropout в attention у Mistral не на весах внимания, а на выходе — как и был.
 
 
 ### Качество кода
@@ -543,7 +543,7 @@
 
 - **Что:** в Gemma dropout нет (`attention_dropout=0.0` в HF, в `gemma_pytorch` его нет). Здесь dropout стоит после эмбеддингов (`Gemma.forward`), в `MultiQueryAttention` и в `GeGLU`.
 - **Исправление:** ставить `dropout=0.0` по умолчанию; то же для Mistral (пункт 51).
-- **Статус:** сделано в ветке `docs/mistral-gemma-dropout`: в [gemma.md](../textbook/gemma.md#отличия-от-gemma) и таблице конфигурации указано, что dropout в оригинале нет и `dropout: 0` убирает его полностью (проверено: все пять dropout модели получают `p = 0`). Значения по умолчанию нет: `dropout` — обязательный ключ конфига.
+- **Статус:** сделано в ветке `docs/mistral-gemma-dropout`: в [gemma.md](../textbook/gemma.md#отличия-от-оригинала) и таблице конфигурации указано, что dropout в оригинале нет и `dropout: 0` убирает его полностью (проверено: все пять dropout модели получают `p = 0`). Значения по умолчанию нет: `dropout` — обязательный ключ конфига.
 
 ### Качество кода
 

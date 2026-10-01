@@ -340,7 +340,7 @@ def output_projection(token_embeddings, tie_weights=False) -> nn.Linear:
 | `Gemma` | `tie_word_embeddings` | `false` | отдельный `nn.Linear` с bias по ключу `bias` |
 | `Llama`, `Mistral`, `Mixtral` | нет | — | всегда отдельный `nn.Linear(embed_dim, vocab_size, bias=bias)` |
 
-По умолчанию ключ выключен ради совместимости со старыми чекпоинтами, где есть отдельные `_linear.weight` и `_linear.bias`. Для загрузки весов OpenAI GPT-1/GPT-2 и Gemma его нужно включить (см. [gpt.md](gpt.md#weight-tying-и-веса-openai), [gemma.md](gemma.md#как-в-статье)). Проверка экономии на учебной модели:
+По умолчанию ключ выключен ради совместимости со старыми чекпоинтами, где есть отдельные `_linear.weight` и `_linear.bias`. Для загрузки весов OpenAI GPT-1/GPT-2 и Gemma его нужно включить (см. [gpt.md](gpt.md#weight-tying), [gemma.md](gemma.md#как-в-статье)). Проверка экономии на учебной модели:
 
 ```python
 from llm.models.gpt import GPT
@@ -424,7 +424,7 @@ if self._embedding_scale is not None:
 - $`m_j \in \{0, 1\}`$ — случайная маска, 1 с вероятностью $`1 - p`$;
 - $`p`$ — вероятность обнуления (ключ `dropout` в конфиге; не путать с вероятностями токенов $`p_v`$ из раздела о выходной проекции).
 
-В режиме `eval()` dropout ничего не делает. Он мешает модели полагаться на отдельные координаты эмбеддингов и работает как регуляризация (Srivastava et al., 2014). В GPT-1 это `embd_pdrop = 0.1` ([gpt.md](gpt.md#конфигурация)); в Gemma dropout нет вовсе, и для соответствия оригиналу нужно `dropout: 0` ([gemma.md](gemma.md#отличия-от-gemma)).
+В режиме `eval()` dropout ничего не делает. Он мешает модели полагаться на отдельные координаты эмбеддингов и работает как регуляризация (Srivastava et al., 2014). В GPT-1 это `embd_pdrop = 0.1` ([gpt.md](gpt.md#конфигурация)); в Gemma dropout нет вовсе, и для соответствия оригиналу нужно `dropout: 0` ([gemma.md](gemma.md#отличия-от-оригинала)).
 
 В коде это `self._dropout = nn.Dropout(config["dropout"])`: у GPT и GPT-2 — `self._dropout(tok_out + pos_out.unsqueeze(0))`, у LLaMA, Mistral, Mixtral и Gemma — `self._dropout(tok_out)` (у Gemma — после масштабирования). Подробнее о dropout — в [training.md](training.md).
 
