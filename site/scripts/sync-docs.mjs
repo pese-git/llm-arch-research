@@ -48,8 +48,12 @@ export function listDocs() {
 /** Строка навигации — только ссылки через «·»: «← назад · Оглавление · вперёд» в главах, ссылки на соседние разделы в README. */
 const isNavLine = (line) => /^\[[^\]]+\]\([^)]+\)(\s*·\s*\[[^\]]+\]\([^)]+\))+\s*$/.test(line.trim());
 
+/** Описание страницы — HTML-комментарий под заголовком: на GitHub он не виден. */
+const descriptionRe = /^<!--\s*description:\s*([\s\S]+?)\s*-->\s*$/;
+
 /**
  * Markdown главы → страница Starlight: заголовок первого уровня становится `title`,
+ * комментарий `<!-- description: … -->` — `description` (поисковики и превью ссылок),
  * строка навигации под ним убирается — её заменяют боковое меню и ссылки «Назад/Далее»
  * внизу страницы. Оглавление справа у README раздела — только если в нём от трёх разделов.
  */
@@ -59,11 +63,20 @@ function toPage(rel, source) {
   if (h1 === -1) throw new Error(`${rel}: нет заголовка первого уровня`);
   const title = lines[h1].slice(2).trim();
   let body = lines.slice(h1 + 1);
+  let description = null;
+  const descLine = body.findIndex((l) => descriptionRe.test(l));
+  if (descLine !== -1 && body.slice(0, descLine).every((l) => !l.startsWith('## '))) {
+    description = body[descLine].match(descriptionRe)[1].replace(/\s+/g, ' ');
+    body.splice(descLine, 1);
+  } else {
+    console.warn(`[sync-docs] docs/${rel}: нет <!-- description: … --> под заголовком — у страницы будет общее описание сайта`);
+  }
   const firstText = body.findIndex((l) => l.trim() !== '');
   if (firstText !== -1 && (body[firstText].includes('[Оглавление](README.md)') || isNavLine(body[firstText]))) {
     body = body.slice(firstText + 1);
   }
   const front = ['---', `title: ${yamlString(title)}`];
+  if (description) front.push(`description: ${yamlString(description)}`);
   const sectionCount = body.filter((l) => l.startsWith('## ')).length;
   if (rel.endsWith('README.md') && sectionCount < 3) front.push('tableOfContents: false');
   front.push('---', '');
