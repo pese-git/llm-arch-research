@@ -455,6 +455,8 @@ if self._embedding_scale is not None:
 ```mermaid
 %%{init: {"flowchart": {"rankSpacing": 28, "nodeSpacing": 28}}}%%
 flowchart TB
+    accTitle: Путь от токенов к logits
+    accDescr: Индексы токенов выбирают строки матрицы эмбеддингов, у Gemma результат умножается на корень из d, у GPT прибавляются позиционные эмбеддинги, затем dropout, блоки декодера, финальная нормализация и выходная проекция в logits.
     Ids(["token ids [B, T]"]):::io --> Emb["TokenEmbeddings<br/>строки E [V, d]"]:::blue
     Emb --> Scale["× √d<br/>(Gemma, scale_embeddings)"]:::dim
     Scale --> Pos(("+")):::add

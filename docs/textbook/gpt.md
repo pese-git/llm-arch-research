@@ -66,6 +66,8 @@ Radford, Narasimhan, Salimans, Sutskever в статье *Improving Language Und
 ```mermaid
 %%{init: {"flowchart": {"rankSpacing": 28, "nodeSpacing": 28}}}%%
 flowchart TB
+    accTitle: Архитектура GPT-1
+    accDescr: Эмбеддинги токенов и обучаемые позиционные эмбеддинги складываются и проходят dropout. Стек блоков post-LN: masked multi-head attention и FFN, после каждого — сложение с residual и LayerNorm. Затем линейная проекция на словарь и logits.
     Ids(["token ids"]):::io --> TokEmb["Token Embedding"]:::blue
     Ids --> PosEmb["Position Embedding<br/>(обучаемые)"]:::purple
     TokEmb --> Sum(("+")):::add
@@ -198,6 +200,8 @@ Q = X W_Q + b_Q, \quad K = X W_K + b_K, \quad V = X W_V + b_V
 ```mermaid
 %%{init: {"flowchart": {"rankSpacing": 28, "nodeSpacing": 28}}}%%
 flowchart TB
+    accTitle: Multi-head attention
+    accDescr: Вход обрабатывается несколькими головами параллельно, их выходы конкатенируются, проецируются матрицей W_O обратно в размер эмбеддинга и проходят dropout.
     X(["x · [batch, seq_len, emb_size]"]):::io
     X --> H1["Head 1"]:::blue
     X --> H2["Head 2"]:::blue
@@ -243,6 +247,8 @@ M_{ts} = \begin{cases} 0, & s \le t \\ -\infty, & s > t \end{cases}
 ```mermaid
 %%{init: {"flowchart": {"rankSpacing": 28, "nodeSpacing": 28}}}%%
 flowchart TB
+    accTitle: Одна голова attention с causal-маской
+    accDescr: Вход проецируется в Q, K и V. Произведение Q на транспонированное K делится на корень из размера головы, causal-маска закрывает будущие позиции, softmax по строкам даёт веса, которые умножаются на V.
     X(["x"]):::io --> Wq["W_q"]:::gray --> Q["Q"]:::blue
     X --> Wk["W_k"]:::gray --> K["K"]:::blue
     X --> Wv["W_v"]:::gray --> V["V"]:::blue
@@ -292,6 +298,8 @@ GELU по умолчанию — tanh-аппроксимация (`activation="g
 
 ```mermaid
 flowchart LR
+    accTitle: FFN в GPT-1
+    accDescr: Линейный слой расширяет вход в 4 раза, GELU, линейный слой обратно и dropout.
     X(["x"]):::io --> L1["Linear<br/>emb_size → 4·emb_size"]:::gray --> Act["GELU"]:::purple --> L2["Linear<br/>4·emb_size → emb_size"]:::gray --> Drop["Dropout"]:::gray --> Out(["out"]):::io
 
     classDef io fill:#ffffff,stroke:#999999,color:#1a1a1a;
@@ -574,6 +582,8 @@ L_3(\mathcal{C}) = L_2(\mathcal{C}) + \lambda \cdot L_1(\mathcal{C})
 ```mermaid
 %%{init: {"flowchart": {"rankSpacing": 28, "nodeSpacing": 28}}}%%
 flowchart LR
+    accTitle: Дообучение GPT-1 на задачах
+    accDescr: Входы задач превращаются в одну последовательность с разделителями: для логического вывода посылка и гипотеза, для сходства обе перестановки пары, для выбора ответа контекст с каждым вариантом. Каждая последовательность проходит через GPT и линейный слой.
     subgraph Ent["Entailment"]
         direction LR
         E1(["⟨s⟩ посылка $ гипотеза ⟨e⟩"]):::io --> ET["GPT"]:::blue --> EL["Linear"]:::gray

@@ -45,6 +45,8 @@ Attention в оригинале — GQA + RoPE с плотным внимани�
 ```mermaid
 %%{init: {"flowchart": {"rankSpacing": 28, "nodeSpacing": 28}}}%%
 flowchart TB
+    accTitle: Архитектура Mixtral
+    accDescr: Как у Mistral, но вместо плотного SwiGLU в каждом блоке слой Mixture-of-Experts: роутер выбирает top-k из num_experts SwiGLU-экспертов. Затем финальный RMSNorm, проекция на словарь и logits.
     Ids(["token ids"]):::io --> TokEmb["Token Embedding"]:::blue
     TokEmb --> Drop["Dropout"]:::gray
     subgraph Dec["MixtralDecoder × num_layers · pre-RMSNorm"]
@@ -149,6 +151,8 @@ $`Z \in \mathbb{R}^{T \times V}`$ — логиты, $`\mathrm{RMSNorm}_f`$ — �
 ```mermaid
 %%{init: {"flowchart": {"rankSpacing": 28, "nodeSpacing": 28}}}%%
 flowchart TB
+    accTitle: Слой MoE в Mixtral
+    accDescr: Роутер вычисляет логиты экспертов для токена, выбираются top-k, softmax по выбранным даёт веса. Токен обрабатывают только выбранные эксперты, их выходы суммируются с весами и проходят dropout.
     X(["x · один токен"]):::io --> Router["Router<br/>Linear(emb_size → num_experts)"]:::gray
     Router --> TopK["top-k логитов<br/>k = top_k_experts"]:::gray
     TopK --> W["softmax по выбранным k<br/>→ веса w₁ … w_k"]:::purple

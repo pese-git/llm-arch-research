@@ -247,6 +247,8 @@ N_{\text{exp}} = 3\, d\, d_{ff}
 ```mermaid
 %%{init: {"flowchart": {"rankSpacing": 28, "nodeSpacing": 28}}}%%
 flowchart TB
+    accTitle: Слой Mixture-of-Experts
+    accDescr: Роутер вычисляет логиты E экспертов для токена, выбираются k лучших, softmax по ним даёт веса. Токен отправляется только выбранным экспертам, их выходы складываются с этими весами.
     X(["x · один токен"]):::io --> Router["Router<br/>Linear(d → E)"]:::gray
     Router --> TopK["top-k логитов"]:::gray
     TopK --> W["softmax по выбранным k<br/>→ веса w"]:::purple

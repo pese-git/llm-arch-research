@@ -66,6 +66,8 @@ Gemma Team (2024) выпустили семейство открытых мод�
 ```mermaid
 %%{init: {"flowchart": {"rankSpacing": 28, "nodeSpacing": 28}}}%%
 flowchart TB
+    accTitle: Архитектура Gemma
+    accDescr: Эмбеддинги токенов, умноженные на корень из d при scale_embeddings, dropout и стек блоков pre-RMSNorm: attention с num_kv_heads головами K/V (одна — MQA) и GeGLU, каждый подблок с residual-связью. Затем финальный RMSNorm, выходная проекция и logits.
     Ids(["token ids"]):::io --> TokEmb["Token Embedding<br/>× √d, если scale_embeddings"]:::blue
     TokEmb --> Drop["Dropout"]:::gray
     subgraph Dec["GemmaDecoder × num_layers · pre-RMSNorm"]

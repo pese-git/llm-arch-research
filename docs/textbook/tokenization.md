@@ -460,6 +460,8 @@ assert tok2.encode("the cat sat") == tok.encode("the cat sat")
 ```mermaid
 %%{init: {"flowchart": {"rankSpacing": 28, "nodeSpacing": 28}}}%%
 flowchart TB
+    accTitle: Токенизатор в экспериментах
+    accDescr: Если файл токенизатора есть, он загружается, иначе BPETokenizer обучается на обучающих текстах и сохраняется. Размер его словаря записывается в конфиг модели, затем модель обучается Trainer.
     Cfg(["конфиг: bpe_tokenizer, bpe_vocab_size, bpe_special_tokens"]):::io --> Q{"файл токенизатора есть?"}:::gold
     Q -- да --> Load["BPETokenizer.load"]:::gray
     Q -- нет --> Train["BPETokenizer().train на train-текстах<br/>+ save"]:::gray

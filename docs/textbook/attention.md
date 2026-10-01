@@ -401,6 +401,8 @@ LLaMA, Mistral, Mixtral и Gemma при предобучении dropout не и
 ```mermaid
 %%{init: {"flowchart": {"rankSpacing": 24, "nodeSpacing": 16}}}%%
 flowchart TB
+    accTitle: MHA, GQA и MQA
+    accDescr: Как головы запросов делят головы ключей и значений: в MHA у каждой головы Q своя пара K/V, в GQA группа голов Q делит одну пару, в MQA одна пара K/V на все головы Q.
     subgraph MHA["MHA · G = H"]
         direction TB
         a1["Q₁"]:::blue --- b1["K/V₁"]:::gold

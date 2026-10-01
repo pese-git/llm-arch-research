@@ -168,6 +168,8 @@ print(z.grad)        # tensor([[-0.3348,  0.2447,  0.0900]])
 
 ```mermaid
 flowchart LR
+    accTitle: Обратное распространение ошибки
+    accDescr: Прямой проход идёт от входных токенов через эмбеддинги, блоки декодера и выходную проекцию к loss, градиенты идут в обратном направлении от loss к эмбеддингам.
     X["input_ids"] --> E["эмбеддинги"]
     E --> D["блоки декодера"]
     D --> H["скрытое состояние h"]
@@ -654,6 +656,8 @@ Trainer(model, train_dataset, val_dataset=None, lr=3e-4, batch_size=8, num_epoch
 
 ```mermaid
 flowchart TD
+    accTitle: Шаг обучения в Trainer
+    accDescr: Обнуление градиентов, прямой проход, loss со сдвигом меток и cross-entropy плюс вспомогательный loss, если он есть, обратный проход, обрезка нормы градиента до 1.0, шаг AdamW и шаг расписания learning rate.
     A["zero_grad"] --> B["forward: logits = model(input_ids)"]
     B --> C["compute_lm_loss: сдвиг и cross-entropy"]
     C --> D["+ auxiliary_loss (если есть)"]

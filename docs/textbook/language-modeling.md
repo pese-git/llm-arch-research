@@ -415,6 +415,8 @@ i=3      1   1   1   1
 ```mermaid
 %%{init: {"flowchart": {"rankSpacing": 28, "nodeSpacing": 28}}}%%
 flowchart TB
+    accTitle: Общая схема decoder-only трансформера
+    accDescr: Индексы токенов превращаются в эмбеддинги и проходят L блоков декодера: нормализация и causal self-attention, нормализация и FFN или MoE, каждый подблок с residual-связью. Затем финальная нормализация, проекция на словарь, logits и loss при обучении или следующий токен при генерации.
     Ids(["token ids · [B, T]"]):::io --> Emb["Token Embedding<br/>[B, T, d]"]:::blue
     Emb --> Pos["+ позиционная информация<br/>(GPT: обучаемые; LLaMA и др.: RoPE внутри attention)"]:::purple
     subgraph Dec["Блок декодера × L"]
