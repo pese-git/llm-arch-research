@@ -51,6 +51,12 @@ export function listDocs() {
 /** Строка навигации — только ссылки через «·»: «← назад · Оглавление · вперёд» в главах, ссылки на соседние разделы в README. */
 const isNavLine = (line) => /^\[[^\]]+\]\([^)]+\)(\s*·\s*\[[^\]]+\]\([^)]+\))+\s*$/.test(line.trim());
 
+/**
+ * Вес страниц в поиске Pagefind (по умолчанию 1): бэклог упоминает почти каждый термин
+ * и без понижения выходит в результатах выше глав, где термин разобран.
+ */
+const searchWeights = { 'dev/backlog.md': 0.2 };
+
 /** Описание страницы — HTML-комментарий под заголовком: на GitHub он не виден. */
 const descriptionRe = /^<!--\s*description:\s*([\s\S]+?)\s*-->\s*$/;
 
@@ -85,7 +91,10 @@ function toPage(rel, source) {
   const sectionCount = body.filter((l) => l.startsWith('## ')).length;
   if (rel.endsWith('README.md') && sectionCount < 3) front.push('tableOfContents: false');
   front.push('---', '');
-  return front.join('\n') + body.join('\n').replace(/^\n+/, '');
+  let text = body.join('\n').replace(/^\n+/, '');
+  // Pagefind применяет вес ко всему тексту внутри элемента; пустые строки вокруг — чтобы внутри разбирался markdown
+  if (searchWeights[rel]) text = `<div data-pagefind-weight="${searchWeights[rel]}">\n\n${text}\n\n</div>\n`;
+  return front.join('\n') + text;
 }
 
 /**
