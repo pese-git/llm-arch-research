@@ -8,11 +8,10 @@ import starlight from '@astrojs/starlight';
 import mermaid from 'astro-mermaid';
 import rehypeKatex from 'rehype-katex';
 import remarkGithubDocs from './src/plugins/remark-github-docs.mjs';
-import { docsDir, outDir, removeFile, syncDocs, syncFile } from './scripts/sync-docs.mjs';
+import { branch, docsDir, outDir, removeFile, repoUrl, syncDocs, syncFile } from './scripts/sync-docs.mjs';
 
 const siteDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(siteDir, '..');
-const repoUrl = 'https://github.com/pese-git/llm-arch-research';
 
 // GitHub Pages проекта: https://pese-git.github.io/llm-arch-research/.
 // Для другого хостинга — SITE_URL и SITE_BASE (например, SITE_BASE=/ для корня домена).
@@ -88,7 +87,7 @@ export default defineConfig({
   markdown: {
     // unified (remark/rehype), а не Sätteri по умолчанию: нужны свои плагины для формул и ссылок
     processor: unified({
-      remarkPlugins: [[remarkGithubDocs, { base, docsDir, contentDir: outDir, repoRoot, repoUrl, branch: 'master' }]],
+      remarkPlugins: [[remarkGithubDocs, { base, docsDir, contentDir: outDir, repoRoot, repoUrl, branch }]],
       rehypePlugins: [[rehypeKatex, { strict: 'ignore', throwOnError: false }]],
     }),
   },
