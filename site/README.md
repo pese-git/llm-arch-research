@@ -5,7 +5,7 @@
 ```bash
 cd site
 npm install
-npm run dev       # http://localhost:4321/llm-arch-research/ — правки в docs/ подхватываются сразу
+npm run dev       # http://localhost:4321/ — правки в docs/ подхватываются сразу
 npm run build     # статический сайт в site/dist
 npm run preview   # просмотр собранного сайта
 ```
@@ -43,13 +43,9 @@ Astro кэширует отрисованные страницы в `node_module
 
 ## Публикация
 
-Workflow [`.github/workflows/docs-site.yml`](../.github/workflows/docs-site.yml):
-- в PR, где меняются `docs/` или `site/`, проверяет сборку;
-- после слияния в `master` публикует сайт на GitHub Pages — `https://pese-git.github.io/llm-arch-research/`.
+Сайт публикуется Docker-образом на кластере — `https://llm-arch-research.openidealab.com` (раздел «Docker» ниже). Workflow [`.github/workflows/docs-site.yml`](../.github/workflows/docs-site.yml) только проверяет сборку: в PR, где меняются `docs/` или `site/`, и после слияния в `master`.
 
-Pages нужно один раз включить в настройках репозитория: Settings → Pages → Source: GitHub Actions.
-
-Адрес для другого хостинга задают переменные окружения `SITE_URL` и `SITE_BASE`, например `SITE_BASE=/ npm run build` для корня домена.
+По умолчанию сайт собирается для корня этого домена. Адрес для другого хостинга задают переменные окружения `SITE_URL` и `SITE_BASE`, например `SITE_URL=https://example.org SITE_BASE=/docs npm run build`.
 
 ## Docker
 
