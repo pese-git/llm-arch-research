@@ -15,11 +15,12 @@ export const outDir = path.join(siteDir, 'src/content/docs');
 const sidebarFile = path.join(siteDir, 'src/generated/sidebar.json');
 const landingFile = path.join(siteDir, 'src/landing/index.mdx');
 
-// Разделы в порядке меню: папка в docs/ и подпись группы
+// Разделы в порядке меню: папка в docs/, подпись группы
+// и подпись первой страницы раздела — в «Назад/Далее» она видна без названия группы
 export const sections = [
-  { dir: 'textbook', label: 'Учебное пособие' },
-  { dir: 'guide', label: 'Руководство пользователя' },
-  { dir: 'dev', label: 'Для разработчиков' },
+  { dir: 'textbook', label: 'Учебное пособие', overview: 'О пособии' },
+  { dir: 'guide', label: 'Руководство пользователя', overview: 'О руководстве' },
+  { dir: 'dev', label: 'Для разработчиков', overview: 'О разделе для разработчиков' },
 ];
 
 /** Путь .md относительно docs/ (через «/») → slug страницы: README.md — индекс папки. */
@@ -44,10 +45,13 @@ export function listDocs() {
   return out.filter((f) => f !== 'README.md').sort();
 }
 
+/** Строка навигации — только ссылки через «·»: «← назад · Оглавление · вперёд» в главах, ссылки на соседние разделы в README. */
+const isNavLine = (line) => /^\[[^\]]+\]\([^)]+\)(\s*·\s*\[[^\]]+\]\([^)]+\))+\s*$/.test(line.trim());
+
 /**
  * Markdown главы → страница Starlight: заголовок первого уровня становится `title`,
- * строка навигации под ним («← назад · Оглавление · вперёд») убирается — её заменяют
- * боковое меню и ссылки «Назад/Далее» внизу страницы.
+ * строка навигации под ним убирается — её заменяют боковое меню и ссылки «Назад/Далее»
+ * внизу страницы. Оглавление справа у README раздела — только если в нём от трёх разделов.
  */
 function toPage(rel, source) {
   const lines = source.split('\n');
@@ -56,11 +60,12 @@ function toPage(rel, source) {
   const title = lines[h1].slice(2).trim();
   let body = lines.slice(h1 + 1);
   const firstText = body.findIndex((l) => l.trim() !== '');
-  if (firstText !== -1 && body[firstText].includes('[Оглавление](README.md)')) {
+  if (firstText !== -1 && (body[firstText].includes('[Оглавление](README.md)') || isNavLine(body[firstText]))) {
     body = body.slice(firstText + 1);
   }
   const front = ['---', `title: ${yamlString(title)}`];
-  if (rel.endsWith('README.md')) front.push('tableOfContents: false');
+  const sectionCount = body.filter((l) => l.startsWith('## ')).length;
+  if (rel.endsWith('README.md') && sectionCount < 3) front.push('tableOfContents: false');
   front.push('---', '');
   return front.join('\n') + body.join('\n').replace(/^\n+/, '');
 }
@@ -71,14 +76,14 @@ function toPage(rel, source) {
  * номер главы из первой колонки таблицы добавляется к названию. Пункты до первой жирной
  * строки идут без подгруппы. Главы, которых нет в оглавлении, — в подгруппу «Прочее».
  */
-function buildSection({ dir, label }, files) {
+function buildSection({ dir, label, overview }, files) {
   const readmePath = path.join(docsDir, dir, 'README.md');
   if (!fs.existsSync(readmePath)) return null;
   const readme = fs.readFileSync(readmePath, 'utf8');
   const start = readme.indexOf('## Оглавление');
   if (start === -1) throw new Error(`docs/${dir}/README.md: нет раздела «Оглавление»`);
   const end = readme.indexOf('\n## ', start + 1);
-  const items = [{ label: 'Обзор', slug: dir }];
+  const items = [{ label: overview, slug: dir }];
   let group = null;
   for (const line of readme.slice(start, end === -1 ? undefined : end).split('\n')) {
     const heading = line.match(/^\*\*(.+)\*\*\s*$/);

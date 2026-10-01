@@ -6,6 +6,8 @@
 // 2. Ссылки разрешаются относительно исходного файла в docs/: ссылка на .md из docs/ →
 //    страница сайта (`README.md` — индекс папки), `../../llm/src/...` и прочие пути
 //    репозитория → файл или папка на GitHub.
+// 3. Подпись ссылки — имя файла (`[attention.md](attention.md)`) → название страницы из её
+//    заголовка: на GitHub имя файла понятно, на сайте файлов не видно.
 import fs from 'node:fs';
 import path from 'node:path';
 import { visit, SKIP } from 'unist-util-visit';
@@ -54,13 +56,28 @@ export default function remarkGithubDocs({ base = '/', docsDir, contentDir, repo
     return rel.replace(/(^|\/)index\.md$/, '$1README.md');
   }
 
-  function rewrite(url, source) {
-    if (!url || /^([a-z][a-z0-9+.-]*:|#|\/)/i.test(url)) return url; // внешние, якоря, абсолютные
+  /** Относительная ссылка → путь относительно docs/ (от папки исходного файла) и якорь; null для внешних, якорей, абсолютных. */
+  function resolve(url, source) {
+    if (!url || /^([a-z][a-z0-9+.-]*:|#|\/)/i.test(url)) return null;
     const [target, hash = ''] = url.split(/(?=#)/);
-    const anchor = hash ? decodeURIComponent(hash) : '';
-    // Путь относительно docs/: от папки исходного файла
     const rel = path.posix.normalize(path.posix.join(path.posix.dirname(source), decodeURIComponent(target)));
-    if (rel.endsWith('.md') && !rel.startsWith('..') && fs.existsSync(path.join(docsDir, rel))) {
+    return { rel, hash };
+  }
+
+  const isDocsPage = (rel) => rel.endsWith('.md') && !rel.startsWith('..') && fs.existsSync(path.join(docsDir, rel));
+
+  /** Заголовок первого уровня страницы docs/<rel>; без кэша — в dev он меняется на лету. */
+  function titleOf(rel) {
+    const h1 = fs.readFileSync(path.join(docsDir, rel), 'utf8').match(/^# (.+)$/m);
+    return h1 ? h1[1].trim() : null;
+  }
+
+  function rewrite(url, source) {
+    const resolved = resolve(url, source);
+    if (!resolved) return url;
+    const { rel, hash } = resolved;
+    const anchor = hash ? decodeURIComponent(hash) : '';
+    if (isDocsPage(rel)) {
       const slug = rel.replace(/(^|\/)README\.md$/, '$1').replace(/\.md$/, '/');
       return `${siteBase}${slug}${anchor}`;
     }
@@ -82,6 +99,17 @@ export default function remarkGithubDocs({ base = '/', docsDir, contentDir, repo
     convertMath(tree);
     const source = file.path ? sourceOf(file.path) : 'README.md';
     visit(tree, ['link', 'definition'], (node) => {
+      if (node.type === 'link' && node.children.length === 1) {
+        const [label] = node.children;
+        const resolved = resolve(node.url, source);
+        if (
+          (label.type === 'text' || label.type === 'inlineCode') && /\.md$/.test(label.value) &&
+          resolved && isDocsPage(resolved.rel)
+        ) {
+          const title = titleOf(resolved.rel);
+          if (title) node.children = [{ type: 'text', value: title }];
+        }
+      }
       node.url = rewrite(node.url, source);
     });
   };
