@@ -1,4 +1,5 @@
 # Сохранение и загрузка
+<!-- description: Сохранение и загрузка моделей библиотеки llm: model.save, Model.load и файлы токенизатора. -->
 
 [← Генерация](generation.md) · [Оглавление](README.md) · [Загрузка весов HuggingFace →](hf-weights.md)
 

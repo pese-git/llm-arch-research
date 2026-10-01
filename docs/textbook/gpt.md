@@ -1,4 +1,5 @@
 # GPT-1
+<!-- description: GPT-1 (OpenAI, 2018): decoder-only трансформер с обучаемыми позициями и post-LN — статья, формулы, код и загрузка весов. -->
 
 Часть II · [← Генерация текста](generation.md) · [Оглавление](README.md) · [GPT-2 →](gpt2.md)
 

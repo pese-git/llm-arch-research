@@ -1,4 +1,5 @@
 # Mixture-of-Experts
+<!-- description: Mixture-of-Experts: роутер, выбор top-k экспертов, разреженные вычисления и load-balancing loss. -->
 
 Часть I · [← предыдущая](feed-forward.md) · [Оглавление](README.md) · [следующая →](training.md)
 
