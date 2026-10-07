@@ -48,4 +48,4 @@ print(model.generate(torch.tensor([[1, 2, 3]]), max_new_tokens=5, do_sample=Fals
 
 - [Модели и конфиги](models.md) — как собрать модель нужной архитектуры.
 - [Обучение](training.md) — первый запуск обучения на учебном корпусе.
-- [Ноутбуки](../../notebooks/) — пошаговый разбор каждой архитектуры в Jupyter (нужен `uv sync --extra dev`).
+- [Ноутбуки](../../notebooks/) — практикумы к главам учебника в Jupyter (нужен `uv sync --extra dev`).

@@ -40,7 +40,7 @@
 
 - Ветка в `load_model_class()` в `experiments/llm_only/run_llm_experiment.py`.
 - Конфиги `experiments/llm_only/configs/<name>_train.json` и `<name>_generate.json`: промпты — из символов учебного корпуса (иначе они кодируются в `<unk>`), `warmup_ratio` вместо фиксированного `warmup_steps`.
-- По желанию — ноутбук `notebooks/<name>.ipynb`.
+- По желанию — практикум `notebooks/<name>.ipynb` по шаблону из [notebooks/README.md](../../notebooks/README.md).
 
 ## 6. Документация
 
