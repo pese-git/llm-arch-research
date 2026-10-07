@@ -12,7 +12,7 @@
 | `llm/` | основная библиотека: блоки трансформера, шесть моделей, токенизатор, датасеты, `Trainer` | `torch>=2.3`, `numpy` |
 | `hf-proxy/` | адаптер к HuggingFace Transformers (только `GPT`) | `llm`, `transformers`, `datasets` |
 | `experiments/` | скрипты обучения и генерации: `llm_only/` (все модели, JSON-конфиги), `hf_integration/` (через hf-proxy), `shared/` (учебный корпус, пути, утилиты) | оба пакета |
-| `notebooks/` | пошаговый разбор каждой архитектуры и BPE | оба пакета |
+| `notebooks/` | практикумы к главам учебника: механизм руками, сверка с библиотекой, обучение, разбор | `llm`, `experiments/shared` |
 | `docs/` | документация: `textbook/`, `guide/`, `dev/` | — |
 | `site/` | сайт документации (Astro + Starlight), собирается из `docs/` | Node.js |
 
