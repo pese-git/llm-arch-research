@@ -140,7 +140,10 @@ causal            j=0 j=1 j=2 j=3 j=4
           i=4      ·   ·   1   1   1
 ```
 
-Разрешена полоса шириной $`W + 1`$ вдоль диагонали. Её строит `GroupedQueryAttention._create_sliding_window_mask`: `col <= row` (causal) и `row - col <= window_size` (окно). Без `window_size` вместо окна подставляется `max_seq_len`, и маска превращается в обычную causal. Для сравнения, в HuggingFace `sliding_window = 2` означает $`i - j < 2`$ — полосу шириной 2:
+Разрешена полоса шириной $`W + 1`$ вдоль диагонали. Её строит `GroupedQueryAttention._create_sliding_window_mask`: `col <= row` (causal) и `row - col <= window_size` (окно). Без `window_size` вместо окна подставляется `max_seq_len`, и маска превращается в обычную causal. Обе маски рядом для $`T = 8`$, $`W = 4`$ (синие клетки разрешены):
+
+![Causal-маска и маска скользящего окна для T = 8, W = 4: у causal-маски разрешён нижний треугольник, у окна — полоса шириной W + 1 вдоль диагонали](../assets/figures/masks.svg)
+ Для сравнения, в HuggingFace `sliding_window = 2` означает $`i - j < 2`$ — полосу шириной 2:
 
 ```
 окно W=2          j=0 j=1 j=2 j=3 j=4

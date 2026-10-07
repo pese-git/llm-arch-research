@@ -142,6 +142,10 @@ export function syncDocs({ quiet = false } = {}) {
   const files = listDocs();
   fs.rmSync(outDir, { recursive: true, force: true });
   for (const rel of files) syncFile(rel);
+  // Иллюстрации docs/assets/ (SVG из docs/tools/figures.py): главы ссылаются на них относительными
+  // путями, Astro подхватывает такие картинки только из src/, поэтому копируем рядом со страницами
+  const assetsDir = path.join(docsDir, 'assets');
+  if (fs.existsSync(assetsDir)) fs.cpSync(assetsDir, path.join(outDir, 'assets'), { recursive: true });
   fs.copyFileSync(landingFile, path.join(outDir, 'index.mdx'));
   const sidebar = [{ label: 'Главная', link: '/' }, ...sections.map((s) => buildSection(s, files)).filter(Boolean)];
   fs.mkdirSync(path.dirname(sidebarFile), { recursive: true });
