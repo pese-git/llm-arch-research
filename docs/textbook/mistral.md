@@ -252,6 +252,48 @@ i = 7:   . . . 1 1 1 1 1
 
 Порядок ячеек не совпадает с порядком позиций, но attention это не важно: softmax берётся по множеству ключей, а позиция уже «вшита» в K поворотом RoPE. Запись одного токена — $`O(1)`$ без копирования.
 
+Окно, кольцевой буфер статьи и кэш этого репозитория (следующий раздел) на одной схеме: $`W = 4`$, позиции 0–5 уже обработаны, пришла позиция 6.
+
+```mermaid
+%%{init: {"flowchart": {"rankSpacing": 28, "nodeSpacing": 20, "wrappingWidth": 320}}}%%
+flowchart TB
+    accTitle: Скользящее окно и кэш, ограниченный окном
+    accDescr: При W = 4 токен на позиции 6 видит себя и позиции 2–5, позиции 0 и 1 закрыты маской окна. В кольцевом буфере статьи из W ячеек K и V позиции 6 записываются в ячейку 6 mod 4 = 2 поверх позиции 2. В реализации репозитория новые K и V приклеиваются к кэшу, после attention остаются последние W позиций, и отдельно хранится next_pos.
+    subgraph Seq["позиции последовательности, W = 4"]
+        direction LR
+        P0(["0"]):::dim --- P1(["1"]):::dim --- P2(["2"]):::gold --- P3(["3"]):::gold --- P4(["4"]):::gold --- P5(["5"]):::gold --- P6(["6 · запрос"]):::blueHl
+    end
+    Mask["маска окна 0 ≤ i − j ≤ W:<br/>токен 6 видит 2, 3, 4, 5 и себя"]:::gold
+    Seq --> Mask
+    subgraph Ring["кольцевой буфер статьи: W ячеек, ячейка = позиция mod W"]
+        direction LR
+        C0["ячейка 0<br/>поз. 4"]:::blue
+        C1["ячейка 1<br/>поз. 5"]:::blue
+        C2["ячейка 2<br/>поз. 2 → 6"]:::blueHl
+        C3["ячейка 3<br/>поз. 3"]:::blue
+        C0 ~~~ C1 ~~~ C2 ~~~ C3
+    end
+    subgraph Here["здесь: GroupedQueryAttention, тройка (K, V, next_pos)"]
+        direction LR
+        Cat["cat: кэш [2 3 4 5] + новые [6]"]:::gray --> Attn["attention по 5 ключам"]:::gray --> Cut["срез [-W:] → кэш [3 4 5 6]<br/>next_pos = 7"]:::grayHl
+    end
+    Mask -- "K, V позиции 6 → ячейка 6 mod 4 = 2" --> Ring
+    Mask -- "K, V позиции 6" --> Here
+
+    classDef io fill:#ffffff,stroke:#999999,color:#1a1a1a;
+    classDef add fill:#ffffff,stroke:#666666,color:#1a1a1a;
+    classDef blue fill:#dae8fc,stroke:#6c8ebf,color:#1a1a1a;
+    classDef blueHl fill:#dae8fc,stroke:#2f5f9e,stroke-width:3px,color:#1a1a1a;
+    classDef purple fill:#e1d5e7,stroke:#9673a6,color:#1a1a1a;
+    classDef purpleHl fill:#e1d5e7,stroke:#6a3d85,stroke-width:3px,color:#1a1a1a;
+    classDef gray fill:#f5f5f5,stroke:#666666,color:#1a1a1a;
+    classDef grayHl fill:#f5f5f5,stroke:#333333,stroke-width:3px,color:#1a1a1a;
+    classDef gold fill:#fff2cc,stroke:#d6b656,color:#1a1a1a;
+    classDef rope fill:#d5f0ec,stroke:#3a9e8f,color:#1a1a1a;
+    classDef ropeHl fill:#d5f0ec,stroke:#1f6f63,stroke-width:3px,color:#1a1a1a;
+    classDef dim fill:#f5f5f5,stroke:#bbbbbb,color:#999999,stroke-dasharray:4 3;
+```
+
 ### Как это сделано здесь
 
 Кольцевого буфера здесь нет. `GroupedQueryAttention.forward` на каждом шаге приклеивает новые K/V к кэшу через `torch.cat` и обрезает результат срезом до последних $`W`$ позиций:

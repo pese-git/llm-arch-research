@@ -105,6 +105,37 @@ function train_bpe(texts, vocab_size):
 
 **Интуиция.** Каждое слияние — жадный шаг сжатия: пара, встречающаяся $`n`$ раз, после слияния экономит $`n`$ токенов в корпусе. Поэтому первыми токенами становятся частые окончания, приставки и короткие слова, а редкие слова так и остаются разбитыми на части.
 
+Тот же цикл схемой, с первым шагом на корпусе из следующего раздела:
+
+```mermaid
+%%{init: {"flowchart": {"rankSpacing": 28, "nodeSpacing": 20, "wrappingWidth": 420}}}%%
+flowchart TB
+    accTitle: Цикл обучения BPE
+    accDescr: Корпус режется претокенизацией на слова с частотами, каждое слово разбивается на символы. В цикле считаются частоты соседних пар, самая частая пара сливается в новый токен во всех словах и записывается в список слияний. Цикл повторяется, пока словарь не достигнет нужного размера или пары не кончатся.
+    Corpus(["корпус: low ×5, lower ×2, newest ×6, widest ×3"]):::io --> Pre["претокенизация:<br/>уникальные слова и их частоты"]:::gray
+    Pre --> Split["разбиение на символы<br/>l o w · l o w e r · n e w e s t · w i d e s t"]:::gray
+    Split --> Count["частоты соседних пар<br/>es 9, st 9, we 8, lo 7, ow 7, …"]:::blue
+    Count --> Pick["самая частая пара → новый токен<br/>e + s → es, ранг 0"]:::blueHl
+    Pick --> Merge["слияние во всех словах<br/>l o w · l o w e r · n e w es t · w i d es t"]:::gray
+    Merge --> Vocab["словарь += es<br/>merges += (e, s)"]:::purple
+    Vocab --> Stop{"словарь полон<br/>или пар не осталось?"}:::gold
+    Stop -- "нет" --> Count
+    Stop -- "да" --> Out(["словарь + упорядоченный список слияний"]):::io
+
+    classDef io fill:#ffffff,stroke:#999999,color:#1a1a1a;
+    classDef add fill:#ffffff,stroke:#666666,color:#1a1a1a;
+    classDef blue fill:#dae8fc,stroke:#6c8ebf,color:#1a1a1a;
+    classDef blueHl fill:#dae8fc,stroke:#2f5f9e,stroke-width:3px,color:#1a1a1a;
+    classDef purple fill:#e1d5e7,stroke:#9673a6,color:#1a1a1a;
+    classDef purpleHl fill:#e1d5e7,stroke:#6a3d85,stroke-width:3px,color:#1a1a1a;
+    classDef gray fill:#f5f5f5,stroke:#666666,color:#1a1a1a;
+    classDef grayHl fill:#f5f5f5,stroke:#333333,stroke-width:3px,color:#1a1a1a;
+    classDef gold fill:#fff2cc,stroke:#d6b656,color:#1a1a1a;
+    classDef rope fill:#d5f0ec,stroke:#3a9e8f,color:#1a1a1a;
+    classDef ropeHl fill:#d5f0ec,stroke:#1f6f63,stroke-width:3px,color:#1a1a1a;
+    classDef dim fill:#f5f5f5,stroke:#bbbbbb,color:#999999,stroke-dasharray:4 3;
+```
+
 ### Полный пример
 
 Возьмём корпус из примера в статье Sennrich et al.: слово `low` встречается 5 раз, `lower` — 2, `newest` — 6, `widest` — 3. (В статье к каждому слову добавлен символ конца слова `</w>`; реализация репозитория и GPT-2 вместо него прикрепляют пробел к **началу** следующего слова, поэтому здесь маркера нет.)
