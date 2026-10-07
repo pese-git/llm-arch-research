@@ -7,9 +7,12 @@ markdown-картинкой с alt-текстом.
 
 Запуск из корня репозитория:
 
-    uv run python docs/tools/figures.py            # все иллюстрации
+    uv run python docs/tools/figures.py            # все иллюстрации (с обучением моделей — несколько минут)
     uv run python docs/tools/figures.py masks      # одна, по имени файла без .svg
     uv run python docs/tools/figures.py --png DIR  # дополнительно PNG для просмотра
+
+Иллюстрации с обучением (attention-heads, expert-load, loss-curves) используют тот же корпус,
+токенизатор и Trainer, что ноутбуки; seed фиксирован, результат на CPU воспроизводим.
 """
 import argparse
 import math
@@ -164,6 +167,290 @@ def kv_cache():
                 textcoords="offset points", ha="center", color=INK, fontsize=9)
     ax.set_xlabel("длина последовательности, токенов"); ax.set_ylabel("KV-кэш, ГиБ (float16)")
     ax.set_xlim(0, 36500); ax.set_xticks([0, 4096, 8192, 16384, 32768]); ax.grid(True, axis="y"); ax.legend(loc="upper left")
+    fig.tight_layout()
+    return fig
+
+
+@figure("activations")
+def activations():
+    """ReLU, GELU (tanh) и SiLU и их производные на отрезке [−4, 4]."""
+    import torch
+    from llm.core.gelu import GELU
+
+    x = torch.linspace(-4, 4, 401, requires_grad=True)
+    funcs = (("ReLU", torch.relu, GREEN), ("GELU", GELU(), BLUE), ("SiLU", torch.nn.functional.silu, ORANGE))
+    fig, axes = plt.subplots(1, 2, figsize=(8.4, 3.2))
+    for name, fn, color in funcs:
+        y = fn(x)
+        (dy,) = torch.autograd.grad(y.sum(), x)
+        for ax, values in zip(axes, (y, dy)):
+            ax.plot(x.detach(), values.detach(), color=color, label=name)
+    for ax, title in zip(axes, ("f(z)", "f′(z)")):
+        ax.set_xlabel("z"); ax.set_title(title); ax.grid(True); ax.set_xlim(-4, 4)
+        ax.axhline(0, color=GRID, linewidth=0.8); ax.axvline(0, color=GRID, linewidth=0.8)
+        ax.legend(loc="upper left")
+    axes[1].annotate("GELU и SiLU: производная\nбольше 1 около z ≈ 1–2", (1.4, 1.13), xytext=(2.6, 0.75), textcoords="data",
+                     color=INK, fontsize=8, ha="center", arrowprops=dict(arrowstyle="-", color=GRID))
+    fig.tight_layout()
+    return fig
+
+
+@figure("lr-schedule")
+def lr_schedule():
+    """Линейный warmup с линейным спадом против косинусного спада; 1000 шагов, warmup 10 %."""
+    total, warmup, peak = 1000, 100, 3e-4
+    steps = np.arange(total + 1)
+    linear = np.where(steps < warmup, steps / warmup, np.maximum(0, (total - steps) / (total - warmup))) * peak
+    cosine = np.where(steps < warmup, steps / warmup, 0.5 * (1 + np.cos(np.pi * (steps - warmup) / (total - warmup)))) * peak
+    fig, ax = plt.subplots(figsize=(7.2, 3.2))
+    ax.plot(steps, linear, color=BLUE, label="линейный спад (Trainer)")
+    ax.plot(steps, cosine, color=ORANGE, label="косинусный спад")
+    ax.axvspan(0, warmup, color=MUTED, alpha=0.6)
+    ax.annotate("warmup", (warmup / 2, peak * 1.02), ha="center", color=INK, fontsize=9)
+    ax.annotate("линейный", (600, linear[600]), xytext=(6, 6), textcoords="offset points", color=INK, fontsize=9)
+    ax.annotate("косинусный", (600, cosine[600]), xytext=(6, -12), textcoords="offset points", color=INK, fontsize=9)
+    ax.set_xlabel("шаг обучения"); ax.set_ylabel("learning rate"); ax.set_ylim(0, peak * 1.12)
+    ax.ticklabel_format(axis="y", style="sci", scilimits=(0, 0)); ax.grid(True, axis="y"); ax.legend(loc="upper right")
+    fig.tight_layout()
+    return fig
+
+
+@figure("residual-std")
+def residual_std():
+    """Масштаб residual-потока по глубине у случайно инициализированной GPT-2: с делением residual-проекций на √2L и без."""
+    import torch
+    from llm.models.gpt import GPT2
+
+    config = {"vocab_size": 300, "embed_dim": 256, "num_heads": 4, "num_layers": 24, "max_position_embeddings": 128, "dropout": 0.0}
+    torch.manual_seed(0); scaled = GPT2(config).eval()
+    torch.manual_seed(0); unscaled = GPT2(config).eval()
+    for decoder in unscaled._decoders:
+        for projection in (decoder._heads._layer, decoder._ff._layer2):
+            torch.nn.init.normal_(projection.weight, std=0.02)
+    torch.manual_seed(1); ids = torch.randint(0, config["vocab_size"], (1, 32))
+
+    def stds(model):
+        out = []
+        with torch.no_grad():
+            h = model._token_embeddings(ids) + model._position_embeddings(ids.size(1))
+            out.append(h.std().item())
+            for decoder in model._decoders:
+                h = decoder(h, use_cache=False)[0]
+                out.append(h.std().item())
+        return out
+
+    fig, ax = plt.subplots(figsize=(7.2, 3.2))
+    for model, color, label in ((scaled, BLUE, "std / √(2L) у W_O и W₂"), (unscaled, ORANGE, "везде std = 0.02")):
+        values = stds(model)
+        ax.plot(range(len(values)), values, color=color, marker=".", label=label)
+        ax.annotate(f"{values[-1]:.2f}", (len(values) - 1, values[-1]), xytext=(5, 0), textcoords="offset points", color=INK, fontsize=9, va="center")
+    ax.set_xlabel("после блока (0 — эмбеддинги)"); ax.set_ylabel("std residual-потока"); ax.set_xlim(0, 26.5)
+    ax.grid(True, axis="y"); ax.legend(loc="upper left")
+    fig.tight_layout()
+    return fig
+
+
+@figure("receptive-field")
+def receptive_field():
+    """Какие входные позиции влияют на последнюю позицию после k слоёв при окне W = 16 (учебный конфиг Mistral)."""
+    import torch
+    from llm.models.mistral import Mistral
+
+    config = {"vocab_size": 100, "embed_dim": 256, "num_q_heads": 4, "num_kv_heads": 2, "head_size": 64,
+              "num_layers": 4, "max_position_embeddings": 512, "window_size": 16, "dropout": 0.0}
+    T = 100
+    torch.manual_seed(0); ids = torch.randint(0, config["vocab_size"], (1, T))
+
+    def spans(model):
+        captured, outputs = {}, []
+
+        def keep_embeddings(module, inputs, output):
+            output.retain_grad()
+            captured["emb"] = output
+
+        hooks = [model._token_embeddings.register_forward_hook(keep_embeddings)]
+        hooks += [d.register_forward_hook(lambda m, i, o: outputs.append(o[0])) for d in model._decoders]
+        model(ids)
+        for h in hooks:
+            h.remove()
+        result = []
+        for out in outputs:
+            captured["emb"].grad = None
+            out[0, -1].sum().backward(retain_graph=True)
+            alive = (captured["emb"].grad[0].norm(dim=-1) > 0).nonzero().flatten()
+            result.append((alive.min().item(), alive.max().item()))
+        return result
+
+    torch.manual_seed(0); with_window = Mistral(config).eval()
+    torch.manual_seed(0); no_window = Mistral(dict(config, window_size=None)).eval()
+    fig, ax = plt.subplots(figsize=(7.2, 3.0))
+    L, W = config["num_layers"], config["window_size"]
+    for k, ((lo, hi), (lo0, hi0)) in enumerate(zip(spans(with_window), spans(no_window)), start=1):
+        ax.barh(k, hi0 - lo0 + 1, left=lo0, height=0.62, color=MUTED, label="без окна" if k == 1 else None)
+        ax.barh(k, hi - lo + 1, left=lo, height=0.62, color=BLUE, label=f"окно W = {W}" if k == 1 else None)
+        ax.annotate(f"{lo}–{hi}: {hi - lo + 1} = k·W + 1 позиций", (T, k), xytext=(6, 0), textcoords="offset points", va="center", color=INK, fontsize=9)
+    ax.set_yticks(range(1, L + 1)); ax.set_yticklabels([f"после слоя {k}" for k in range(1, L + 1)]); ax.invert_yaxis()
+    ax.set_xlabel(f"входная позиция (всего {T} токенов, смотрим на позицию {T - 1})"); ax.set_xlim(0, T + 48)
+    ax.set_xticks([0, 20, 40, 60, 80, 99]); ax.grid(True, axis="x"); ax.legend(loc="lower left")
+    fig.tight_layout()
+    return fig
+
+
+def _train(model_cls, config_file, extra=None, epochs=40, seed=0):
+    """Обучает модель на учебном корпусе как ноутбуки: BPE, датасет с <eos>, Trainer. Возвращает модель, токенизатор, тексты и историю loss."""
+    import contextlib
+    import io
+    import json
+
+    import torch
+
+    sys.path.insert(0, str(ROOT))
+    from experiments.shared.configs import TRAIN_TEXTS
+    from llm.datasets.text_with_special_tokens_dataset import TextWithSpecialTokensDataset
+    from llm.tokenizers import BPETokenizer
+    from llm.training.trainer import Trainer
+
+    experiment = json.loads((ROOT / "experiments/llm_only/configs" / config_file).read_text())
+    train_texts, val_texts = TRAIN_TEXTS[:12], TRAIN_TEXTS[12:]
+    tokenizer = BPETokenizer()
+    tokenizer.train(train_texts, vocab_size=experiment["bpe_vocab_size"], special_tokens=experiment["bpe_special_tokens"])
+    dataset = lambda texts: TextWithSpecialTokensDataset(texts, tokenizer, block_size=64, add_eos=True)  # noqa: E731
+    config = dict(experiment["model_config"], vocab_size=tokenizer.vocab_size, **(extra or {}))
+    training = experiment["training"]
+    torch.manual_seed(seed)
+    model = model_cls(config)
+    trainer = Trainer(model, dataset(train_texts), dataset(val_texts), lr=training["learning_rate"],
+                      batch_size=training["batch_size"], num_epochs=epochs, warmup_ratio=training["warmup_ratio"])
+    val_history, evaluate = [], trainer.evaluate
+    trainer.evaluate = lambda: val_history.append(evaluate()) or val_history[-1]
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        trainer.train()
+    model.eval()
+    return model, tokenizer, train_texts, trainer.loss_history, val_history
+
+
+@figure("attention-heads")
+def attention_heads():
+    """Веса внимания четырёх голов последнего слоя LLaMA, обученной на учебном корпусе."""
+    import math
+
+    import torch
+    from llm.models.llama import Llama
+
+    model, tokenizer, train_texts, _, _ = _train(Llama, "llama_train.json")
+    text = " ".join(train_texts[:2])
+    ids = torch.tensor([tokenizer.encode(text)])
+    tokens = [t.replace(" ", "␣") for t in tokenizer.tokenize(text)]
+    attn = model._decoders[-1]._heads
+    captured = {}
+    hook = attn.register_forward_hook(lambda m, i, o: captured.update(x=i[0]))
+    with torch.no_grad():
+        model(ids)
+        hook.remove()
+        x = captured["x"]
+        B, T, _ = x.shape
+        q = attn._rope(attn._q(x).reshape(B, T, attn._num_heads, attn._head_size).transpose(1, 2))
+        k = attn._rope(attn._k(x).reshape(B, T, attn._num_heads, attn._head_size).transpose(1, 2))
+        scores = q @ k.transpose(-2, -1) / math.sqrt(attn._head_size)
+        scores = scores.masked_fill(~attn._tril_mask[:T, :T], float("-inf"))
+        weights = torch.softmax(scores, dim=-1)[0]
+    fig, axes = plt.subplots(1, attn._num_heads, figsize=(11, 3.7))
+    for h, ax in enumerate(axes):
+        ax.imshow(weights[h], cmap=SEQ_BLUE, vmin=0, vmax=1, interpolation="nearest")
+        ax.set_title(f"голова {h}"); ax.set_xticks(range(T)); ax.set_yticks(range(T))
+        ax.set_xticklabels(tokens, rotation=90, fontsize=6); ax.set_yticklabels(tokens if h == 0 else [], fontsize=6)
+        ax.tick_params(length=0)
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+    fig.suptitle("последний слой: строки — запросы, столбцы — ключи, тёмнее — больший вес", color=INK, fontsize=10)
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
+    return fig
+
+
+@figure("expert-load")
+def expert_load():
+    """Сколько токенов корпуса выбрало каждого эксперта в каждом слое Mixtral: без load-balancing loss и с ним."""
+    import torch
+    from llm.models.mixtral import Mixtral
+
+    runs = (("router_aux_loss_coef = 0", None), ("router_aux_loss_coef = 0.01", {"router_aux_loss_coef": 0.01}))
+    fig, axes = plt.subplots(1, 2, figsize=(9.6, 2.9), sharey=True)
+    for ax, (title, extra) in zip(axes, runs):
+        model, tokenizer, train_texts, _, _ = _train(Mixtral, "mixtral_train.json", extra=extra)
+        E, k, L = model.config["num_experts"], model.config["top_k_experts"], model.config["num_layers"]
+        counts = torch.zeros(L, E, dtype=torch.long)
+        with torch.no_grad():
+            for text in train_texts:
+                model(torch.tensor([tokenizer.encode(text)]))
+                for layer, decoder in enumerate(model._decoders):
+                    chosen = torch.topk(decoder._ff.router_logits, k, dim=-1).indices
+                    counts[layer] += torch.bincount(chosen.flatten(), minlength=E)
+        ax.imshow(counts, cmap=SEQ_BLUE, vmin=0, vmax=counts.max().item(), aspect="auto", interpolation="nearest")
+        for i in range(L):
+            for j in range(E):
+                value = int(counts[i, j])
+                ax.text(j, i, value, ha="center", va="center", fontsize=8, color="white" if value > counts.max().item() * 0.6 else INK)
+        ax.set_title(f"{title}: максимум {int(counts.max())} из {int(counts[0].sum())}", fontsize=9)
+        ax.set_xlabel("эксперт"); ax.set_xticks(range(E)); ax.set_yticks(range(L)); ax.tick_params(length=0)
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+    axes[0].set_ylabel("слой")
+    fig.tight_layout()
+    return fig
+
+
+@figure("loss-curves")
+def loss_curves():
+    """Train и validation loss шести моделей на учебном корпусе, 40 эпох, одинаковые seed и токенизатор."""
+    from llm.models.gemma import Gemma
+    from llm.models.gpt import GPT, GPT2
+    from llm.models.llama import Llama
+    from llm.models.mistral import Mistral
+    from llm.models.mixtral import Mixtral
+
+    models = (("GPT-1", GPT, "gpt_train.json"), ("GPT-2", GPT2, "gpt2_train.json"), ("LLaMA", Llama, "llama_train.json"),
+              ("Mistral", Mistral, "mistral_train.json"), ("Mixtral", Mixtral, "mixtral_train.json"), ("Gemma", Gemma, "gemma_train.json"))
+    fig, axes = plt.subplots(2, 3, figsize=(9.6, 5), sharex=True, sharey=True)
+    for ax, (name, cls, config_file) in zip(axes.flat, models):
+        _, _, _, train_loss, val_loss = _train(cls, config_file)
+        epochs = range(1, len(train_loss) + 1)
+        ax.plot(epochs, train_loss, color=BLUE, label="train")
+        ax.plot(epochs, val_loss, color=ORANGE, label="validation")
+        ax.set_title(name); ax.grid(True, axis="y")
+        ax.annotate(f"{train_loss[-1]:.2f}", (len(train_loss), train_loss[-1]), xytext=(3, 0), textcoords="offset points", color=INK, fontsize=8, va="center")
+        ax.annotate(f"{val_loss[-1]:.2f}", (len(val_loss), val_loss[-1]), xytext=(3, 0), textcoords="offset points", color=INK, fontsize=8, va="center")
+    for ax in axes[1]:
+        ax.set_xlabel("эпоха")
+    for ax in axes[:, 0]:
+        ax.set_ylabel("cross-entropy")
+    axes[0, 0].legend(loc="center right")
+    fig.tight_layout()
+    return fig
+
+
+@figure("bpe-vocab")
+def bpe_vocab():
+    """Длина учебного корпуса в токенах в зависимости от размера словаря BPE: train и валидационные тексты."""
+    sys.path.insert(0, str(ROOT))
+    from experiments.shared.configs import TRAIN_TEXTS
+    from llm.tokenizers import BPETokenizer
+
+    train_texts, val_texts = TRAIN_TEXTS[:12], TRAIN_TEXTS[12:]
+    sizes = [40, 60, 80, 120, 160, 240, 320, 426]
+    rows = []
+    for size in sizes:
+        tokenizer = BPETokenizer()
+        tokenizer.train(train_texts, vocab_size=size, special_tokens=["<unk>"])
+        rows.append((sum(len(tokenizer.encode(t)) for t in train_texts), sum(len(tokenizer.encode(t)) for t in val_texts)))
+    chars = (sum(map(len, train_texts)), sum(map(len, val_texts)))
+    fig, ax = plt.subplots(figsize=(7.2, 3.2))
+    for i, (color, label) in enumerate(((BLUE, "train: 12 текстов, на них обучен словарь"), (ORANGE, "validation: 3 новых текста"))):
+        values = [r[i] for r in rows]
+        ax.plot(sizes, values, color=color, marker=".", label=label)
+        ax.annotate(f"{chars[i] / values[-1]:.1f} симв./токен", (sizes[-1], values[-1]), xytext=(5, 9 if i == 0 else -9),
+                    textcoords="offset points", color=INK, fontsize=9, va="center")
+    ax.set_xlabel("размер словаря (без специальных токенов)"); ax.set_ylabel("токенов в корпусе"); ax.set_xlim(0, 520)
+    ax.grid(True, axis="y"); ax.legend(loc="upper right")
     fig.tight_layout()
     return fig
 

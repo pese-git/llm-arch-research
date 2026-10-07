@@ -1,0 +1,761 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+  "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns:xlink="http://www.w3.org/1999/xlink" width="792pt" height="266.4pt" viewBox="0 0 792 266.4" xmlns="http://www.w3.org/2000/svg" version="1.1">
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>Matplotlib v3.10.6, https://matplotlib.org/</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="figure_1">
+  <g id="patch_1">
+   <path d="M 0 266.4 
+L 792 266.4 
+L 792 0 
+L 0 0 
+L 0 266.4 
+z
+" style="fill: none"/>
+  </g>
+  <g id="axes_1">
+   <g id="patch_2">
+    <path d="M 85.04 214.107054 
+L 250.98 214.107054 
+L 250.98 48.167054 
+L 85.04 48.167054 
+L 85.04 214.107054 
+z
+" style="fill: none"/>
+   </g>
+   <g clip-path="url(#p8ae18d0e65)">
+    <image xlink:href="data:image/png;base64,
+iVBORw0KGgoAAAANSUhEUgAAAOcAAADnCAYAAADl9EEgAAAFPElEQVR4nO3dO26cZRiG4fH49wkSBXGUoIAgUiCoI04diDVQIDbAoWAl9EisgEUgoeyACoUCRSiyIAkxscf2nJAbSornD5Mn4br6V9/MOHe+6tW3deOXs/Vkw9brzc5dODpdRXN7w1Z85tki+8DzZTZ3sJN/1vDIyf6IM9O/5/Y0PnIyO88OvXHzJD7z7Vf2orkRXxP4L4kTSokTSokTSokTSokTSokTSokTSokTSokTSokTSokTSokTSg3pZkC6xTDGesRaynm4ITJmKyU9c7kKv+eIDZF0cpofOVlki0KT5WrMmeuNbhhduPaSrRR4oogTSokTSokTSokTSokTSokTSokTSokTSokTSokTSokTSokTSokTSg3n4e7XasTaTmo1YmUsXRU6OV9t/Mx0Yyz9W17YDne/0oeBxnzPZTp48Xnn2ewn169MNs3NCaXECaXECaXECaXECaXECaXECaXECaXECaXECaXECaXECaXECaWGdHBrxAM26XLJfDnZuPQxojGzw/aIHzc0C7dvpiP+IaSj0xE/zxsv7k4eF25OKCVOKCVOKCVOKCVOKCVOKCVOKCVOKCVOKCVOKCVOKCVOKCVOKCVOKDWchQ+7jLH5E/MHia4cbG98JSp/4GcSW4Szu/nPM1mEDy9dfeHxWfsaw80JpcQJpcQJpcQJpcQJpcQJpcQJpcQJpcQJpcQJpcQJpcQJpcQJpYZ5uBmwv5O/JnMabsLMRmzQ7O9MN/ro0pjZ9G/yKByf5aswb76891A/y5PGzQmlxAmlxAmlxAmlxAmlxAmlxAmlxAmlxAmlxAmlxAmlxAmlxAmlxAmlhkv7WZ/b03xlbDJZbfzMw6NFNDcc5P9/3Z9l3/NBuIZ1OfxbXkgftLr++kF8Jv/OzQmlxAmlxAmlxAmlxAmlxAmlxAmlxAmlxAmlxAmlxAmlxAmlxAmlhvSxneUqf2xnupVtlyxXq40/uPPUbr4Jc+94Gc3Nw992b8g/q+2SPm5OKCVOKCVOKCVOKCVOKCVOKCVOKCVOKCVOKCVOKCVOKCVOKCVOKCVOKDWE21uPxJiHjNIVt+OzfDXu1r15NHewk33Pj9+6FM3Ryc0JpcQJpcQJpcQJpcQJpcQJpcQJpcQJpcQJpcQJpcQJpcQJpcQJpYZ002OdvoA04r+E1Ygzf/z5OJp7/9rT8ZlHs+zxpM/eezY+kyeHmxNKiRNKiRNKiRNKiRNKiRNKiRNKiRNKiRNKiRNKiRNKiRNKiRNKDfPFeuMbIvNlNndynp95ePt2NHfruVfjM7/40HYJOTcnlBInlBInlBInlBInlBInlBInlBInlBInlBInlBInlBInlBInlBInlBr+eLCIBhfLEYduZ3N/nmQPA104mc2iuU/ffSY+E8Zwc0IpcUIpcUIpcUIpcUIpcUIpcUIpcUIpcUIpcUIpcUIpcUIpcUKp4affzqLBv07zDZH7J9lKy2vP78ZnfvvVO/EsPApuTiglTiglTiglTiglTiglTiglTiglTiglTiglTiglTiglTiglTiglTig1HB5lDxmdztfxob/fPYrmvvzoanwmPG7cnFBKnFBKnFBKnFBKnFBKnFBKnFBKnFBKnFBKnFBKnFBKnFBKnFBquPnrYTR4986d+NDvvv4gnoX/CzcnlBInlBInlBInlBInlBInlBInlBInlBInlBInlBInlBInlBInlBInlNq6fP3z6EWiH77/5uF/GuAfbk4oJU4oJU4oJU4oJU4oJU4oJU4oJU4oJU4oJU4oJU4oJU4oJU6YdPobaO/00qaBYgcAAAAASUVORK5CYII=" id="imagefd6fedffae" transform="scale(1 -1) translate(0 -166.32)" x="85.04" y="-47.787054" width="166.32" height="166.32"/>
+   </g>
+   <g id="matplotlib.axis_1">
+    <g id="xtick_1">
+     <g id="line2d_1"/>
+     <g id="text_1">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(91.88125 230.492054) rotate(-90)">Мир</text>
+     </g>
+    </g>
+    <g id="xtick_2">
+     <g id="line2d_2"/>
+     <g id="text_2">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(102.135312 282.533617) rotate(-90)">␣программирования</text>
+     </g>
+    </g>
+    <g id="xtick_3">
+     <g id="line2d_3"/>
+     <g id="text_3">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(112.506562 254.863304) rotate(-90)">␣прекрасен</text>
+     </g>
+    </g>
+    <g id="xtick_4">
+     <g id="line2d_4"/>
+     <g id="text_4">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(122.877812 225.315179) rotate(-90)">␣и</text>
+     </g>
+    </g>
+    <g id="xtick_5">
+     <g id="line2d_5"/>
+     <g id="text_5">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(133.249062 259.086742) rotate(-90)">␣удивителен</text>
+     </g>
+    </g>
+    <g id="xtick_6">
+     <g id="line2d_6"/>
+     <g id="text_6">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(143.7375 219.513929) rotate(-90)">.</text>
+     </g>
+    </g>
+    <g id="xtick_7">
+     <g id="line2d_7"/>
+     <g id="text_7">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(153.991562 221.416117) rotate(-90)">␣</text>
+     </g>
+    </g>
+    <g id="xtick_8">
+     <g id="line2d_8"/>
+     <g id="text_8">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(164.48 229.538617) rotate(-90)">GPT</text>
+     </g>
+    </g>
+    <g id="xtick_9">
+     <g id="line2d_9"/>
+     <g id="text_9">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(174.734062 245.188304) rotate(-90)">␣модели</text>
+     </g>
+    </g>
+    <g id="xtick_10">
+     <g id="line2d_10"/>
+     <g id="text_10">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(185.105312 242.592367) rotate(-90)">␣учатся</text>
+     </g>
+    </g>
+    <g id="xtick_11">
+     <g id="line2d_11"/>
+     <g id="text_11">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(195.476562 269.760179) rotate(-90)">␣предсказывать</text>
+     </g>
+    </g>
+    <g id="xtick_12">
+     <g id="line2d_12"/>
+     <g id="text_12">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(205.892344 258.442679) rotate(-90)">␣следующий</text>
+     </g>
+    </g>
+    <g id="xtick_13">
+     <g id="line2d_13"/>
+     <g id="text_13">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(216.219062 239.821117) rotate(-90)">␣токен</text>
+     </g>
+    </g>
+    <g id="xtick_14">
+     <g id="line2d_14"/>
+     <g id="text_14">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(226.590312 224.952367) rotate(-90)">␣в</text>
+     </g>
+    </g>
+    <g id="xtick_15">
+     <g id="line2d_15"/>
+     <g id="text_15">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(236.961562 287.714242) rotate(-90)">␣последовательности</text>
+     </g>
+    </g>
+    <g id="xtick_16">
+     <g id="line2d_16"/>
+     <g id="text_16">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(247.45 219.513929) rotate(-90)">.</text>
+     </g>
+    </g>
+   </g>
+   <g id="matplotlib.axis_2">
+    <g id="ytick_1">
+     <g id="line2d_17"/>
+     <g id="text_17">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: end; fill: #7a7975" x="81.54" y="55.632211" transform="rotate(-0 81.54 55.632211)">Мир</text>
+     </g>
+    </g>
+    <g id="ytick_2">
+     <g id="line2d_18"/>
+     <g id="text_18">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: end; fill: #7a7975" x="81.54" y="65.944867" transform="rotate(-0 81.54 65.944867)">␣программирования</text>
+     </g>
+    </g>
+    <g id="ytick_3">
+     <g id="line2d_19"/>
+     <g id="text_19">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: end; fill: #7a7975" x="81.54" y="76.316117" transform="rotate(-0 81.54 76.316117)">␣прекрасен</text>
+     </g>
+    </g>
+    <g id="ytick_4">
+     <g id="line2d_20"/>
+     <g id="text_20">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: end; fill: #7a7975" x="81.54" y="86.687367" transform="rotate(-0 81.54 86.687367)">␣и</text>
+     </g>
+    </g>
+    <g id="ytick_5">
+     <g id="line2d_21"/>
+     <g id="text_21">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: end; fill: #7a7975" x="81.54" y="97.058617" transform="rotate(-0 81.54 97.058617)">␣удивителен</text>
+     </g>
+    </g>
+    <g id="ytick_6">
+     <g id="line2d_22"/>
+     <g id="text_22">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: end; fill: #7a7975" x="81.54" y="107.488461" transform="rotate(-0 81.54 107.488461)">.</text>
+     </g>
+    </g>
+    <g id="ytick_7">
+     <g id="line2d_23"/>
+     <g id="text_23">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: end; fill: #7a7975" x="81.54" y="117.801117" transform="rotate(-0 81.54 117.801117)">␣</text>
+     </g>
+    </g>
+    <g id="ytick_8">
+     <g id="line2d_24"/>
+     <g id="text_24">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: end; fill: #7a7975" x="81.54" y="128.230961" transform="rotate(-0 81.54 128.230961)">GPT</text>
+     </g>
+    </g>
+    <g id="ytick_9">
+     <g id="line2d_25"/>
+     <g id="text_25">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: end; fill: #7a7975" x="81.54" y="138.543617" transform="rotate(-0 81.54 138.543617)">␣модели</text>
+     </g>
+    </g>
+    <g id="ytick_10">
+     <g id="line2d_26"/>
+     <g id="text_26">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: end; fill: #7a7975" x="81.54" y="148.914867" transform="rotate(-0 81.54 148.914867)">␣учатся</text>
+     </g>
+    </g>
+    <g id="ytick_11">
+     <g id="line2d_27"/>
+     <g id="text_27">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: end; fill: #7a7975" x="81.54" y="159.286117" transform="rotate(-0 81.54 159.286117)">␣предсказывать</text>
+     </g>
+    </g>
+    <g id="ytick_12">
+     <g id="line2d_28"/>
+     <g id="text_28">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: end; fill: #7a7975" x="81.54" y="169.701898" transform="rotate(-0 81.54 169.701898)">␣следующий</text>
+     </g>
+    </g>
+    <g id="ytick_13">
+     <g id="line2d_29"/>
+     <g id="text_29">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: end; fill: #7a7975" x="81.54" y="180.028617" transform="rotate(-0 81.54 180.028617)">␣токен</text>
+     </g>
+    </g>
+    <g id="ytick_14">
+     <g id="line2d_30"/>
+     <g id="text_30">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: end; fill: #7a7975" x="81.54" y="190.399867" transform="rotate(-0 81.54 190.399867)">␣в</text>
+     </g>
+    </g>
+    <g id="ytick_15">
+     <g id="line2d_31"/>
+     <g id="text_31">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: end; fill: #7a7975" x="81.54" y="200.771117" transform="rotate(-0 81.54 200.771117)">␣последовательности</text>
+     </g>
+    </g>
+    <g id="ytick_16">
+     <g id="line2d_32"/>
+     <g id="text_32">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: end; fill: #7a7975" x="81.54" y="211.200961" transform="rotate(-0 81.54 211.200961)">.</text>
+     </g>
+    </g>
+   </g>
+   <g id="text_33">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: middle; fill: #7a7975" x="168.01" y="42.167054" transform="rotate(-0 168.01 42.167054)">голова 0</text>
+   </g>
+  </g>
+  <g id="axes_2">
+   <g id="patch_3">
+    <path d="M 261.78 214.107054 
+L 427.72 214.107054 
+L 427.72 48.167054 
+L 261.78 48.167054 
+L 261.78 214.107054 
+z
+" style="fill: none"/>
+   </g>
+   <g clip-path="url(#p63621d9a33)">
+    <image xlink:href="data:image/png;base64,
+iVBORw0KGgoAAAANSUhEUgAAAOcAAADnCAYAAADl9EEgAAAFTklEQVR4nO3dvYpdVRzG4T1z9mRMNCpJIYiKaJ9KRLGxthPEaxCsvAfB1hvwDqy8AiGIjaVdJNgEIYwmY+brfMuksLR4d5x5kzxPv1h7nzO/s5r5s3Z+vrvYDoH1Jlr22GrC2tTDk0207sq4E+85X2bvOc6y/cbd/FmX6+xZr13ZjffcDZduJ/z5rML3vHN/Ee/52stjtC7/ZIH/lTihlDihlDihlDihlDihlDihlDihlDihlDihlDihlDihlDih1LgJ/8V/ymTAzk42PTFlEma+ytZe3csnPdLPdhiyPacM+4RfSTzNcm4vfs/thb/ng+N1vOeH716L1jk5oZQ4oZQ4oZQ4oZQ4oZQ4oZQ4oZQ4oZQ4oZQ4oZQ4oZQ4oZQ4oZQ4odS42lzshTDn0omfdOxritPwMqIp77kKp5Nmu/mzpqNf6wk/7+m9S5sJfwZn4ff5ya3rw0VzckIpcUIpcUIpcUIpcUIpcUIpcUIpcUIpcUIpcUIpcUIpcUIpcUKpcRuOTqQXwkyZ1kinGKZcgrTM768ZFuEUzTjL9rsSXgw0ZSplb5bvOQu/0NN5OEo1DMNbN/eGp4WTE0qJE0qJE0qJE0qJE0qJE0qJE0qJE0qJE0qJE0qJE0qJE0qJE0qJE0qN63z65hLGt7YXPp40YUotHqtLP595Oov3eM+LXXfudJktfvPG0zP2NYWTE0qJE0qJE0qJE0qJE0qJE0qJE0qJE0qJE0qJE0qJE0qJE0qJE0qNszDP1YQLflJTJiAOjlbRutdfyScgNsuLvcjoMsxXUy4V2n+iz/KscXJCKXFCKXFCKXFCKXFCKXFCKXFCKXFCKXFCKXFCKXFCKXFCKXFCKXFCqXEML/iZTbjhJ7y/ZriWbzlsNhc/EvXncTZXtz9mH+5L+/lv7eFZ9qwfvDPlW+G/ODmhlDihlDihlDihlDihlDihlDihlDihlDihlDihlDihlDihlDih1LjO7toZVunCYRi24dJNvuVwGo7CzFf579fxPNtzvcmmUvb38lEh0yV9nJxQSpxQSpxQSpxQSpxQSpxQSpxQSpxQSpxQSpxQSpxQSpxQSpxQSpxQaryMOjfhzNhqwszYg+NsfOvVq/mej86yPcdZ9q3ceuOFaB2dnJxQSpxQSpxQSpxQSpxQSpxQSpxQSpxQSpxQSpxQSpxQSpxQSpxQaryMTdOLjNbZkMdjvx8sonU3X5zFex4craJ1n713I96TZ4eTE0qJE0qJE0qJE0qJE0qJE0qJE0qJE0qJE0qJE0qJE0qJE0qJE0qNi3U2InKyyEdE5stsz7Nw3bmHfx9F6+4e5FMpX3xsuoSckxNKiRNKiRNKiRNKiRNKiRNKiRNKiRNKiRNKiRNKiRNKiRNKiRNKiRNKjekYVjr2de7RPBs3OzrLx9T+uHcvWvf152/He8IUTk4oJU4oJU4oJU4oJU4oJU4oJU4oJU4oJU4oJU4oJU4oJU4oJU4oNf52fxEtPDxZx5suN9lEyy93/or3/O6rj+K1cBmcnFBKnFBKnFBKnFBKnFBKnFBKnFBKnFBKnFBKnFBKnFBKnFBKnFBKnFBq/PXeWbTw8CS/VOjk9DRa51IhnidOTiglTiglTiglTiglTiglTiglTiglTiglTiglTiglTiglTiglTig1ptMlP92+HW/6wzefxmvheeHkhFLihFLihFLihFLihFLihFLihFLihFLihFLihFLihFLihFLihFLihFI719//cpss/PH7b5/80wD/cnJCKXFCKXFCKXFCKXFCKXFCKXFCKXFCKXFCKXFCKXFCKXFCKXHC0OkfXDb+8q6yTb0AAAAASUVORK5CYII=" id="imagefbc8e11fee" transform="scale(1 -1) translate(0 -166.32)" x="261.78" y="-47.787054" width="166.32" height="166.32"/>
+   </g>
+   <g id="matplotlib.axis_3">
+    <g id="xtick_17">
+     <g id="line2d_33"/>
+     <g id="text_34">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(268.62125 230.492054) rotate(-90)">Мир</text>
+     </g>
+    </g>
+    <g id="xtick_18">
+     <g id="line2d_34"/>
+     <g id="text_35">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(278.875313 282.533617) rotate(-90)">␣программирования</text>
+     </g>
+    </g>
+    <g id="xtick_19">
+     <g id="line2d_35"/>
+     <g id="text_36">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(289.246563 254.863304) rotate(-90)">␣прекрасен</text>
+     </g>
+    </g>
+    <g id="xtick_20">
+     <g id="line2d_36"/>
+     <g id="text_37">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(299.617813 225.315179) rotate(-90)">␣и</text>
+     </g>
+    </g>
+    <g id="xtick_21">
+     <g id="line2d_37"/>
+     <g id="text_38">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(309.989063 259.086742) rotate(-90)">␣удивителен</text>
+     </g>
+    </g>
+    <g id="xtick_22">
+     <g id="line2d_38"/>
+     <g id="text_39">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(320.4775 219.513929) rotate(-90)">.</text>
+     </g>
+    </g>
+    <g id="xtick_23">
+     <g id="line2d_39"/>
+     <g id="text_40">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(330.731562 221.416117) rotate(-90)">␣</text>
+     </g>
+    </g>
+    <g id="xtick_24">
+     <g id="line2d_40"/>
+     <g id="text_41">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(341.22 229.538617) rotate(-90)">GPT</text>
+     </g>
+    </g>
+    <g id="xtick_25">
+     <g id="line2d_41"/>
+     <g id="text_42">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(351.474063 245.188304) rotate(-90)">␣модели</text>
+     </g>
+    </g>
+    <g id="xtick_26">
+     <g id="line2d_42"/>
+     <g id="text_43">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(361.845312 242.592367) rotate(-90)">␣учатся</text>
+     </g>
+    </g>
+    <g id="xtick_27">
+     <g id="line2d_43"/>
+     <g id="text_44">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(372.216563 269.760179) rotate(-90)">␣предсказывать</text>
+     </g>
+    </g>
+    <g id="xtick_28">
+     <g id="line2d_44"/>
+     <g id="text_45">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(382.632344 258.442679) rotate(-90)">␣следующий</text>
+     </g>
+    </g>
+    <g id="xtick_29">
+     <g id="line2d_45"/>
+     <g id="text_46">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(392.959062 239.821117) rotate(-90)">␣токен</text>
+     </g>
+    </g>
+    <g id="xtick_30">
+     <g id="line2d_46"/>
+     <g id="text_47">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(403.330312 224.952367) rotate(-90)">␣в</text>
+     </g>
+    </g>
+    <g id="xtick_31">
+     <g id="line2d_47"/>
+     <g id="text_48">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(413.701562 287.714242) rotate(-90)">␣последовательности</text>
+     </g>
+    </g>
+    <g id="xtick_32">
+     <g id="line2d_48"/>
+     <g id="text_49">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(424.19 219.513929) rotate(-90)">.</text>
+     </g>
+    </g>
+   </g>
+   <g id="matplotlib.axis_4">
+    <g id="ytick_17">
+     <g id="line2d_49"/>
+    </g>
+    <g id="ytick_18">
+     <g id="line2d_50"/>
+    </g>
+    <g id="ytick_19">
+     <g id="line2d_51"/>
+    </g>
+    <g id="ytick_20">
+     <g id="line2d_52"/>
+    </g>
+    <g id="ytick_21">
+     <g id="line2d_53"/>
+    </g>
+    <g id="ytick_22">
+     <g id="line2d_54"/>
+    </g>
+    <g id="ytick_23">
+     <g id="line2d_55"/>
+    </g>
+    <g id="ytick_24">
+     <g id="line2d_56"/>
+    </g>
+    <g id="ytick_25">
+     <g id="line2d_57"/>
+    </g>
+    <g id="ytick_26">
+     <g id="line2d_58"/>
+    </g>
+    <g id="ytick_27">
+     <g id="line2d_59"/>
+    </g>
+    <g id="ytick_28">
+     <g id="line2d_60"/>
+    </g>
+    <g id="ytick_29">
+     <g id="line2d_61"/>
+    </g>
+    <g id="ytick_30">
+     <g id="line2d_62"/>
+    </g>
+    <g id="ytick_31">
+     <g id="line2d_63"/>
+    </g>
+    <g id="ytick_32">
+     <g id="line2d_64"/>
+    </g>
+   </g>
+   <g id="text_50">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: middle; fill: #7a7975" x="344.75" y="42.167054" transform="rotate(-0 344.75 42.167054)">голова 1</text>
+   </g>
+  </g>
+  <g id="axes_3">
+   <g id="patch_4">
+    <path d="M 438.52 214.107054 
+L 604.46 214.107054 
+L 604.46 48.167054 
+L 438.52 48.167054 
+L 438.52 214.107054 
+z
+" style="fill: none"/>
+   </g>
+   <g clip-path="url(#p6144121253)">
+    <image xlink:href="data:image/png;base64,
+iVBORw0KGgoAAAANSUhEUgAAAOcAAADnCAYAAADl9EEgAAAFLUlEQVR4nO3dPY6bVRiG4c/2NxkYiACFBpAQSgWiBqVlEzRU1FkGPaJjE+wBGgoqNhAKEEpINIhkMvmxx+NB01BSPAfMM+S6+qPj2Llzmrx6F9//tL6YAqvlYkqd76Irp7Pz7NylZ5vs7POz/M5N+HlfPsi+23mV/yabbfZZr7+0jO9chUfPd/GV8e95fLqd9i3/ZoF/lTihlDihlDihlDihlDihlDihlDihlDihlDihlDihlDihlDih1LwL/4f/xUU+rZEeHZlGOF1nhw8GJj1Si8V+p30upUNG6TTLyFTKamAiKv1u078/l27dPIrOeTmhlDihlDihlDihlDihlDihlDihlDihlDihlDihlDihlDihlDihlDih1Hwezm8tpnxsZxsu+BmYUpvmcMxoZAwrHavbbPc/SpUuiRq6M1wqNK/iK6d1eGc69jXCywmlxAmlxAmlxAmlxAmlxAmlxAmlxAmlxAmlxAmlxAmlxAmlxAml5u15dnC53P8io/XA0pzUyJ3pwMbIpMe+jUzt5IupLuI7371xMF0VXk4oJU4oJU4oJU4oJU4oJU4oJU4oJU4oJU4oJU4oJU4oJU4oJU4oJU4oNacLbK4t9r80ZzewyWi9zeaTDlb7/3M+WWef9XC+OqNmI9554+qMfY3wckIpcUIpcUIpcUIpcUIpcUIpcUIpcUIpcUIpcUIpcUIpcUIpcUKpebXc/wKbdE/PcmASJl3YNDIJsw2nUg4Psh8lvG7os24GFj29/9ZhfPZF4OWEUuKEUuKEUuKEUuKEUuKEUuKEUuKEUuKEUuKEUuKEUuKEUuKEUuKEUnM6njQPZB3uFJqeb8KDlwuJwiU/j56Gs2bTNJ2GC4mOrmVjWOn436VNODJ26+ZRfil/y8sJpcQJpcQJpcQJpcQJpcQJpcQJpcQJpcQJpcQJpcQJpcQJpcQJpeZ0gc3Afp94+c16YGnOybNsuuQ8H4SZzsLvNj03ssjIdEkfLyeUEieUEieUEieUEieUEieUEieUEieUEieUEieUEieUEieUEieUEieUmhfZfp9plR68/BchPprPRP0xsJAodf9kG517+7WD6NwnH7wSnaOTlxNKiRNKiRNKiRNKiRNKiRNKiRNKiRNKiRNKiRNKiRNKiRNKiRNKzf/FpbtwC9JuYFHP8eNsKmXgyunBSXbnZ7deH7iV/wsvJ5QSJ5QSJ5QSJ5QSJ5QSJ5QSJ5QSJ5QSJ5QSJ5QSJ5QSJ5QSJ5San23CCZGBeZan4Z2nz3fxnb+fZhMi945P4ju/+PS9+Cx4OaGUOKGUOKGUOKGUOKGUOKGUOKGUOKGUOKGUOKGUOKGUOKGUOKGUOKHUfHy6jQ4eXVvufXxrZGTszs/3onNffv5hfCeM8HJCKXFCKXFCKXFCKXFCKXFCKXFCKXFCKXFCKXFCKXFCKXFCKXFCqfnuw2wq5c1XV/Glvz3K7vz2x1/iO02XcNV4OaGUOKGUOKGUOKGUOKGUOKGUOKGUOKGUOKGUOKGUOKGUOKGUOKGUOKHU/MOdx9HBG9cP40sfPs1Gxox98SLxckIpcUIpcUIpcUIpcUIpcUIpcUIpcUIpcUIpcUIpcUIpcUIpcUKp+cH9+9HBu7+exZd+ffuj+Cy8KLycUEqcUEqcUEqcUEqcUEqcUEqcUEqcUEqcUEqcUEqcUEqcUEqcUEqcUGpx/ePbF8nB77756p//NMBfvJxQSpxQSpxQSpxQSpxQSpxQSpxQSpxQSpxQSpxQSpxQSpxQSpwwdfoTTTv2XiFAo4MAAAAASUVORK5CYII=" id="image8c062c9b01" transform="scale(1 -1) translate(0 -166.32)" x="438.52" y="-47.787054" width="166.32" height="166.32"/>
+   </g>
+   <g id="matplotlib.axis_5">
+    <g id="xtick_33">
+     <g id="line2d_65"/>
+     <g id="text_51">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(445.36125 230.492054) rotate(-90)">Мир</text>
+     </g>
+    </g>
+    <g id="xtick_34">
+     <g id="line2d_66"/>
+     <g id="text_52">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(455.615312 282.533617) rotate(-90)">␣программирования</text>
+     </g>
+    </g>
+    <g id="xtick_35">
+     <g id="line2d_67"/>
+     <g id="text_53">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(465.986562 254.863304) rotate(-90)">␣прекрасен</text>
+     </g>
+    </g>
+    <g id="xtick_36">
+     <g id="line2d_68"/>
+     <g id="text_54">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(476.357812 225.315179) rotate(-90)">␣и</text>
+     </g>
+    </g>
+    <g id="xtick_37">
+     <g id="line2d_69"/>
+     <g id="text_55">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(486.729062 259.086742) rotate(-90)">␣удивителен</text>
+     </g>
+    </g>
+    <g id="xtick_38">
+     <g id="line2d_70"/>
+     <g id="text_56">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(497.2175 219.513929) rotate(-90)">.</text>
+     </g>
+    </g>
+    <g id="xtick_39">
+     <g id="line2d_71"/>
+     <g id="text_57">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(507.471562 221.416117) rotate(-90)">␣</text>
+     </g>
+    </g>
+    <g id="xtick_40">
+     <g id="line2d_72"/>
+     <g id="text_58">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(517.96 229.538617) rotate(-90)">GPT</text>
+     </g>
+    </g>
+    <g id="xtick_41">
+     <g id="line2d_73"/>
+     <g id="text_59">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(528.214062 245.188304) rotate(-90)">␣модели</text>
+     </g>
+    </g>
+    <g id="xtick_42">
+     <g id="line2d_74"/>
+     <g id="text_60">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(538.585312 242.592367) rotate(-90)">␣учатся</text>
+     </g>
+    </g>
+    <g id="xtick_43">
+     <g id="line2d_75"/>
+     <g id="text_61">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(548.956562 269.760179) rotate(-90)">␣предсказывать</text>
+     </g>
+    </g>
+    <g id="xtick_44">
+     <g id="line2d_76"/>
+     <g id="text_62">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(559.372344 258.442679) rotate(-90)">␣следующий</text>
+     </g>
+    </g>
+    <g id="xtick_45">
+     <g id="line2d_77"/>
+     <g id="text_63">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(569.699062 239.821117) rotate(-90)">␣токен</text>
+     </g>
+    </g>
+    <g id="xtick_46">
+     <g id="line2d_78"/>
+     <g id="text_64">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(580.070312 224.952367) rotate(-90)">␣в</text>
+     </g>
+    </g>
+    <g id="xtick_47">
+     <g id="line2d_79"/>
+     <g id="text_65">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(590.441562 287.714242) rotate(-90)">␣последовательности</text>
+     </g>
+    </g>
+    <g id="xtick_48">
+     <g id="line2d_80"/>
+     <g id="text_66">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(600.93 219.513929) rotate(-90)">.</text>
+     </g>
+    </g>
+   </g>
+   <g id="matplotlib.axis_6">
+    <g id="ytick_33">
+     <g id="line2d_81"/>
+    </g>
+    <g id="ytick_34">
+     <g id="line2d_82"/>
+    </g>
+    <g id="ytick_35">
+     <g id="line2d_83"/>
+    </g>
+    <g id="ytick_36">
+     <g id="line2d_84"/>
+    </g>
+    <g id="ytick_37">
+     <g id="line2d_85"/>
+    </g>
+    <g id="ytick_38">
+     <g id="line2d_86"/>
+    </g>
+    <g id="ytick_39">
+     <g id="line2d_87"/>
+    </g>
+    <g id="ytick_40">
+     <g id="line2d_88"/>
+    </g>
+    <g id="ytick_41">
+     <g id="line2d_89"/>
+    </g>
+    <g id="ytick_42">
+     <g id="line2d_90"/>
+    </g>
+    <g id="ytick_43">
+     <g id="line2d_91"/>
+    </g>
+    <g id="ytick_44">
+     <g id="line2d_92"/>
+    </g>
+    <g id="ytick_45">
+     <g id="line2d_93"/>
+    </g>
+    <g id="ytick_46">
+     <g id="line2d_94"/>
+    </g>
+    <g id="ytick_47">
+     <g id="line2d_95"/>
+    </g>
+    <g id="ytick_48">
+     <g id="line2d_96"/>
+    </g>
+   </g>
+   <g id="text_67">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: middle; fill: #7a7975" x="521.49" y="42.167054" transform="rotate(-0 521.49 42.167054)">голова 2</text>
+   </g>
+  </g>
+  <g id="axes_4">
+   <g id="patch_5">
+    <path d="M 615.26 214.107054 
+L 781.2 214.107054 
+L 781.2 48.167054 
+L 615.26 48.167054 
+L 615.26 214.107054 
+z
+" style="fill: none"/>
+   </g>
+   <g clip-path="url(#pa538a56a4b)">
+    <image xlink:href="data:image/png;base64,
+iVBORw0KGgoAAAANSUhEUgAAAOcAAADnCAYAAADl9EEgAAAFZklEQVR4nO3dv4tcVRzG4Zmdu5s1cSORLNgoRGzS2ShYCNoI2ltbWFrZ6J8ggoWdjZWVRXotRYOCgo0IFiJEshJZTSKJ2Ux2Zla2sVR5b7J5Nz5Pfzh3fnzuqb6c6TeX7hxMAgfRqvvn2p/LaN0wm8Z73t7PvqRV+OVujHjWxSpbd3pzLd5zLVy6Cp/10DL8bj/8/Hq853NPPRSty79Z4J4SJ5QSJ5QSJ5QSJ5QSJ5QSJ5QSJ5QSJ5QSJ5QSJ5QSJ5QSJ5Qa1qbhJEM+AHFf3MqGbybbW/n7a77I9lwLv9zNjfxZF8uDI5/aSf96G0O85WS5yjb98quv4z3ffOnlaJ2TE0qJE0qJE0qJE0qJE0qJE0qJE0qJE0qJE0qJE0qJE0qJE0qJE0qJE0pNL/44j2aFwgmjUW+E9BKaQ5d+34/WPXwif3/dnGc37qRDWGe38lmqeXjp0uZ6PjK2H/6JTgz5nnvh53z80fXJUXNyQilxQilxQilxQilxQilxQilxQilxQilxQilxQilxQilxQilxQqlhsTo40imGMcZcmnMqvORnxCDM5GS451r4MffuZFMwYyZEFuHFQGMmfm7czj/nue2NyXHh5IRS4oRS4oRS4oRS4oRS4oRS4oRS4oRS4oRS4oRS4oRS4oRS4oRS4oRSw+Z61uf67OhHxsbYub6I1j32SH450G83sz3Xw5mxM6dmk9R8kf2epzfz93s6GnfuGI19jeHkhFLihFLihFLihFLihFLihFLihFLihFLihFLihFLihFLihFLihFLDMrzIaJXfJTMZsfTIJyCGEa+vtUm2afiTTO6EkyWHFstsXfr/OXR2az1e+3/g5IRS4oRS4oRS4oRS4oRS4oRS4oRS4oRS4oRS4oRS4oRS4oRS4oRS4oRSw8aQjTUdjLjHKJ0ySse+xuw55nNe31se6eecjXjV/nErG+R7+onNfFP+kZMTSokTSokTSokTSokTSokTSokTSokTSokTSokTSokTSokTSokTSg3p1MWI+2viSY8xFyAdhJvOR1wOtHtjEa3bmGVjKcOIsZ0Xz5+K13JvODmhlDihlDihlDihlDihlDihlDihlDihlDihlDihlDihlDihlDihlDih1DBNL80ZcanQmMuBUj9f3Y/WbW8N8Z6Xr2YjY2e3ZtG6V58x9vUgcXJCKXFCKXFCKXFCKXFCKXFCKXFCKXFCKXFCKXFCKXFCKXFCKXFCqXzk4pj56de9aN2T2xvxnru7u9G6t185H+/Jg8PJCaXECaXECaXECaXECaXECaXECaXECaXECaXECaXECaXECaXECaWGxTJbuFzlF54sD47+TfLL5cvRuk/3sztWDr33mukSck5OKCVOKCVOKCVOKCVOKCVOKCVOKCVOKCVOKCVOKCVOKCVOKCVOKCVOKDUMs2zhbG0abzpi2iz2wxcXonUffPzuXX8W+C+cnFBKnFBKnFBKnFBKnFBKnFBKnFBKnFBKnFBKnFBKnFBKnFBKnFBq+s4n16IZkZu3V/GmO9eyy4FOnsjfJa8/fyZeC/eDkxNKiRNKiRNKiRNKiRNKiRNKiRNKiRNKiRNKiRNKiRNKiRNKiRNKiRNKDfP97Fah9Vl+kdE3334XrfvorRfiPeG4cXJCKXFCKXFCKXFCKXFCKXFCKXFCKXFCKXFCKXFCKXFCKXFCKXFCqeHi91eihVd2duJNTZfAv3NyQilxQilxQilxQilxQilxQilxQilxQilxQilxQilxQilxQilxQilxQqnp1rNvRDcZfXbh/bv/NMDfnJxQSpxQSpxQSpxQSpxQSpxQSpxQSpxQSpxQSpxQSpxQSpxQSpww6fQXGsXJmzqPJVQAAAAASUVORK5CYII=" id="image549dc5f272" transform="scale(1 -1) translate(0 -166.32)" x="615.26" y="-47.787054" width="166.32" height="166.32"/>
+   </g>
+   <g id="matplotlib.axis_7">
+    <g id="xtick_49">
+     <g id="line2d_97"/>
+     <g id="text_68">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(622.10125 230.492054) rotate(-90)">Мир</text>
+     </g>
+    </g>
+    <g id="xtick_50">
+     <g id="line2d_98"/>
+     <g id="text_69">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(632.355312 282.533617) rotate(-90)">␣программирования</text>
+     </g>
+    </g>
+    <g id="xtick_51">
+     <g id="line2d_99"/>
+     <g id="text_70">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(642.726562 254.863304) rotate(-90)">␣прекрасен</text>
+     </g>
+    </g>
+    <g id="xtick_52">
+     <g id="line2d_100"/>
+     <g id="text_71">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(653.097812 225.315179) rotate(-90)">␣и</text>
+     </g>
+    </g>
+    <g id="xtick_53">
+     <g id="line2d_101"/>
+     <g id="text_72">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(663.469062 259.086742) rotate(-90)">␣удивителен</text>
+     </g>
+    </g>
+    <g id="xtick_54">
+     <g id="line2d_102"/>
+     <g id="text_73">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(673.9575 219.513929) rotate(-90)">.</text>
+     </g>
+    </g>
+    <g id="xtick_55">
+     <g id="line2d_103"/>
+     <g id="text_74">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(684.211562 221.416117) rotate(-90)">␣</text>
+     </g>
+    </g>
+    <g id="xtick_56">
+     <g id="line2d_104"/>
+     <g id="text_75">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(694.7 229.538617) rotate(-90)">GPT</text>
+     </g>
+    </g>
+    <g id="xtick_57">
+     <g id="line2d_105"/>
+     <g id="text_76">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(704.954062 245.188304) rotate(-90)">␣модели</text>
+     </g>
+    </g>
+    <g id="xtick_58">
+     <g id="line2d_106"/>
+     <g id="text_77">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(715.325312 242.592367) rotate(-90)">␣учатся</text>
+     </g>
+    </g>
+    <g id="xtick_59">
+     <g id="line2d_107"/>
+     <g id="text_78">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(725.696562 269.760179) rotate(-90)">␣предсказывать</text>
+     </g>
+    </g>
+    <g id="xtick_60">
+     <g id="line2d_108"/>
+     <g id="text_79">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(736.112344 258.442679) rotate(-90)">␣следующий</text>
+     </g>
+    </g>
+    <g id="xtick_61">
+     <g id="line2d_109"/>
+     <g id="text_80">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(746.439062 239.821117) rotate(-90)">␣токен</text>
+     </g>
+    </g>
+    <g id="xtick_62">
+     <g id="line2d_110"/>
+     <g id="text_81">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(756.810312 224.952367) rotate(-90)">␣в</text>
+     </g>
+    </g>
+    <g id="xtick_63">
+     <g id="line2d_111"/>
+     <g id="text_82">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(767.181562 287.714242) rotate(-90)">␣последовательности</text>
+     </g>
+    </g>
+    <g id="xtick_64">
+     <g id="line2d_112"/>
+     <g id="text_83">
+      <text style="font-size: 6px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; fill: #7a7975" transform="translate(777.67 219.513929) rotate(-90)">.</text>
+     </g>
+    </g>
+   </g>
+   <g id="matplotlib.axis_8">
+    <g id="ytick_49">
+     <g id="line2d_113"/>
+    </g>
+    <g id="ytick_50">
+     <g id="line2d_114"/>
+    </g>
+    <g id="ytick_51">
+     <g id="line2d_115"/>
+    </g>
+    <g id="ytick_52">
+     <g id="line2d_116"/>
+    </g>
+    <g id="ytick_53">
+     <g id="line2d_117"/>
+    </g>
+    <g id="ytick_54">
+     <g id="line2d_118"/>
+    </g>
+    <g id="ytick_55">
+     <g id="line2d_119"/>
+    </g>
+    <g id="ytick_56">
+     <g id="line2d_120"/>
+    </g>
+    <g id="ytick_57">
+     <g id="line2d_121"/>
+    </g>
+    <g id="ytick_58">
+     <g id="line2d_122"/>
+    </g>
+    <g id="ytick_59">
+     <g id="line2d_123"/>
+    </g>
+    <g id="ytick_60">
+     <g id="line2d_124"/>
+    </g>
+    <g id="ytick_61">
+     <g id="line2d_125"/>
+    </g>
+    <g id="ytick_62">
+     <g id="line2d_126"/>
+    </g>
+    <g id="ytick_63">
+     <g id="line2d_127"/>
+    </g>
+    <g id="ytick_64">
+     <g id="line2d_128"/>
+    </g>
+   </g>
+   <g id="text_84">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: middle; fill: #7a7975" x="698.23" y="42.167054" transform="rotate(-0 698.23 42.167054)">голова 3</text>
+   </g>
+  </g>
+  <g id="text_85">
+   <text style="font-size: 10px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: middle; fill: #7a7975" x="396" y="13.09675" transform="rotate(-0 396 13.09675)">последний слой: строки — запросы, столбцы — ключи, тёмнее — больший вес</text>
+  </g>
+ </g>
+ <defs>
+  <clipPath id="p8ae18d0e65">
+   <rect x="85.04" y="48.167054" width="165.94" height="165.94"/>
+  </clipPath>
+  <clipPath id="p63621d9a33">
+   <rect x="261.78" y="48.167054" width="165.94" height="165.94"/>
+  </clipPath>
+  <clipPath id="p6144121253">
+   <rect x="438.52" y="48.167054" width="165.94" height="165.94"/>
+  </clipPath>
+  <clipPath id="pa538a56a4b">
+   <rect x="615.26" y="48.167054" width="165.94" height="165.94"/>
+  </clipPath>
+ </defs>
+</svg>
