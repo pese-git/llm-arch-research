@@ -25,7 +25,7 @@
 
 ## Схемы
 
-Схемы в ноутбуках те же, что в главах учебника: Mermaid-блоки из `docs/textbook/*.md`. GitHub не рендерит Mermaid внутри ipynb, поэтому в ячейку вкладывается PNG, а исходник Mermaid лежит рядом в свёрнутом блоке «Исходник схемы» (JupyterLab 4.1+ рендерит его при раскрытии). Схему задаёт маркер в markdown-ячейке, картинку и исходник генерирует [`tools/diagrams.py`](tools/diagrams.py):
+Схемы в ноутбуках те же, что в главах учебника: Mermaid-блоки из `docs/textbook/*.md`. GitHub не рендерит Mermaid внутри ipynb и вырезает HTML вроде `<details>`, поэтому в ячейку вкладывается PNG с подписью-ссылкой на главу, где лежит исходник. Схему задаёт маркер в markdown-ячейке, картинку и подпись генерирует [`tools/diagrams.py`](tools/diagrams.py):
 
 ```markdown
 <!-- diagram: textbook/mistral.md | Архитектура Mistral -->

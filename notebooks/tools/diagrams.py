@@ -1,15 +1,15 @@
 """Вставляет схемы учебника в ноутбуки.
 
 Схемы живут в docs/textbook/*.md как блоки ```mermaid с полем accTitle. GitHub не рендерит
-Mermaid внутри ipynb, поэтому в ноутбук попадает PNG-вложение, а исходник Mermaid
-кладётся рядом в свёрнутый <details>: JupyterLab 4.1+ рендерит его при раскрытии.
+Mermaid внутри ipynb и вырезает HTML вроде <details>, поэтому в ноутбук попадает только
+PNG-вложение и подпись со ссылкой на главу, где лежит исходник Mermaid.
 
 Маркер в markdown-ячейке (путь относительно docs/, название — accTitle схемы):
 
     <!-- diagram: textbook/mistral.md | Архитектура Mistral -->
 
 Скрипт заменяет всё от маркера до <!-- /diagram --> (или до конца ячейки, если
-закрывающего маркера ещё нет) на картинку, исходник и закрывающий маркер с хэшем
+закрывающего маркера ещё нет) на картинку, подпись и закрывающий маркер с хэшем
 исходника. При повторном запуске схема с тем же хэшем не перерисовывается.
 
 Запуск из корня репозитория (нужны Node.js и сеть для первого запуска npx):
@@ -73,18 +73,12 @@ def chapter_link(doc: str, notebook: Path) -> str:
     return f"[{name}]({rel.as_posix()})"
 
 
-def build_block(doc: str, title: str, source: str, sha: str, attachment: str, notebook: Path) -> str:
+def build_block(doc: str, title: str, sha: str, attachment: str, notebook: Path) -> str:
     return "\n".join([
         f"<!-- diagram: {doc} | {title} -->",
         f"![{title}](attachment:{attachment})",
         "",
-        f"<details><summary>Исходник схемы (Mermaid), глава {chapter_link(doc, notebook)}</summary>",
-        "",
-        "```mermaid",
-        source,
-        "```",
-        "",
-        "</details>",
+        f"*Схема «{title}» из главы {chapter_link(doc, notebook)}, там же её исходник в Mermaid.*",
         f"<!-- /diagram sha={sha} -->",
     ])
 
@@ -100,20 +94,19 @@ def process_cell(cell: dict, notebook: Path, force: bool, check: bool) -> list[s
             break
         doc, title = start.group("doc"), start.group("title").strip()
         end = END.search(text, start.end())
-        old_sha = end.group("sha") if end else None
         tail = end.end() if end else len(text)
         source = find_diagram(DOCS / doc, title)
         sha = hashlib.sha1(source.encode("utf-8")).hexdigest()[:12]
         attachment = f"diagram-{sha}.png"
         expected[attachment] = source
-        if old_sha == sha and attachment in attachments and not force:
+        block = build_block(doc, title, sha, attachment, notebook)
+        if text[start.start():tail] == block and attachment in attachments and not force:
             pos = tail
             continue
         changes.append(f"{notebook.name}: {title} ({doc})")
         if check:
             pos = tail
             continue
-        block = build_block(doc, title, source, sha, attachment, notebook)
         text = text[:start.start()] + block + text[tail:]
         pos = start.start() + len(block)
     if check or not changes:
