@@ -1,0 +1,43 @@
+# Практикумы
+
+Ноутбуки дополняют [учебное пособие](../docs/textbook/README.md): теория и разбор кода остаются в главах, а здесь механизмы пишутся руками, сверяются с библиотекой `llm` и исследуются на обученной модели.
+
+| Ноутбук | Глава | Что пишется руками |
+|---|---|---|
+| [bpe.ipynb](bpe.ipynb) | [Токенизация](../docs/textbook/tokenization.md) | обучение BPE, кодирование по слияниям и жадное |
+| [gpt.ipynb](gpt.ipynb) | [GPT-1](../docs/textbook/gpt.md) | голова attention, multi-head как список голов, FFN, LayerNorm, post-LN блок |
+| [gpt2.ipynb](gpt2.ipynb) | [GPT-2](../docs/textbook/gpt2.md) | pre-LN блок, масштаб инициализации, температура, top-k, top-p |
+| [llama.ipynb](llama.ipynb) | [LLaMA](../docs/textbook/llama.md) | RMSNorm, SwiGLU, RoPE, attention с RoPE и KV-кэшем |
+| [mistral.ipynb](mistral.ipynb) | [Mistral](../docs/textbook/mistral.md) | grouped query attention, скользящее окно, кэш, ограниченный окном |
+| [mixtral.ipynb](mixtral.ipynb) | [Mixtral](../docs/textbook/mixtral.md) | Mixture-of-Experts, load-balancing loss |
+| [gemma.ipynb](gemma.ipynb) | [Gemma](../docs/textbook/gemma.md) | GeGLU, multi-query attention, RMSNorm в параметризации Gemma |
+
+## Шаблон
+
+Каждый ноутбук архитектуры устроен одинаково.
+
+1. **Пишем сами.** Только то, что в этой архитектуре новое по сравнению с предыдущей, по формулам из главы. Имена полей совпадают с библиотечными, чтобы веса переносились через `state_dict`.
+2. **Сверяем с библиотекой.** Тот же модуль из `llm.core` на тех же весах: полный проход, генерация с кэшем, префилл кусками. Сверка численная, через `torch.allclose`.
+3. **Собираем модель.** Блок декодера и модель из своих и библиотечных блоков, наследуя `generate`, `save` и `load` от `BaseModel`. Логиты и жадная генерация сверяются с `llm.models.*`.
+4. **Обучаем.** Конфиг из `experiments/llm_only/configs/<model>_train.json`, корпус из `experiments/shared`, `BPETokenizer`, датасет с `<eos>` и `Trainer` из библиотеки.
+5. **Смотрим внутрь.** Карты внимания, кэш, рецептивное поле, распределение по экспертам, масштаб residual-потока: то, чего нет в тексте главы.
+6. **Упражнения.** Задачи для этого ноутбука плюс ссылка на вопросы главы с ответами.
+
+## Запуск
+
+Из корня репозитория:
+
+```bash
+uv sync --extra dev
+uv run jupyter lab notebooks/mistral.ipynb
+```
+
+Все ячейки выполняются на CPU за одну-две минуты на ноутбук. Корень репозитория ноутбуки находят сами по `pyproject.toml`, поэтому запускать можно из любой папки.
+
+Прогнать все ноутбуки целиком и обновить выводы:
+
+```bash
+cd notebooks && for n in bpe gpt gpt2 llama mistral mixtral gemma; do uv run jupyter nbconvert --to notebook --execute --inplace "$n.ipynb"; done
+```
+
+Ноутбуки хранятся с выводами, чтобы читать их на GitHub без запуска. После правок перезапускайте ноутбук целиком («Restart Kernel and Run All Cells»), чтобы выводы соответствовали коду.
