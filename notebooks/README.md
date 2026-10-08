@@ -38,6 +38,23 @@ uv run python notebooks/tools/diagrams.py --check  # проверить, что 
 
 Рендер идёт через mermaid-cli (`npx -y -p @mermaid-js/mermaid-cli mmdc`), нужны Node.js и при первом запуске сеть. Не правьте сгенерированный блок между маркером и `<!-- /diagram -->` руками: при следующем запуске он будет перезаписан.
 
+## Проверки в CI
+
+Ноутбуки хранятся с выводами, и два workflow следят, чтобы они не разошлись с учебником и библиотекой.
+
+| Workflow | Когда | Что проверяет |
+|---|---|---|
+| [`notebooks-check.yml`](../.github/workflows/notebooks-check.yml) | PR и `master`, где меняются `notebooks/` или `docs/textbook/` | Секунды, без torch. Схемы совпадают с учебником (`tools/diagrams.py --check`). [`tools/check.py`](tools/check.py): файл проходит `nbformat.validate`, в выводах нет ошибок, трассировок и полос tqdm, счётчики выполнения идут подряд (ноутбук перезапущен целиком), размер не больше 600 КиБ |
+| [`notebooks-run.yml`](../.github/workflows/notebooks-run.yml) | PR и `master`, где меняются `notebooks/`, `llm/src/`, `experiments/shared/`, конфиги `llm_only` или `uv.lock` | Каждый ноутбук выполняется целиком на CPU, семь параллельных задач по 1,5–2,5 минуты (из них установка зависимостей около 20 секунд, ноутбук на двухъядерном раннере считается до двух минут). `assert` на совпадение с библиотекой ловит расхождения, когда меняется `llm/src`. К свежему выводу применяется тот же `check.py`, выполненный ноутбук лежит в артефакте задачи 7 дней |
+
+Выводы выполненного в CI ноутбука **не коммитятся**: числа зависят от платформы. Если проверка упала, запустите то же локально:
+
+```bash
+uv run python notebooks/tools/check.py                    # выводы
+uv run python notebooks/tools/diagrams.py                 # перерисовать устаревшие схемы
+cd notebooks && uv run jupyter nbconvert --to notebook --execute --inplace mistral.ipynb   # перезапустить ноутбук
+```
+
 ## Запуск
 
 Из корня репозитория:
