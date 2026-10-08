@@ -44,7 +44,7 @@ Astro кэширует отрисованные страницы в `node_module
 
 ## Публикация
 
-Сайт публикуется Docker-образом на кластере — `https://llm-arch-research.openidealab.com` (раздел «Docker» ниже). Workflow [`.github/workflows/docs-site.yml`](../.github/workflows/docs-site.yml) только проверяет сборку: в PR, где меняются `docs/` или `site/`, и после слияния в `master`.
+Сайт публикуется Docker-образом на кластере — `https://llm-arch-research.openidealab.com` (раздел «Docker» ниже). Workflow [`.github/workflows/docs-site.yml`](../.github/workflows/docs-site.yml) проверяет сборку в PR, где меняются `docs/` или `site/`, а после слияния в `master` ещё и собирает образ и публикует его в Harbor. Выкатка на кластер — руками.
 
 По умолчанию сайт собирается для корня этого домена. Адрес для другого хостинга задают переменные окружения `SITE_URL` и `SITE_BASE`, например `SITE_URL=https://example.org SITE_BASE=/docs npm run build`.
 
@@ -61,4 +61,6 @@ docker run --rm -p 8080:80 harbor.openidealab.com/llm-arch-research/site:latest 
 - Сборка в два этапа: Node собирает сайт, nginx ([`nginx.conf`](nginx.conf)) раздаёт `dist/` на порту 80. Образ — около 30 МБ.
 - По умолчанию сайт собирается для корня домена `https://llm-arch-research.openidealab.com` (`SITE_BASE=/`). Другой адрес — `--build-arg SITE_URL=… --build-arg SITE_BASE=…`.
 - Что попадает в контекст сборки, задаёт [`Dockerfile.dockerignore`](Dockerfile.dockerignore): без виртуальных окружений, `checkpoints/` и результатов сборки. `.git` нужен: по нему считаются даты `<lastmod>`, в образ nginx он не попадает.
-- Образ публикуется в Harbor: `harbor.openidealab.com/llm-arch-research/site`, теги — короткий SHA коммита и `latest`. Для push нужен `docker login harbor.openidealab.com` и роль Developer или выше в проекте `llm-arch-research`.
+- Образ публикуется в Harbor: `harbor.openidealab.com/llm-arch-research/site`, теги — короткий SHA коммита и `latest`. Это делает job `publish` в [`docs-site.yml`](../.github/workflows/docs-site.yml) на каждый push в `master`, меняющий `docs/` или `site/` (или по кнопке Run workflow на `master`). Ему нужны секреты репозитория `HARBOR_USERNAME` и `HARBOR_PASSWORD` — робот-аккаунт Harbor с правом push в проект `llm-arch-research`; без них job только пишет предупреждение. CI собирает с полной историей git, поэтому даты `<lastmod>` в карте сайта верные.
+- Собрать и отправить образ руками (например, из worktree без полной истории — тогда карта сайта будет без `<lastmod>`): `docker login harbor.openidealab.com` с ролью Developer или выше в проекте и `docker push` тегов SHA и `latest`.
+- Выкатка на кластер не автоматизирована: Deployment `site` в namespace `llm-arch-research` держит образ по тегу SHA, и после публикации тег нужно обновить — `kubectl -n llm-arch-research set image deployment/site site=harbor.openidealab.com/llm-arch-research/site:<sha>`. Откат — `kubectl rollout undo`.

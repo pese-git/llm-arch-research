@@ -1,5 +1,6 @@
-# Проверка сборки сайта из docs/ (site/, Astro + Starlight). Сайт публикуется Docker-образом
-# на кластере — см. раздел «Docker» в site/README.md.
+# Сайт из docs/ (site/, Astro + Starlight): проверка сборки в PR и после слияния в master,
+# а на master ещё и публикация Docker-образа в Harbor. Выкатка на кластер — руками:
+# см. раздел «Docker» в site/README.md.
 name: Docs site
 
 on:
@@ -17,6 +18,9 @@ concurrency:
   group: docs-site-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  IMAGE: harbor.openidealab.com/llm-arch-research/site
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -32,3 +36,57 @@ jobs:
           cache-dependency-path: site/package-lock.json
       - run: npm ci
       - run: npm run build
+
+  # Образ собирается только из master (push или ручной запуск) и только после успешной
+  # проверки сборки. Теги — короткий SHA коммита и latest. Нужны секреты HARBOR_USERNAME и
+  # HARBOR_PASSWORD (робот-аккаунт Harbor с правом push в проект llm-arch-research);
+  # без них job завершается предупреждением, а не ошибкой.
+  publish:
+    needs: build
+    if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      HARBOR_USERNAME: ${{ secrets.HARBOR_USERNAME }}
+      HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
+    steps:
+      - name: Секреты Harbor не заданы
+        if: env.HARBOR_USERNAME == '' || env.HARBOR_PASSWORD == ''
+        run: |
+          echo "::warning::HARBOR_USERNAME / HARBOR_PASSWORD не заданы — образ не публикуется"
+          echo "Образ не опубликован: добавьте секреты HARBOR_USERNAME и HARBOR_PASSWORD" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/checkout@v7
+        if: env.HARBOR_USERNAME != '' && env.HARBOR_PASSWORD != ''
+        with:
+          fetch-depth: 0   # полная история: даты <lastmod> в карте сайта считаются по git log
+      - uses: docker/setup-buildx-action@v4
+        if: env.HARBOR_USERNAME != '' && env.HARBOR_PASSWORD != ''
+      - uses: docker/login-action@v4
+        if: env.HARBOR_USERNAME != '' && env.HARBOR_PASSWORD != ''
+        with:
+          registry: harbor.openidealab.com
+          username: ${{ env.HARBOR_USERNAME }}
+          password: ${{ env.HARBOR_PASSWORD }}
+      - name: Тег образа
+        id: tag
+        if: env.HARBOR_USERNAME != '' && env.HARBOR_PASSWORD != ''
+        run: echo "sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v7
+        if: env.HARBOR_USERNAME != '' && env.HARBOR_PASSWORD != ''
+        with:
+          context: .
+          file: site/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.tag.outputs.sha }}
+            ${{ env.IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Итог
+        if: env.HARBOR_USERNAME != '' && env.HARBOR_PASSWORD != ''
+        run: |
+          {
+            echo "Опубликован \`${IMAGE}:${{ steps.tag.outputs.sha }}\` (и \`latest\`)."
+            echo
+            echo "Выкатка: обновите тег образа у Deployment \`site\` в namespace \`llm-arch-research\` — см. раздел «Docker» в site/README.md."
+          } >> "$GITHUB_STEP_SUMMARY"
