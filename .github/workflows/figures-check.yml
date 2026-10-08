@@ -1,0 +1,51 @@
+# Сверяет сохранённые иллюстрации учебника (docs/assets/figures/*.svg) с кодом библиотеки: строит
+# их заново и сравнивает по смыслу, а не побайтно (docs/tools/svgcompare.py). Падает, если после
+# правки llm/src, корпуса или самого скрипта картинки устарели.
+# Лечится: uv run python docs/tools/figures.py
+name: Figures check
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'llm/src/**'
+      - 'docs/tools/**'
+      - 'docs/assets/figures/**'
+      - 'experiments/shared/**'
+      - 'experiments/llm_only/configs/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.github/workflows/figures-check.yml'
+  pull_request:
+    paths:
+      - 'llm/src/**'
+      - 'docs/tools/**'
+      - 'docs/assets/figures/**'
+      - 'experiments/shared/**'
+      - 'experiments/llm_only/configs/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.github/workflows/figures-check.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: figures-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      # Версия Python как в разработке: на 3.14 для torch нет колёс
+      - run: uv sync --frozen --extra dev --python 3.12
+      - name: Иллюстрации совпадают с кодом
+        run: uv run python docs/tools/figures.py --check
