@@ -51,8 +51,8 @@ plt.rcParams.update({
 })
 
 FIGURES = {}
-# Числа обучаемых иллюстраций зависят от платформы: при проверке сверяем только их структуру
-TOLERANCE = {"attention-heads": EXACT, "expert-load": EXACT, "loss-curves": EXACT}  # TODO калибровка в CI
+# Иллюстрации с обучением сверяются с небольшим допуском, остальные — почти точно
+TOLERANCE = {"attention-heads": TRAINED, "expert-load": TRAINED, "loss-curves": TRAINED}
 
 
 def figure(name):

@@ -34,7 +34,8 @@ class Tolerance:
 
 
 EXACT = Tolerance()
-TRAINED = Tolerance(atol=1e9, rtol=1.0, pixel=1.0)  # смотрим только на структуру и нечисловой текст
+# Обучение на CPU воспроизводится, но BLAS и версия torch могут сдвинуть последние знаки
+TRAINED = Tolerance(atol=0.5, rtol=0.02, pixel=0.02)
 
 
 def _strip_refs(value: str) -> str:

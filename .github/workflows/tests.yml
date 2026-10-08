@@ -8,6 +8,7 @@ on:
     paths:
       - 'llm/**'
       - 'hf-proxy/**'
+      - 'docs/tools/**'
       - 'pyproject.toml'
       - 'uv.lock'
       - '.github/workflows/tests.yml'
@@ -15,6 +16,7 @@ on:
     paths:
       - 'llm/**'
       - 'hf-proxy/**'
+      - 'docs/tools/**'
       - 'pyproject.toml'
       - 'uv.lock'
       - '.github/workflows/tests.yml'

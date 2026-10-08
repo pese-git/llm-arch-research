@@ -38,9 +38,9 @@ members = ["llm", "hf-proxy"]
 exclude = []
 
 [tool.pytest.ini_options]
-# Из корня собираем только юнит-тесты пакетов: скрипты в experiments/
+# Из корня собираем только юнит-тесты пакетов и инструментов docs/tools: скрипты в experiments/
 # (например, test_hf_proxy.py) не тесты и пишут артефакты в cwd.
-testpaths = ["llm/tests", "hf-proxy/tests"]
+testpaths = ["llm/tests", "hf-proxy/tests", "docs/tools/tests"]
 
 [tool.coverage.run]
 branch = true
