@@ -1,0 +1,60 @@
+# Юнит-тесты библиотек llm и hf-proxy из корня (testpaths в pyproject.toml). Сеть не нужна,
+# весь прогон занимает меньше минуты. Ноутбуки проверяют notebooks-check.yml и notebooks-run.yml.
+name: Tests
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'llm/**'
+      - 'hf-proxy/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.github/workflows/tests.yml'
+  pull_request:
+    paths:
+      - 'llm/**'
+      - 'hf-proxy/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.github/workflows/tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      # Версия Python как в разработке: на 3.14 для torch нет колёс
+      - run: uv sync --frozen --extra dev --python 3.12
+      - name: pytest
+        run: uv run pytest -q -rs --junitxml="$RUNNER_TEMP/junit.xml"
+      # Тесты сверки с HuggingFace без transformers молча пропускаются (importorskip), и зелёный
+      # прогон ничего бы не значил. Пропуск из-за отсутствующего пакета считаем ошибкой.
+      - name: Нет пропусков из-за отсутствующих пакетов
+        run: |
+          uv run python - "$RUNNER_TEMP/junit.xml" <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+
+          bad = [
+              f"{c.get('classname')}::{c.get('name')}: {s.get('message')}"
+              for c in ET.parse(sys.argv[1]).iter("testcase")
+              for s in c.findall("skipped")
+              if "could not import" in (s.get("message") or "")
+          ]
+          print("\n".join(bad) or "ok")
+          sys.exit(bool(bad))
+          PY
