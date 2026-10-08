@@ -1,0 +1,69 @@
+# Выполняет каждый ноутбук целиком на CPU. Ноутбуки сверяют собственные реализации с библиотекой
+# llm через assert, поэтому прогон ловит расхождения, когда меняется llm/src. Ноутбуки идут
+# параллельно, каждый занимает несколько минут. Статическую проверку делает notebooks-check.yml.
+name: Notebooks run
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'notebooks/**'
+      - 'llm/src/**'
+      - 'experiments/shared/**'
+      - 'experiments/llm_only/configs/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.github/workflows/notebooks-run.yml'
+  pull_request:
+    paths:
+      - 'notebooks/**'
+      - 'llm/src/**'
+      - 'experiments/shared/**'
+      - 'experiments/llm_only/configs/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.github/workflows/notebooks-run.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: notebooks-run-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  run:
+    name: ${{ matrix.notebook }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        notebook: [bpe, gpt, gpt2, llama, mistral, mixtral, gemma]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      # Версия Python как в разработке: на 3.14 для torch нет колёс
+      - run: uv sync --frozen --extra dev --python 3.12
+      # --allow-errors: упавшая ячейка не обрывает прогон, а попадает в вывод. Так в артефакте
+      # виден ноутбук с местом ошибки, а check.py ниже находит её в выводах и роняет задачу.
+      # Ноутбук запускается из notebooks/: корень репозитория он находит по pyproject.toml.
+      - name: Выполнить ноутбук
+        working-directory: notebooks
+        run: >
+          uv run jupyter nbconvert --to notebook --execute --allow-errors
+          --ExecutePreprocessor.timeout=1200
+          --output-dir "$RUNNER_TEMP/executed" ${{ matrix.notebook }}.ipynb
+      - name: Выводы без ошибок
+        run: uv run python notebooks/tools/check.py "$RUNNER_TEMP/executed/${{ matrix.notebook }}.ipynb"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ${{ matrix.notebook }}-executed
+          path: ${{ runner.temp }}/executed/${{ matrix.notebook }}.ipynb
+          retention-days: 7
+          if-no-files-found: ignore

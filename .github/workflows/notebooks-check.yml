@@ -1,0 +1,36 @@
+# Быстрая проверка ноутбуков без запуска (секунды, без torch): схемы совпадают с учебником,
+# выводы чистые и сохранены после полного перезапуска. Выполнимость ячеек проверяет
+# notebooks-run.yml. Подробнее — notebooks/README.md.
+name: Notebooks check
+
+on:
+  push:
+    branches: [master]
+    paths: ['notebooks/**', 'docs/textbook/**', '.github/workflows/notebooks-check.yml']
+  pull_request:
+    paths: ['notebooks/**', 'docs/textbook/**', '.github/workflows/notebooks-check.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: notebooks-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: pip install nbformat
+      # Схема в ноутбуке (PNG-вложение) — снимок блока Mermaid из docs/textbook. Правка схемы в учебнике
+      # без перерисовки ноутбука ломает проверку. Лечится: uv run python notebooks/tools/diagrams.py
+      - name: Схемы актуальны
+        run: python notebooks/tools/diagrams.py --check
+      # Валидный nbformat, нет ошибок и tqdm в выводах, счётчики выполнения идут подряд, размер в норме.
+      - name: Выводы чистые
+        run: python notebooks/tools/check.py
