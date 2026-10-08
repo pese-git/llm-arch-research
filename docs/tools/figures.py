@@ -10,6 +10,7 @@ markdown-картинкой с alt-текстом.
     uv run python docs/tools/figures.py            # все иллюстрации (с обучением моделей — несколько минут)
     uv run python docs/tools/figures.py masks      # одна, по имени файла без .svg
     uv run python docs/tools/figures.py --png DIR  # дополнительно PNG для просмотра
+    uv run python docs/tools/figures.py --check    # сверить сохранённые SVG с кодом, ничего не меняя
 
 Иллюстрации с обучением (attention-heads, expert-load, loss-curves) используют тот же корпус,
 токенизатор и Trainer, что ноутбуки; seed фиксирован, результат на CPU воспроизводим.
@@ -17,6 +18,7 @@ markdown-картинкой с alt-текстом.
 import argparse
 import math
 import sys
+import tempfile
 from pathlib import Path
 
 import matplotlib
@@ -25,6 +27,9 @@ import numpy as np
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.colors import LinearSegmentedColormap, ListedColormap  # noqa: E402
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from svgcompare import EXACT, TRAINED, compare  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "docs" / "assets" / "figures"
@@ -46,6 +51,8 @@ plt.rcParams.update({
 })
 
 FIGURES = {}
+# Числа обучаемых иллюстраций зависят от платформы: при проверке сверяем только их структуру
+TOLERANCE = {"attention-heads": EXACT, "expert-load": EXACT, "loss-curves": EXACT}  # TODO калибровка в CI
 
 
 def figure(name):
@@ -459,20 +466,43 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("names", nargs="*", help="какие иллюстрации строить (по умолчанию все)")
     parser.add_argument("--png", type=Path, help="папка для PNG-копий (для просмотра)")
+    parser.add_argument("--out", type=Path, default=OUT, help="куда писать SVG (по умолчанию docs/assets/figures)")
+    parser.add_argument("--check", action="store_true",
+                        help="ничего не писать в docs/assets/figures: построить заново и сверить по смыслу с сохранёнными")
     args = parser.parse_args()
     names = args.names or list(FIGURES)
     unknown = [n for n in names if n not in FIGURES]
     if unknown:
         raise SystemExit(f"нет таких иллюстраций: {unknown}; есть {list(FIGURES)}")
-    OUT.mkdir(parents=True, exist_ok=True)
+    if args.check and args.out == OUT:
+        # проверка не должна трогать сохранённые файлы: строим во временную папку
+        args.out = Path(tempfile.mkdtemp(prefix="figures-"))
+    out = args.out
+    out.mkdir(parents=True, exist_ok=True)
+    stale = []
     for name in names:
         fig = FIGURES[name]()
-        fig.savefig(OUT / f"{name}.svg", format="svg", metadata={"Date": None})
+        target = out / f"{name}.svg"
+        fig.savefig(target, format="svg", metadata={"Date": None})
         if args.png:
             args.png.mkdir(parents=True, exist_ok=True)
             fig.savefig(args.png / f"{name}.png", dpi=150, facecolor="white")
         plt.close(fig)
-        print(f"{OUT.relative_to(ROOT) / (name + '.svg')}: {(OUT / (name + '.svg')).stat().st_size // 1024} КиБ")
+        if args.check:
+            problems = compare(
+                (OUT / f"{name}.svg").read_text(), target.read_text(), TOLERANCE.get(name, EXACT)
+            )
+            print(f"{'расходится' if problems else 'совпадает'}: {name}")
+            for line in problems[:5]:
+                print(f"    {line}")
+            if problems:
+                stale.append(name)
+        else:
+            print(f"{target}: {target.stat().st_size // 1024} КиБ")
+    if stale:
+        print(f"\nИллюстрации не совпадают с кодом: {', '.join(stale)}. "
+              "Перестройте их: uv run python docs/tools/figures.py " + " ".join(stale))
+        return 1
     return 0
 
 
