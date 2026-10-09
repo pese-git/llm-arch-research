@@ -14,8 +14,13 @@ markdown-картинкой с alt-текстом.
 
 Иллюстрации с обучением (attention-heads, expert-load, loss-curves) используют тот же корпус,
 токенизатор и Trainer, что ноутбуки; seed фиксирован, результат на CPU воспроизводим.
+
+Иллюстрации бенчмарка (benchmark-*) строятся из сохранённых результатов
+docs/assets/benchmark/results.json и ничего не обучают: сам прогон experiments/llm_only/benchmark.py
+занимает около 35 минут. Новый прогон — обновить JSON и перестроить рисунки.
 """
 import argparse
+import json
 import math
 import sys
 import tempfile
@@ -37,6 +42,7 @@ OUT = ROOT / "docs" / "assets" / "figures"
 # Палитра: три категориальных цвета, проверенных на светлой и тёмной поверхности
 # (dataviz: CVD ΔE и контраст), нейтральный серый для текста и сетки.
 BLUE, ORANGE, GREEN = "#3987e5", "#d95926", "#199e70"
+YELLOW, MAGENTA, FOREST = "#c98500", "#d55181", "#008300"  # 4–6-й слоты той же палитры (для бенчмарка шести моделей)
 INK, GRID, MUTED = "#7a7975", "#b0afa9", "#e8e7e3"
 SEQ_BLUE = LinearSegmentedColormap.from_list("seq_blue", ["#cde2fb", "#5598e7", "#1c5cab", "#0d366b"])
 DIVERGING = LinearSegmentedColormap.from_list("div", ["#2a78d6", "#f0efec", "#e34948"])
@@ -458,6 +464,103 @@ def bpe_vocab():
                     textcoords="offset points", color=INK, fontsize=9, va="center")
     ax.set_xlabel("размер словаря (без специальных токенов)"); ax.set_ylabel("токенов в корпусе"); ax.set_xlim(0, 520)
     ax.grid(True, axis="y"); ax.legend(loc="upper right")
+    fig.tight_layout()
+    return fig
+
+
+# --- Бенчмарк шести архитектур: данные из docs/assets/benchmark/results.json -------------------
+BENCHMARK = ROOT / "docs" / "assets" / "benchmark" / "results.json"
+# Порядок, цвет и маркер закреплены за моделью: цвет следует за сущностью, а не за местом в рейтинге;
+# маркер дублирует цвет (желтый на светлой теме контрастнее 3:1 только с подписью и формой точки)
+MODELS = ("gpt", "gpt2", "llama", "mistral", "mixtral", "gemma")
+MODEL_NAMES = {"gpt": "GPT", "gpt2": "GPT-2", "llama": "LLaMA", "mistral": "Mistral", "mixtral": "Mixtral", "gemma": "Gemma"}
+MODEL_COLORS = dict(zip(MODELS, (BLUE, ORANGE, GREEN, YELLOW, MAGENTA, FOREST)))
+MODEL_MARKERS = dict(zip(MODELS, ("o", "s", "^", "D", "v", "P")))
+
+
+def _benchmark_runs():
+    """Прогоны бенчмарка по моделям: {модель: [прогон по seed, ...]}."""
+    data = json.loads(BENCHMARK.read_text(encoding="utf-8"))
+    runs = {m: [] for m in MODELS}
+    for run in data["runs"]:
+        runs[run["model"]].append(run)
+    return data, runs
+
+
+@figure("benchmark-loss")
+def benchmark_loss():
+    """Валидационный loss шести моделей по шагам обучения (seed 0): весь ход и увеличенный конец."""
+    data, runs = _benchmark_runs()
+    fig, axes = plt.subplots(1, 2, figsize=(8.4, 3.6), gridspec_kw={"width_ratios": [1, 1]})
+    for ax, (lo, hi), title in ((axes[0], (4.0, 6.2), "весь ход обучения"), (axes[1], (4.05, 4.65), "увеличение: шаги 500–1000")):
+        for m in MODELS:
+            run = next(r for r in runs[m] if r["seed"] == 0)
+            steps, loss = zip(*run["val_curve"])
+            if ax is axes[1]:
+                steps, loss = zip(*[(s_, v) for s_, v in zip(steps, loss) if s_ >= 500])
+            ax.plot(steps, loss, color=MODEL_COLORS[m], marker=MODEL_MARKERS[m], markersize=6, label=MODEL_NAMES[m])
+        ax.set_ylim(lo, hi); ax.set_xlabel("шаг обучения"); ax.set_title(title)
+        ax.set_xticks([250, 500, 750, 1000] if ax is axes[0] else [500, 750, 1000])
+        ax.grid(True, axis="y")
+    axes[0].set_ylabel("validation loss (меньше — лучше)")
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=6, bbox_to_anchor=(0.5, -0.01), columnspacing=1.6, handletextpad=0.4)
+    fig.tight_layout(rect=(0, 0.07, 1, 1))
+    return fig
+
+
+@figure("benchmark-seeds")
+def benchmark_seeds():
+    """Перплексия на валидации по моделям: каждая точка — один seed, штрих — среднее по seed."""
+    data, runs = _benchmark_runs()
+    mean = {m: float(np.mean([r["val_perplexity"] for r in runs[m]])) for m in MODELS}
+    order = sorted(MODELS, key=mean.get)
+    fig, ax = plt.subplots(figsize=(7.2, 3.3))
+    for row, m in enumerate(order):
+        values = [r["val_perplexity"] for r in runs[m]]
+        if len(values) > 1:
+            ax.plot([min(values), max(values)], [row, row], color=GRID, linewidth=5, alpha=0.35, solid_capstyle="round", zorder=1)
+        ax.scatter(values, [row] * len(values), s=46, color=MODEL_COLORS[m], marker=MODEL_MARKERS[m], zorder=3,
+                   edgecolors="none")
+        ax.plot([mean[m]] * 2, [row - 0.26, row + 0.26], color=INK, linewidth=1.4, zorder=2)
+        ax.annotate(f"{mean[m]:.1f}", (max(values), row), xytext=(10, 0), textcoords="offset points", color=INK,
+                    fontsize=9, va="center")
+    ax.set_yticks(range(len(order)))
+    ax.set_yticklabels([f"{MODEL_NAMES[m]}  ({len(runs[m])} seed)" if len(runs[m]) > 1 else f"{MODEL_NAMES[m]}  (1 seed)"
+                        for m in order])
+    ax.invert_yaxis(); ax.set_xlim(58, 82)
+    ax.set_xlabel("перплексия на валидации (меньше — лучше); точка — seed, штрих — среднее")
+    ax.grid(True, axis="x"); ax.tick_params(axis="y", length=0)
+    fig.tight_layout()
+    return fig
+
+
+@figure("benchmark-speed")
+def benchmark_speed():
+    """Качество и скорость: перплексия (среднее по seed, размах) против токенов в секунду на логарифмической оси."""
+    data, runs = _benchmark_runs()
+    # Подписи: смещение в пунктах и выравнивание, чтобы соседние точки не слипались
+    placement = {"gpt": (9, 5, "left"), "gpt2": (9, -9, "left"), "llama": (9, -11, "left"), "mistral": (9, 9, "left"),
+                 "mixtral": (9, 6, "left"), "gemma": (-9, -10, "right")}
+    fig, ax = plt.subplots(figsize=(7.2, 3.9))
+    for m in MODELS:
+        ppl = [r["val_perplexity"] for r in runs[m]]
+        speed = float(np.mean([r["tokens_per_second"] for r in runs[m]]))
+        mean = float(np.mean(ppl))
+        if len(ppl) > 1:
+            ax.plot([speed] * 2, [min(ppl), max(ppl)], color=MODEL_COLORS[m], linewidth=1.6, zorder=2)
+        ax.scatter([speed], [mean], s=48, color=MODEL_COLORS[m], marker=MODEL_MARKERS[m], zorder=3, edgecolors="none")
+        dx, dy, ha = placement[m]
+        ax.annotate(MODEL_NAMES[m], (speed, mean), xytext=(dx, dy), textcoords="offset points", color=INK,
+                    fontsize=9.5, ha=ha, va="center")
+    ax.set_xscale("log"); ax.set_xlim(2_000, 80_000)
+    ax.set_xticks([2_000, 5_000, 10_000, 20_000, 40_000, 80_000])
+    ax.set_xticklabels(["2 тыс.", "5 тыс.", "10 тыс.", "20 тыс.", "40 тыс.", "80 тыс."])
+    ax.minorticks_off(); ax.set_ylim(58, 80)
+    ax.invert_yaxis()
+    ax.set_xlabel("токенов в секунду на MPS (логарифмическая ось; правее — быстрее)")
+    ax.set_ylabel("перплексия на валидации\n(ось перевёрнута: выше — лучше)")
+    ax.grid(True, axis="both")
     fig.tight_layout()
     return fig
 
