@@ -1,5 +1,5 @@
 # Токенизатор и данные
-<!-- description: Токенизатор BPETokenizer, датасеты из строк и корпус из файла: паддинг, метки, токенизация в .bin и блоки без паддинга. -->
+<!-- description: Токенизатор BPETokenizer, датасеты из строк и корпус из файла: паддинг, метки, токенизация в .bin, блоки без паддинга, где взять корпус. -->
 
 [← Модели и конфиги](models.md) · [Оглавление](README.md) · [Обучение →](training.md)
 
@@ -80,6 +80,25 @@ print(n, len(dataset), batch["input_ids"].shape)      # токенов, блок
 **`TokenBlockDataset(tokens, block_size)`** принимает путь к файлу (читается через `numpy.memmap`, `dtype` берётся из `.json`) или массив в памяти. Пример `i` — токены с `i·block_size` по `i·block_size + block_size`; остаток короче блока отбрасывается; `len` = `num_tokens // block_size`. Возвращает `input_ids` и `labels` (копия входа, сдвиг делает `Trainer`), `attention_mask` нет — паддинга в блоках не бывает. Блоки перемешивает `DataLoader(shuffle=True)`.
 
 Скрипт `experiments/shared/prepare_corpus.py` делает всё сразу: делит текст на train/val, обучает или загружает BPE, пишет `train.bin`, `val.bin` и `tokenizer.json` — см. [experiments/README.md](../../experiments/README.md#корпус-из-файла). Пути к этим файлам указываются в секции `data` конфига обучения.
+
+### Где взять корпус
+
+Современные LLM учатся на триллионах токенов; для моделей этой библиотеки (десятки миллионов параметров) хватает нескольких мегабайт текста — сборника художественных произведений или корпуса стихов. Подходит любой текст в UTF-8; `prepare_corpus.py` ждёт один файл, в котором документы (произведения, главы, стихотворения) разделены пустой строкой — между ними он поставит `<eos>`. Несколько файлов склейте: `cat *.txt > corpus.txt`, вставив между ними пустую строку.
+
+Открытые корпуса русской литературы:
+
+- [Репозиторий открытых данных по русской литературе и фольклору](https://dataverse.pushdom.ru/dataverse/corpora) Пушкинского Дома — размеченные корпуса в открытом доступе, среди них:
+  - [Корпус стихотворений А. С. Пушкина](https://dataverse.pushdom.ru/dataset.xhtml?persistentId=doi:10.31860/openlit-2023.8-C005);
+  - [Корпус «русской песни» 1800—1840-х гг.](https://dataverse.pushdom.ru/dataset.xhtml?persistentId=doi:10.31860/openlit-2019.11-C003);
+  - [Корпус русской литературной баллады 1840 гг.](https://dataverse.pushdom.ru/dataset.xhtml?persistentId=doi:10.31860/openlit-2021.9-C003);
+  - [Корпус русских элегий 1815—1835 гг.](https://dataverse.pushdom.ru/dataset.xhtml?persistentId=doi:10.31860/openlit-2019.11-C001);
+  - [Корпус публикаций журнала «Современник» (1847–1866)](https://dataverse.pushdom.ru/dataset.xhtml?persistentId=doi:10.31860/openlit-2023.11-C006).
+- [19 000 Russian Poems](https://www.kaggle.com/datasets/grafstor/19-000-russian-poems) на Kaggle — 19 тысяч стихотворений на русском языке в одном CSV; колонку с текстом нужно выгрузить в txt, по стихотворению на документ.
+- [RussianNovels](https://github.com/JoannaBy/RussianNovels) — романы XIX–XX веков, по одному txt-файлу на произведение; склейте нужные.
+
+Англоязычный ориентир для сравнения с публикациями — [TinyStories](https://huggingface.co/datasets/roneneldan/TinyStories): простые рассказы, на которых модели в 10–30M параметров уже дают связный текст; скачайте `TinyStoriesV2-GPT4-train.txt`, рассказы в нём разделены строкой `<|endoftext|>` — замените её на пустую строку.
+
+У каждого корпуса своя лицензия: у корпусов Пушкинского Дома и TinyStories она открытая (CC BY и CDLA-Sharing), у наборов на Kaggle и GitHub проверьте условия на странице набора, прежде чем публиковать обученные на них модели.
 
 ## Учебный корпус
 
