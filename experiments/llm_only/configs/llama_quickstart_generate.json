@@ -1,0 +1,8 @@
+{
+    "data": { "tokenizer": "data/novels/tokenizer.json" },
+    "test_prompts": ["Мастер и Маргарита", "Однажды вечером"],
+    "model_config_path": "checkpoints/llama-quickstart/config.json",
+    "model_weights": "checkpoints/llama-quickstart/model.pt",
+    "generation": { "max_new_tokens": 60, "temperature": 0.8, "do_sample": true, "top_k": 40, "top_p": null },
+    "log_path": "checkpoints/llama_quickstart_generation_logs.json"
+}

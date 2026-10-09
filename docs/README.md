@@ -13,7 +13,7 @@
 ## С чего начать
 
 - **Понять архитектуры** — [Языковое моделирование](textbook/language-modeling.md), первая глава пособия, и дальше по порядку.
-- **Обучить модель** — [Установка](guide/installation.md), затем [Обучение](guide/training.md).
+- **Обучить модель** — [Установка](guide/installation.md), затем [Быстрый старт](guide/quickstart.md) и [Обучение](guide/training.md).
 - **Запустить готовые веса** — [Загрузка весов HuggingFace](guide/hf-weights.md).
 - **Изменить код** — [Устройство репозитория](dev/architecture.md) и [Тесты](dev/testing.md).
 

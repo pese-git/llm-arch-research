@@ -1,0 +1,31 @@
+{
+    "data": {
+      "train": "data/novels/train.bin",
+      "val": "data/novels/val.bin",
+      "tokenizer": "data/novels/tokenizer.json"
+    },
+    "test_prompts": ["Мастер и Маргарита", "Однажды вечером"],
+    "model_config": {
+      "vocab_size": null,
+      "embed_dim": 256,
+      "num_heads": 4,
+      "num_layers": 4,
+      "max_position_embeddings": 128,
+      "dropout": 0.1
+    },
+    "model_weights": "checkpoints/llama-quickstart/model.pt",
+    "model_config_path": "checkpoints/llama-quickstart/config.json",
+    "training": {
+      "learning_rate": 0.001,
+      "batch_size": 32,
+      "device": "auto",
+      "max_steps": 1000,
+      "warmup_ratio": 0.05,
+      "eval_interval": 250,
+      "checkpoint_dir": "checkpoints/llama-quickstart",
+      "save_interval": 250,
+      "seed": 0,
+      "train_log_path": "checkpoints/llama-quickstart/log.json"
+    },
+    "log_path": "checkpoints/llama_quickstart_training_logs.json"
+}
