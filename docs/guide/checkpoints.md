@@ -20,7 +20,7 @@ model = Mistral.load("mistral.pt", device="cpu")      # конфиг перед�
 - Загрузка файла другой модели (`GPT.load` на файле `Llama`) или голого `state_dict` — `ValueError`.
 - Маски attention и таблицы RoPE в файл не попадают: они вычисляются из конфига.
 
-**Голый `state_dict`.** Скрипт `run_llm_experiment.py` пока хранит веса (`torch.save(model.state_dict())`) и конфиг (JSON) отдельными файлами. Их загружают так:
+**Скрипт экспериментов** `run_llm_experiment.py` сохраняет модель через `model.save` (и отдельно JSON конфига — для чтения глазами), так что `Llama.load("checkpoints/llama-bpe/model.pt")` работает. Файлы, записанные скриптом до [#81](https://github.com/pese-git/llm-arch-research/pull/81), — голый `state_dict`; `generate` читает оба формата, а вручную старый файл загружают так:
 
 ```python
 import json, torch
@@ -47,4 +47,21 @@ JSON хранит словарь, список слияний в порядке 
 
 ## Продолжение обучения
 
-Состояние оптимизатора и планировщика не сохраняется: `Trainer` на загруженной модели начнёт с нулевых моментов Adam и снова с warmup. Для настоящего продолжения обучения сохраняйте `trainer.optimizer.state_dict()` и `trainer.scheduler.state_dict()` в своём цикле.
+`Trainer` с `checkpoint_dir` пишет `last.pt` и `best.pt` (см. [Обучение](training.md#чекпоинты-и-продолжение)); `trainer.save_checkpoint(path)` делает то же вручную. Файл — один `torch.save`, надмножество формата `model.save`:
+
+```python
+{
+  "model_class": "Llama", "config": {...}, "state_dict": {...},   # ровно как BaseModel.save
+  "trainer": {
+    "format_version": 1,
+    "state": {"step": 1200, "epoch": 0, "step_in_epoch": 50, "best_val_loss": 2.91,
+              "loss_history": [...], "log": [...]},
+    "optimizer": ..., "scheduler": ...,        # state_dict() AdamW и LambdaLR
+    "rng": {"torch": ..., "cuda": ...},        # генераторы случайных чисел
+    "args": {"lr": ..., "batch_size": ..., "num_epochs": ..., "max_steps": ...,
+             "warmup_steps": ..., "warmup_ratio": ...},
+  },
+}
+```
+
+Все значения — тензоры, числа, строки, списки и словари, файл читается с `weights_only=True`. `BaseModel.load(path)` игнорирует секцию `trainer` и возвращает модель; `trainer.resume(path)` восстанавливает всё и проверяет, что класс модели и `args` совпадают с текущими. Файл `model.save` без секции `trainer` для `resume` не годится — `ValueError`. Моменты AdamW удваивают размер файла относительно весов.

@@ -18,8 +18,15 @@
     "training": {
       "learning_rate": 0.0006,
       "batch_size": 16,
-      "num_epochs": 1,
-      "warmup_ratio": 0.05
+      "device": "auto",
+      "max_steps": 2000,
+      "warmup_ratio": 0.05,
+      "eval_interval": 200,
+      "eval_batches": 50,
+      "checkpoint_dir": "checkpoints/llama-corpus",
+      "save_interval": 200,
+      "seed": 0,
+      "train_log_path": "checkpoints/llama-corpus/log.json"
     },
     "log_path": "checkpoints/llama_corpus_training_logs.json"
 }

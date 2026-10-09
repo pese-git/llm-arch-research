@@ -89,7 +89,7 @@ numpy.memmap(filename, dtype=np.uint16, mode="r")   # mode "w+" с shape для 
 
 ## Фаза 1. Конвейер данных: непрерывные блоки токенов из файла
 
-Ветка `feat/token-block-dataset`.
+Ветка `feat/token-block-dataset`. Статус: PR [#80](https://github.com/pese-git/llm-arch-research/pull/80), слит. Отличие от плана: `len(TokenBlockDataset) = num_tokens // block_size` (сдвиг делает loss, лишний токен не нужен).
 
 ### Что реализовать
 
@@ -133,7 +133,7 @@ numpy.memmap(filename, dtype=np.uint16, mode="r")   # mode "w+" с shape для 
 
 ## Фаза 2. Trainer: устройство, шаги, чекпоинты, продолжение, логи
 
-Ветка `feat/trainer-checkpoints`. Все новые аргументы — именованные, с умолчаниями, воспроизводящими текущее поведение.
+Ветка `feat/trainer-checkpoints`. Статус: PR [#81](https://github.com/pese-git/llm-arch-research/pull/81). Все новые аргументы — именованные, с умолчаниями, воспроизводящими текущее поведение.
 
 ### Что реализовать
 

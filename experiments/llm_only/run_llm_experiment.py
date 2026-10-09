@@ -64,6 +64,7 @@ def main():
     parser.add_argument('--model', '-m', type=str, required=True, help='Название модели (gpt, gpt2, llama и т.д.).')
     parser.add_argument('--action', '-a', type=str, required=True, choices=['train', 'generate'], help='Действие: train или generate.')
     parser.add_argument('--config', '-c', type=str, required=True, help='Путь к JSON-конфигу с параметрами.')
+    parser.add_argument('--resume', type=str, help='Чекпоинт обучения (last.pt): продолжить с сохранённого шага.')
     args = parser.parse_args()
 
     config = load_config(args.config)
@@ -132,11 +133,20 @@ def main():
             val_dataset=val_dataset,
             lr=training["learning_rate"],
             batch_size=training["batch_size"],
-            num_epochs=training["num_epochs"],
+            num_epochs=training.get("num_epochs", 3),
             # warmup_ratio — доля от числа шагов; без обоих ключей warmup нет, как раньше
             warmup_steps=training.get("warmup_steps", None if "warmup_ratio" in training else 0),
             warmup_ratio=training.get("warmup_ratio"),
+            # Обучение по шагам, валидация и чекпоинты по интервалу — необязательные ключи
+            **{key: training[key] for key in (
+                "device", "max_steps", "eval_interval", "eval_batches",
+                "checkpoint_dir", "save_interval", "keep_best", "seed",
+            ) if key in training},
+            log_path=training.get("train_log_path"),
         )
+        if args.resume:
+            trainer.resume(args.resume)
+            print(f"⏯️  Продолжение с шага {trainer.state.step}: {args.resume}")
         trainer.train()
 
         if val_dataset is not None:
@@ -144,9 +154,9 @@ def main():
             ppl = perplexity(model, val_loader, device=trainer.device)
             logger.log_metric("val_perplexity", ppl)
 
-        # --- Сохранение модели ---
+        # --- Сохранение модели: класс, конфиг и веса в одном файле (BaseModel.save) ---
         os.makedirs(os.path.dirname(config["model_weights"]), exist_ok=True)
-        torch.save(model.state_dict(), config["model_weights"])
+        model.save(config["model_weights"])
         with open(config["model_config_path"], "w", encoding="utf-8") as f:
             json.dump(model_config, f, indent=2, ensure_ascii=False)
         print(f"✅ Модель сохранена: {config['model_weights']}")
@@ -165,7 +175,10 @@ def main():
             model_config = json.load(f)
         tokenizer = BPETokenizer.load(tokenizer_path)
         model = ModelClass(model_config)
-        model.load_state_dict(torch.load(config["model_weights"], map_location="cpu"))
+        checkpoint = torch.load(config["model_weights"], map_location="cpu", weights_only=True)
+        # Файл BaseModel.save / чекпоинт Trainer либо голый state_dict (старый формат скрипта)
+        state_dict = checkpoint["state_dict"] if "state_dict" in checkpoint else checkpoint
+        model.load_state_dict(state_dict)
         model.eval()
 
         def generate(prompt, gen_cfg):
