@@ -41,8 +41,13 @@ def split_lines(src_path, train_path, val_path, val_ratio):
     num_val = int(len(lines) * val_ratio)
     # Граница — ближайшая пустая строка после начала хвоста, чтобы не резать документ
     cut = len(lines) - num_val
-    while 0 < cut < len(lines) and lines[cut - 1].strip():
-        cut += 1
+    boundary = cut
+    while 0 < boundary < len(lines) and lines[boundary - 1].strip():
+        boundary += 1
+    if boundary < len(lines):
+        cut = boundary
+    # Иначе в хвосте нет пустой строки (корпус из одного документа без разделителей): режем по
+    # заданной доле, а не уводим границу в конец файла — там валидации не осталось бы совсем
     with open(train_path, "w", encoding="utf-8") as f:
         f.writelines(lines[:cut])
     with open(val_path, "w", encoding="utf-8") as f:
@@ -73,6 +78,8 @@ def main():
     val_txt = os.path.join(args.out, "val.txt")
     n_train, n_val = split_lines(src, train_txt, val_txt, args.val_ratio)
     print(f"✂️  Строк: train {n_train}, val {n_val}")
+    if n_val == 0:
+        print("⚠️  Валидационная часть пуста: увеличьте --val-ratio, иначе обучение с секцией data.val не запустится")
 
     tokenizer_path = os.path.join(args.out, "tokenizer.json")
     if args.tokenizer:
