@@ -1,0 +1,342 @@
+{
+ "about": "Результаты experiments/llm_only/benchmark.py, из них строятся рисунки docs/tools/figures.py (benchmark-*) и таблицы docs/guide/benchmark.md. Не пересчитываются при проверке рисунков: прогон занимает около 35 минут.",
+ "setup": {
+  "steps": 1000,
+  "batch_size": 32,
+  "block_size": 128,
+  "lr": 0.001,
+  "warmup_ratio": 0.05,
+  "eval_interval": 250,
+  "embed_dim": 256,
+  "num_layers": 4,
+  "num_heads": 4,
+  "dropout": 0.1
+ },
+ "device": "mps",
+ "runs": [
+  {
+   "model": "gpt",
+   "seed": 0,
+   "params": 5245860,
+   "active_params": 5245860,
+   "val_curve": [
+    [
+     250,
+     6.0166
+    ],
+    [
+     500,
+     4.5878
+    ],
+    [
+     750,
+     4.4024
+    ],
+    [
+     1000,
+     4.3382
+    ]
+   ],
+   "val_perplexity": 76.5728,
+   "train_seconds": 97.3,
+   "tokens_per_second": 42109
+  },
+  {
+   "model": "gpt2",
+   "seed": 0,
+   "params": 5246372,
+   "active_params": 5246372,
+   "val_curve": [
+    [
+     250,
+     4.8535
+    ],
+    [
+     500,
+     4.5125
+    ],
+    [
+     750,
+     4.3592
+    ],
+    [
+     1000,
+     4.3048
+    ]
+   ],
+   "val_perplexity": 74.0511,
+   "train_seconds": 97.6,
+   "tokens_per_second": 41984
+  },
+  {
+   "model": "llama",
+   "seed": 0,
+   "params": 5229092,
+   "active_params": 5229092,
+   "val_curve": [
+    [
+     250,
+     5.0335
+    ],
+    [
+     500,
+     4.4046
+    ],
+    [
+     750,
+     4.199
+    ],
+    [
+     1000,
+     4.1376
+    ]
+   ],
+   "val_perplexity": 62.6521,
+   "train_seconds": 121.8,
+   "tokens_per_second": 33627
+  },
+  {
+   "model": "mistral",
+   "seed": 0,
+   "params": 4965924,
+   "active_params": 4965924,
+   "val_curve": [
+    [
+     250,
+     5.0196
+    ],
+    [
+     500,
+     4.4012
+    ],
+    [
+     750,
+     4.188
+    ],
+    [
+     1000,
+     4.1185
+    ]
+   ],
+   "val_perplexity": 61.4672,
+   "train_seconds": 114.4,
+   "tokens_per_second": 35816
+  },
+  {
+   "model": "mixtral",
+   "seed": 0,
+   "params": 5227716,
+   "active_params": 3447492,
+   "val_curve": [
+    [
+     250,
+     5.2097
+    ],
+    [
+     500,
+     4.5877
+    ],
+    [
+     750,
+     4.3175
+    ],
+    [
+     1000,
+     4.2267
+    ]
+   ],
+   "val_perplexity": 68.4907,
+   "train_seconds": 1337.0,
+   "tokens_per_second": 3063
+  },
+  {
+   "model": "gemma",
+   "seed": 0,
+   "params": 4834340,
+   "active_params": 4834340,
+   "val_curve": [
+    [
+     250,
+     4.9071
+    ],
+    [
+     500,
+     4.3519
+    ],
+    [
+     750,
+     4.2007
+    ],
+    [
+     1000,
+     4.1612
+    ]
+   ],
+   "val_perplexity": 64.147,
+   "train_seconds": 142.2,
+   "tokens_per_second": 28801
+  },
+  {
+   "model": "llama",
+   "seed": 1,
+   "params": 5229092,
+   "active_params": 5229092,
+   "val_curve": [
+    [
+     250,
+     5.1429
+    ],
+    [
+     500,
+     4.4648
+    ],
+    [
+     750,
+     4.2383
+    ],
+    [
+     1000,
+     4.1551
+    ]
+   ],
+   "val_perplexity": 63.7554,
+   "train_seconds": 118.1,
+   "tokens_per_second": 34683
+  },
+  {
+   "model": "mistral",
+   "seed": 1,
+   "params": 4965924,
+   "active_params": 4965924,
+   "val_curve": [
+    [
+     250,
+     5.0797
+    ],
+    [
+     500,
+     4.4528
+    ],
+    [
+     750,
+     4.2395
+    ],
+    [
+     1000,
+     4.1524
+    ]
+   ],
+   "val_perplexity": 63.5848,
+   "train_seconds": 115.1,
+   "tokens_per_second": 35599
+  },
+  {
+   "model": "gemma",
+   "seed": 1,
+   "params": 4834340,
+   "active_params": 4834340,
+   "val_curve": [
+    [
+     250,
+     4.801
+    ],
+    [
+     500,
+     4.3218
+    ],
+    [
+     750,
+     4.1761
+    ],
+    [
+     1000,
+     4.1362
+    ]
+   ],
+   "val_perplexity": 62.5617,
+   "train_seconds": 134.2,
+   "tokens_per_second": 30511
+  },
+  {
+   "model": "llama",
+   "seed": 2,
+   "params": 5229092,
+   "active_params": 5229092,
+   "val_curve": [
+    [
+     250,
+     5.0493
+    ],
+    [
+     500,
+     4.4408
+    ],
+    [
+     750,
+     4.2136
+    ],
+    [
+     1000,
+     4.1469
+    ]
+   ],
+   "val_perplexity": 63.2376,
+   "train_seconds": 123.3,
+   "tokens_per_second": 33228
+  },
+  {
+   "model": "mistral",
+   "seed": 2,
+   "params": 4965924,
+   "active_params": 4965924,
+   "val_curve": [
+    [
+     250,
+     5.0927
+    ],
+    [
+     500,
+     4.4734
+    ],
+    [
+     750,
+     4.2458
+    ],
+    [
+     1000,
+     4.1542
+    ]
+   ],
+   "val_perplexity": 63.701,
+   "train_seconds": 116.9,
+   "tokens_per_second": 35035
+  },
+  {
+   "model": "gemma",
+   "seed": 2,
+   "params": 4834340,
+   "active_params": 4834340,
+   "val_curve": [
+    [
+     250,
+     4.9427
+    ],
+    [
+     500,
+     4.3756
+    ],
+    [
+     750,
+     4.1939
+    ],
+    [
+     1000,
+     4.1437
+    ]
+   ],
+   "val_perplexity": 63.0373,
+   "train_seconds": 125.6,
+   "tokens_per_second": 32614
+  }
+ ]
+}
