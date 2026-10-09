@@ -179,7 +179,7 @@ Trainer(
     model, train_dataset=None, val_dataset=None,
     lr=3e-4, batch_size=8, num_epochs=3, warmup_steps=None, warmup_ratio=None,   # как сейчас
     *,
-    device=None,                 # None → cuda → mps → cpu; строка или torch.device
+    device=None,                 # None → cuda | cpu (как раньше); "auto" → cuda → mps → cpu
     max_steps=None,              # задан → обучение по шагам, num_epochs игнорируется
     eval_interval=None,          # шагов между валидациями; None → в конце эпохи
     eval_batches=None,           # ограничить число батчей валидации
@@ -309,7 +309,7 @@ sequenceDiagram
 
 ## Сквозные аспекты
 
-- **Совместимость.** Умолчания воспроизводят текущее поведение; единственное изменение по умолчанию — выбор `mps` на Apple Silicon, он идёт в `CHANGELOG` («API»). Скрипт экспериментов переходит с `torch.save(state_dict)` на `model.save`, старый формат читается при `generate` — запись в «Чекпоинты и конфиги».
+- **Совместимость.** Умолчания воспроизводят текущее поведение, включая устройство: `mps` только по `device="auto"` (см. уточнение к ADR-005). Скрипт экспериментов переходит с `torch.save(state_dict)` на `model.save`, старый формат читается при `generate` — запись в «Чекпоинты и конфиги».
 - **Конфигурация.** Секция `training` JSON-конфига расширяется ключами с теми же именами, что аргументы `Trainer`; новая секция `data` с путями к `.bin` и токенизатору. Без `data` скрипт работает на `TRAIN_TEXTS`, как сейчас.
 - **Наблюдаемость.** `log.json` плюс печать; tqdm остаётся, ноутбуки его перенаправляют. Никаких TensorBoard/W&B в библиотеке; их легко повесить снаружи на `trainer.state.log`.
 - **Воспроизводимость.** `seed` задаёт `torch.manual_seed` и генератор `DataLoader`; RNG сохраняется в чекпоинте. Полное побитовое совпадение после `resume` гарантируется на CPU и при `dropout 0.0`; на GPU — с точностью ядер.

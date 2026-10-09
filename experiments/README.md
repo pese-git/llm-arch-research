@@ -66,6 +66,8 @@ uv run python experiments/llm_only/run_llm_experiment.py --model llama --action 
 }
 ```
 
+Ключи `training` повторяют аргументы `Trainer` ([руководство](../docs/guide/training.md#trainer)): обязательные `learning_rate`, `batch_size`, `num_epochs` или `max_steps`, `warmup_ratio` или `warmup_steps`; необязательные `device` (`"auto"` — cuda, mps или cpu), `eval_interval`, `eval_batches`, `checkpoint_dir`, `save_interval`, `keep_best`, `seed`, `train_log_path` (JSON с loss и lr по шагам). `--resume checkpoints/<run>/last.pt` продолжает обучение с чекпоинта — конфиг должен быть тем же. Модель сохраняется через `model.save` (класс, конфиг и веса в одном файле); `generate` читает и старые файлы с голым `state_dict`.
+
 Какие ключи `model_config` нужны каждой модели — см. [llm/README.md](../llm/README.md#ключи-конфига). Лишние ключи игнорируются: например, `num_experts`/`top_k_experts`/`window_size` в конфиге Gemma ни на что не влияют (`num_kv_heads` Gemma читает: по умолчанию 1 — MQA). `window_size` в Mistral и Mixtral необязателен: без него окна нет (как в Mixtral 8x7B, поэтому в `mixtral_train.json` его нет).
 
 Все конфиги используют общий токенизатор `checkpoints/bpe_tokenizer.json`: если он уже есть, `bpe_vocab_size` и `bpe_special_tokens` не применяются.
@@ -92,9 +94,17 @@ uv run python experiments/llm_only/run_llm_experiment.py --model llama --action 
   "model_config": { "vocab_size": null, "embed_dim": 384, "num_heads": 6, "num_layers": 6, "max_position_embeddings": 256, "dropout": 0.0 },
   "model_weights": "checkpoints/llama-corpus/model.pt",
   "model_config_path": "checkpoints/llama-corpus/config.json",
-  "training": { "learning_rate": 0.0006, "batch_size": 16, "num_epochs": 1, "warmup_ratio": 0.05 },
+  "training": { "learning_rate": 0.0006, "batch_size": 16, "device": "auto", "max_steps": 2000, "warmup_ratio": 0.05,
+                "eval_interval": 200, "eval_batches": 50, "checkpoint_dir": "checkpoints/llama-corpus",
+                "save_interval": 200, "seed": 0, "train_log_path": "checkpoints/llama-corpus/log.json" },
   "log_path": "checkpoints/llama_corpus_training_logs.json"
 }
+```
+
+Прерванное обучение продолжается с последнего чекпоинта:
+
+```bash
+uv run python experiments/llm_only/run_llm_experiment.py --model llama --action train --config experiments/llm_only/configs/llama_corpus_train.json --resume checkpoints/llama-corpus/last.pt
 ```
 
 В конфиге генерации токенизатор указывается так же: `"data": { "tokenizer": "data/corpus/tokenizer.json" }` (или по-старому `bpe_tokenizer`).

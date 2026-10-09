@@ -27,7 +27,8 @@ llm/src/llm/
 ├── tokenizers/    # BaseTokenizer, BPETokenizer
 ├── datasets/      # TextDataset, StreamingTextDataset, TextWithSpecialTokensDataset, lm_example;
 │                  # TokenBlockDataset и tokenize_file — корпус из файла
-├── training/      # Trainer, loss.causal_lm_loss, get_optimizer, get_linear_schedule_with_warmup
+├── training/      # Trainer, checkpoint (TrainState, save/load_checkpoint), loss.causal_lm_loss,
+│                  # get_optimizer, get_linear_schedule_with_warmup
 └── evaluation/    # perplexity: lm_loss, perplexity
 ```
 
