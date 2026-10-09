@@ -12,7 +12,7 @@ uv run pytest llm/tests/models/test_kv_cache.py -k mistral    # один фай�
 uv run pytest --cov                    # с покрытием (нужен uv sync --extra test)
 ```
 
-Около 1030 тестов `llm` и 130 тестов `hf-proxy` (с учётом параметризации) проходят меньше чем за минуту на CPU. Сеть не нужна: тесты сверки с HuggingFace строят случайные модели `transformers` локально. Без установленного `transformers` они пропускаются (`pytest.importorskip`).
+Около 1100 тестов `llm` и 130 тестов `hf-proxy` (с учётом параметризации) проходят меньше чем за минуту на CPU. Сеть не нужна: тесты сверки с HuggingFace строят случайные модели `transformers` локально. Без установленного `transformers` они пропускаются (`pytest.importorskip`).
 
 Два теста в `test_attention_mask.py` пропускаются всегда — это задокументированное ограничение: у Mistral и Mixtral со скользящим окном нули в середине маски меняют состав окна, и сравнивать не с чем.
 

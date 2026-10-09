@@ -47,13 +47,13 @@ import { Card, CardGrid, LinkCard, Tabs, TabItem } from '@astrojs/starlight/comp
     Каждый блок трансформера — небольшой самостоятельный модуль. Библиотека зависит только от PyTorch и NumPy: никакой магии фреймворков между формулой и кодом.
   </Card>
   <Card title="Сверено с эталоном" icon="star">
-    На весах HuggingFace логиты всех шести моделей совпадают с точностью порядка 1e-5–1e-4, greedy-генерация с KV-кэшем — токен в токен. Больше 1150 тестов.
+    На весах HuggingFace логиты всех шести моделей совпадают с точностью порядка 1e-5–1e-4, greedy-генерация с KV-кэшем — токен в токен. Больше 1200 тестов.
   </Card>
   <Card title="Три уровня объяснения" icon="puzzle">
     Каждый механизм — идея и статья, затем формулы с числовыми примерами, затем конкретная строка кода, которая их реализует.
   </Card>
   <Card title="Полный цикл" icon="rocket">
-    BPE-токенизатор, датасеты, обучение, генерация — greedy, top-k, top-p, KV-кэш, батч промптов — и загрузка готовых весов HuggingFace.
+    BPE-токенизатор, корпус из файла, обучение по шагам с чекпоинтами и продолжением, перплексия, генерация — greedy, top-k, top-p, KV-кэш, батч промптов — и загрузка готовых весов HuggingFace.
   </Card>
 </CardGrid>
 
@@ -70,12 +70,19 @@ import { Card, CardGrid, LinkCard, Tabs, TabItem } from '@astrojs/starlight/comp
   </TabItem>
   <TabItem label="Обучить модель">
     ```bash
+    # корпус: любой текст UTF-8, здесь — «Мастер и Маргарита»; пишет data/novels/{train,val}.bin и tokenizer.json
+    uv run python experiments/shared/prepare_corpus.py --out data/novels --vocab-size 4000 --tokenizer-lines 1500 \
+        --url https://raw.githubusercontent.com/JoannaBy/RussianNovels/master/corpus/Bulgakov_Master.txt
+
+    # обучение по шагам с валидацией и чекпоинтами; прервали — продолжите с --resume
     uv run python experiments/llm_only/run_llm_experiment.py --model llama --action train \
-        --config experiments/llm_only/configs/llama_train.json
+        --config experiments/llm_only/configs/llama_quickstart_train.json
+
+    # генерация
     uv run python experiments/llm_only/run_llm_experiment.py --model llama --action generate \
-        --config experiments/llm_only/configs/llama_generate.json
+        --config experiments/llm_only/configs/llama_quickstart_generate.json
     ```
-    Любая из шести моделей на встроенном учебном корпусе: `gpt`, `gpt2`, `llama`, `mistral`, `mixtral`, `gemma`. Подробнее — в [Обучении](guide/training/).
+    Модель на 6 млн параметров учится за несколько минут на Apple Silicon, на CPU дольше. Другая модель — `gpt`, `gpt2`, `mistral`, `mixtral` или `gemma` в `--model` и свой `model_config` в конфиге. Подробнее — в [Быстром старте](guide/quickstart/) и [Обучении](guide/training/).
   </TabItem>
   <TabItem label="Загрузить GPT-2">
     ```python
@@ -99,4 +106,4 @@ import { Card, CardGrid, LinkCard, Tabs, TabItem } from '@astrojs/starlight/comp
   <LinkCard title="Для разработчиков" description="Для тех, кто развивает проект: устройство репозитория, добавление модели, тесты, соглашения." href="dev/" />
 </CardGrid>
 
-**С чего начать:** [понять архитектуры](textbook/language-modeling/) · [обучить модель](guide/training/) · [запустить готовые веса](guide/hf-weights/) · [изменить код](dev/architecture/)
+**С чего начать:** [понять архитектуры](textbook/language-modeling/) · [обучить модель](guide/quickstart/) · [сравнить архитектуры](guide/benchmark/) · [запустить готовые веса](guide/hf-weights/) · [изменить код](dev/architecture/)
