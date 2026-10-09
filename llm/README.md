@@ -35,9 +35,10 @@ src/llm/
 │   ├── mixtral/                  # Mixtral
 │   └── gemma/                    # Gemma
 ├── tokenizers/                   # BaseTokenizer, BPETokenizer, SimpleBPETokenizer
-├── datasets/                     # TextDataset, StreamingTextDataset, TextWithSpecialTokensDataset
-├── training/                     # Trainer, get_optimizer, get_linear_schedule_with_warmup
-└── evaluation/                   # заготовка, пока пустая
+├── datasets/                     # TextDataset, StreamingTextDataset, TextWithSpecialTokensDataset,
+│                                 # TokenBlockDataset + tokenize_file (корпус из файла)
+├── training/                     # Trainer, causal_lm_loss, get_optimizer, get_linear_schedule_with_warmup
+└── evaluation/                   # lm_loss, perplexity
 ```
 
 ## 🏆 Архитектуры
@@ -186,6 +187,8 @@ trainer.train()
 `BPETokenizer` перед обучением и кодированием разбивает текст на слова, как GPT-2: пробел прикрепляется к началу следующего слова, пунктуация идёт отдельно (`pretokenize` в `bpe_tokenizer.py`). Слияния не выходят за границы слов, поэтому токен не длиннее слова. На маленьком корпусе обучение может остановиться раньше `vocab_size`, когда каждое слово уже стало одним токеном.
 
 `Trainer` — минимальный цикл: AdamW, линейный warmup/decay, gradient clipping 1.0, устройство `cuda` или `cpu`. Сохранение чекпоинтов, AMP и gradient accumulation в нём не реализованы.
+
+Для корпуса из файла: `tokenize_file("corpus.txt", tokenizer, "data/train.bin", eos_token_id=tokenizer.eos_token_id)` один раз пишет токены, `TokenBlockDataset("data/train.bin", block_size=256)` читает их непрерывными блоками без паддинга; перплексия — `llm.evaluation.perplexity(model, DataLoader(val_dataset), device)`. Подробнее — в [руководстве](../docs/guide/data.md#корпус-из-файла).
 
 ## 🧪 Тестирование
 

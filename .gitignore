@@ -42,3 +42,5 @@ logs/
 .DS_Store
 Thumbs.db
 __pycache__
+# Корпуса для обучения (prepare_corpus.py)
+data/

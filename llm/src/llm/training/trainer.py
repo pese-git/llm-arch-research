@@ -21,9 +21,9 @@ import math
 import warnings
 
 import torch
-import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+from llm.training.loss import causal_lm_loss
 from llm.training.optimizer import get_optimizer
 from llm.training.scheduler import get_linear_schedule_with_warmup
 
@@ -138,11 +138,10 @@ class Trainer:
 
     def compute_lm_loss(self, logits, labels):
         """
-        Вычисляет функцию потерь (loss) для задачи автогрессивного языкового моделирования.
-
-        Производит сдвиг логитов и меток: предсказания делаются для следующего токена.
-        Используется кросс-энтропия (CrossEntropyLoss), что соответствует максимизации логарифма правдоподобия:
-            L = -log P(w_{t+1} | w_1,...,w_t)
+        Loss автогрессивного языкового моделирования: cross-entropy следующего токена
+        со сдвигом логитов и меток, паддинг (-100) не учитывается, батч без целей
+        даёт 0, а не NaN. Реализация — `llm.training.loss.causal_lm_loss`, общая
+        с `llm.evaluation`.
 
         Аргументы
         ---------
@@ -150,28 +149,8 @@ class Trainer:
             Логиты модели: (batch_size, seq_len, vocab_size)
         labels : torch.Tensor
             Правильные метки: (batch_size, seq_len)
-        Возвращаемое значение
-        ---------------------
-        loss : torch.Tensor
-            Средний loss по позициям batch с меткой, отличной от -100.
-            Если таких позиций нет — 0 (со связью с графом), а не NaN.
         """
-        # Сдвигаем логиты и метки для языкового моделирования (автогрессия)
-        shift_logits = logits[..., :-1, :].contiguous()
-        shift_labels = labels[..., 1:].contiguous()
-
-        # Батч без целей (только паддинг и строки из одного токена): среднее по пустому
-        # множеству дало бы NaN, и он испортил бы веса через backward
-        if not bool((shift_labels != -100).any()):
-            return shift_logits.sum() * 0.0
-
-        # CrossEntropyLoss (игнорируем паддинги: ignore_index=-100)
-        loss = F.cross_entropy(
-            shift_logits.view(-1, shift_logits.size(-1)),
-            shift_labels.view(-1),
-            ignore_index=-100,  # Padding токены не участвуют в loss
-        )
-        return loss
+        return causal_lm_loss(logits, labels)
 
     def _forward(self, batch):
         """

@@ -25,9 +25,10 @@ llm/src/llm/
 ├── core/          # строительные блоки и общая логика моделей
 ├── models/        # шесть моделей: gpt/ (GPT, GPT2), llama/, mistral/, mixtral/, gemma/
 ├── tokenizers/    # BaseTokenizer, BPETokenizer
-├── datasets/      # TextDataset, StreamingTextDataset, TextWithSpecialTokensDataset, lm_example
-├── training/      # Trainer, get_optimizer, get_linear_schedule_with_warmup
-└── evaluation/    # заготовка, пока пуста
+├── datasets/      # TextDataset, StreamingTextDataset, TextWithSpecialTokensDataset, lm_example;
+│                  # TokenBlockDataset и tokenize_file — корпус из файла
+├── training/      # Trainer, loss.causal_lm_loss, get_optimizer, get_linear_schedule_with_warmup
+└── evaluation/    # perplexity: lm_loss, perplexity
 ```
 
 ### core/
