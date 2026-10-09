@@ -1,0 +1,25 @@
+{
+    "data": {
+      "train": "data/corpus/train.bin",
+      "val": "data/corpus/val.bin",
+      "tokenizer": "data/corpus/tokenizer.json"
+    },
+    "test_prompts": ["Машинное обучение", "Мир программирования"],
+    "model_config": {
+      "vocab_size": null,
+      "embed_dim": 384,
+      "num_heads": 6,
+      "num_layers": 6,
+      "max_position_embeddings": 256,
+      "dropout": 0.0
+    },
+    "model_weights": "checkpoints/llama-corpus/model.pt",
+    "model_config_path": "checkpoints/llama-corpus/config.json",
+    "training": {
+      "learning_rate": 0.0006,
+      "batch_size": 16,
+      "num_epochs": 1,
+      "warmup_ratio": 0.05
+    },
+    "log_path": "checkpoints/llama_corpus_training_logs.json"
+}

@@ -49,7 +49,7 @@ Trainer(model, train_dataset, val_dataset=None, lr=3e-4, batch_size=8, num_epoch
 - **`attention_mask`** из батча передаётся в модель, если она есть.
 - **Устройство** — `cuda`, если доступна, иначе `cpu`; модель переносится туда в конструкторе.
 
-`evaluate()` переводит модель в режим eval, считает средний loss по валидационному набору без градиентов и возвращает его. После `train()` модель остаётся в режиме eval, если была валидация, и в режиме train — если не было; перед генерацией вызывайте `model.eval()`.
+`evaluate()` переводит модель в режим eval, считает средний loss по валидационному набору без градиентов и возвращает его. Перплексия — `llm.evaluation.perplexity(model, loader, device)`: `exp` от того же среднего loss (`lm_loss` возвращает сам loss; `max_batches` ограничивает оценку частью набора). После `train()` модель остаётся в режиме eval, если была валидация, и в режиме train — если не было; перед генерацией вызывайте `model.eval()`.
 
 Почему именно так — AdamW, warmup, clipping, инициализация, — в главе [Обучение](../textbook/training.md).
 
@@ -85,14 +85,14 @@ trainer.train()
 
 ## Скрипт экспериментов
 
-`experiments/llm_only/run_llm_experiment.py` обучает и запускает любую из шести моделей на учебном корпусе по JSON-конфигу:
+`experiments/llm_only/run_llm_experiment.py` обучает и запускает любую из шести моделей по JSON-конфигу — на учебном корпусе или на [корпусе из файла](data.md#корпус-из-файла), если в конфиге есть секция `data` (пример — `llama_corpus_train.json`):
 
 ```bash
 uv run python experiments/llm_only/run_llm_experiment.py --model llama --action train --config experiments/llm_only/configs/llama_train.json
 uv run python experiments/llm_only/run_llm_experiment.py --model llama --action generate --config experiments/llm_only/configs/llama_generate.json
 ```
 
-`train` обучает BPE-токенизатор (или загружает готовый из `checkpoints/bpe_tokenizer.json`), создаёт модель по `model_config`, обучает её `Trainer` с параметрами из раздела `training` (`learning_rate`, `batch_size`, `num_epochs`, `warmup_ratio` или `warmup_steps`) и сохраняет веса и конфиг в `checkpoints/`. Валидацию скрипт не запускает. Формат конфигов — в [experiments/README.md](../../experiments/README.md).
+`train` обучает BPE-токенизатор (или загружает готовый из `checkpoints/bpe_tokenizer.json`), создаёт модель по `model_config`, обучает её `Trainer` с параметрами из раздела `training` (`learning_rate`, `batch_size`, `num_epochs`, `warmup_ratio` или `warmup_steps`) и сохраняет веса и конфиг в `checkpoints/`. С секцией `data` токенизатор и блоки берутся из `data/<name>/`, после обучения печатаются валидационный loss и перплексия; без неё валидации нет. Формат конфигов — в [experiments/README.md](../../experiments/README.md).
 
 ## Если что-то не так
 

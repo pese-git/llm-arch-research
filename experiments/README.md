@@ -11,8 +11,9 @@ experiments/
 ├── llm_only/
 │   ├── run_llm_experiment.py       # единый скрипт train/generate для всех 6 моделей
 │   └── configs/
-│       ├── <model>_train.json      # gpt, gpt2, llama, mistral, mixtral, gemma
-│       └── <model>_generate.json
+│       ├── <model>_train.json      # gpt, gpt2, llama, mistral, mixtral, gemma — учебный корпус
+│       ├── <model>_generate.json
+│       └── llama_corpus_*.json     # пример конфига с секцией data: корпус из файла
 ├── hf_integration/                 # только модель GPT (ограничение hf-proxy)
 │   ├── test_hf_proxy.py            # smoke-тест адаптеров модели и токенизатора
 │   ├── simple_hf_training.py       # ручной цикл обучения через hf-proxy
@@ -20,7 +21,8 @@ experiments/
 │   └── generate_with_hf_tools.py   # генерация через HF-интерфейсы
 └── shared/
     ├── configs.py                  # учебный корпус TRAIN_TEXTS, пути PATHS, конфиги GPT для hf_integration
-    └── data.py                     # разбиение корпуса, ExperimentLogger, вспомогательные функции
+    ├── data.py                     # разбиение корпуса, ExperimentLogger, вспомогательные функции
+    └── prepare_corpus.py           # текст → data/<name>/{train.bin, val.bin, tokenizer.json}
 ```
 
 ## 🚀 llm_only: обучение и генерация без HuggingFace
@@ -42,10 +44,9 @@ uv run python experiments/llm_only/run_llm_experiment.py --model llama --action 
 | `--config`, `-c` | путь к JSON-конфигу |
 
 **Что делает `train`:**
-1. Берёт учебный корпус `TRAIN_TEXTS` из `shared/configs.py` (80% — train; валидационная часть сейчас не используется).
-2. Загружает BPE-токенизатор из `bpe_tokenizer` или обучает новый и сохраняет его туда.
-3. Подставляет `vocab_size` токенизатора в `model_config`, создаёт модель и обучает её `llm.training.Trainer`.
-4. Сохраняет веса в `model_weights`, итоговый конфиг модели — в `model_config_path`, логи — в `log_path`.
+1. Без секции `data` берёт учебный корпус `TRAIN_TEXTS` из `shared/configs.py` (80% — train; валидационная часть не используется) и загружает BPE-токенизатор из `bpe_tokenizer` или обучает новый и сохраняет его туда. С секцией `data` берёт токенизатор и файлы токенов из неё (см. [Корпус из файла](#корпус-из-файла)).
+2. Подставляет `vocab_size` токенизатора в `model_config`, создаёт модель и обучает её `llm.training.Trainer`; с `data.val` после каждой эпохи печатается валидационный loss, в конце — перплексия.
+3. Сохраняет веса в `model_weights`, итоговый конфиг модели — в `model_config_path`, логи — в `log_path`.
 
 **Что делает `generate`:** загружает токенизатор, конфиг и веса по путям из конфига и генерирует продолжение для каждого из `test_prompts`.
 
@@ -68,6 +69,35 @@ uv run python experiments/llm_only/run_llm_experiment.py --model llama --action 
 Какие ключи `model_config` нужны каждой модели — см. [llm/README.md](../llm/README.md#ключи-конфига). Лишние ключи игнорируются: например, `num_experts`/`top_k_experts`/`window_size` в конфиге Gemma ни на что не влияют (`num_kv_heads` Gemma читает: по умолчанию 1 — MQA). `window_size` в Mistral и Mixtral необязателен: без него окна нет (как в Mixtral 8x7B, поэтому в `mixtral_train.json` его нет).
 
 Все конфиги используют общий токенизатор `checkpoints/bpe_tokenizer.json`: если он уже есть, `bpe_vocab_size` и `bpe_special_tokens` не применяются.
+
+### Корпус из файла
+
+Для обучения на реальном корпусе текст один раз токенизируется в файлы `.bin`, которые читаются блоками без паддинга (`TokenBlockDataset`, см. [руководство](../docs/guide/data.md#корпус-из-файла)):
+
+```bash
+# текст UTF-8, пустая строка разделяет документы; --url вместо --input скачивает файл
+uv run python experiments/shared/prepare_corpus.py --input corpus.txt --out data/corpus --vocab-size 8000
+
+uv run python experiments/llm_only/run_llm_experiment.py --model llama --action train --config experiments/llm_only/configs/llama_corpus_train.json
+uv run python experiments/llm_only/run_llm_experiment.py --model llama --action generate --config experiments/llm_only/configs/llama_corpus_generate.json
+```
+
+`prepare_corpus.py` делит строки на train и val по хвосту файла (`--val-ratio`, 1 % по умолчанию), обучает BPE на первых `--tokenizer-lines` строках (или берёт готовый `--tokenizer`) и пишет `train.bin`, `val.bin`, `tokenizer.json` в `--out`. Каталог `data/` в `.gitignore`.
+
+Конфиг обучения вместо `bpe_*` содержит секцию `data`; `block_size` блоков равен `max_position_embeddings` модели:
+
+```json
+{
+  "data": { "train": "data/corpus/train.bin", "val": "data/corpus/val.bin", "tokenizer": "data/corpus/tokenizer.json" },
+  "model_config": { "vocab_size": null, "embed_dim": 384, "num_heads": 6, "num_layers": 6, "max_position_embeddings": 256, "dropout": 0.0 },
+  "model_weights": "checkpoints/llama-corpus/model.pt",
+  "model_config_path": "checkpoints/llama-corpus/config.json",
+  "training": { "learning_rate": 0.0006, "batch_size": 16, "num_epochs": 1, "warmup_ratio": 0.05 },
+  "log_path": "checkpoints/llama_corpus_training_logs.json"
+}
+```
+
+В конфиге генерации токенизатор указывается так же: `"data": { "tokenizer": "data/corpus/tokenizer.json" }` (или по-старому `bpe_tokenizer`).
 
 ### Формат конфига генерации
 

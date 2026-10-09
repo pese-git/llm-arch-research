@@ -15,8 +15,12 @@ import torch
 # Добавляем директорию shared среди импортируемых
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from torch.utils.data import DataLoader
+
 from llm.tokenizers import BPETokenizer
 from llm.datasets.text_dataset import TextDataset
+from llm.datasets.token_block_dataset import TokenBlockDataset
+from llm.evaluation import perplexity
 from llm.training.trainer import Trainer
 
 from shared.data import (
@@ -71,23 +75,31 @@ def main():
 
     # ==== Обучение ====
     if args.action == 'train':
-        train_texts, val_texts = load_training_data()
-        # --- Токенизатор ---
-        if os.path.exists(config["bpe_tokenizer"]):
-            print("📝 Загрузка обученного токенизатора...")
-            tokenizer = BPETokenizer.load(config["bpe_tokenizer"])
+        data = config.get("data")
+        val_dataset = None
+        if data:
+            # Корпус из файла: токены уже в data/<name>/*.bin (см. shared/prepare_corpus.py)
+            print("📝 Загрузка токенизатора корпуса...")
+            tokenizer = BPETokenizer.load(data["tokenizer"])
             print(f"✅ Токенизатор загружен (vocab_size={tokenizer.get_vocab_size()})")
         else:
-            print("🔧 Обучение BPE токенизатора...")
-            tokenizer = BPETokenizer()
-            tokenizer.train(
-                texts=train_texts,
-                vocab_size=config["bpe_vocab_size"],
-                special_tokens=config["bpe_special_tokens"]
-            )
-            os.makedirs(os.path.dirname(config["bpe_tokenizer"]), exist_ok=True)
-            tokenizer.save(config["bpe_tokenizer"])
-            print(f"✅ BPE токенизатор обучен и сохранен: {config['bpe_tokenizer']}")
+            train_texts, val_texts = load_training_data()
+            # --- Токенизатор ---
+            if os.path.exists(config["bpe_tokenizer"]):
+                print("📝 Загрузка обученного токенизатора...")
+                tokenizer = BPETokenizer.load(config["bpe_tokenizer"])
+                print(f"✅ Токенизатор загружен (vocab_size={tokenizer.get_vocab_size()})")
+            else:
+                print("🔧 Обучение BPE токенизатора...")
+                tokenizer = BPETokenizer()
+                tokenizer.train(
+                    texts=train_texts,
+                    vocab_size=config["bpe_vocab_size"],
+                    special_tokens=config["bpe_special_tokens"]
+                )
+                os.makedirs(os.path.dirname(config["bpe_tokenizer"]), exist_ok=True)
+                tokenizer.save(config["bpe_tokenizer"])
+                print(f"✅ BPE токенизатор обучен и сохранен: {config['bpe_tokenizer']}")
 
         # Тестируем токенизатор (базово)
         for test_text in config.get("test_prompts", ["Тест"]):
@@ -101,18 +113,23 @@ def main():
         model = ModelClass(model_config)
 
         # --- Датасет ---
-        train_dataset = TextDataset(
-            train_texts,
-            tokenizer,
-            block_size=model_config["max_position_embeddings"]
-        )
-        print(f"   Размер train датасета: {len(train_dataset)} примеров")
+        block_size = model_config["max_position_embeddings"]
+        if data:
+            train_dataset = TokenBlockDataset(data["train"], block_size)
+            if data.get("val"):
+                val_dataset = TokenBlockDataset(data["val"], block_size)
+                print(f"   Размер val датасета: {len(val_dataset)} блоков")
+            print(f"   Размер train датасета: {len(train_dataset)} блоков по {block_size} токенов")
+        else:
+            train_dataset = TextDataset(train_texts, tokenizer, block_size=block_size)
+            print(f"   Размер train датасета: {len(train_dataset)} примеров")
 
         # --- Trainer ---
         training = config["training"]
         trainer = Trainer(
             model=model,
             train_dataset=train_dataset,
+            val_dataset=val_dataset,
             lr=training["learning_rate"],
             batch_size=training["batch_size"],
             num_epochs=training["num_epochs"],
@@ -121,6 +138,11 @@ def main():
             warmup_ratio=training.get("warmup_ratio"),
         )
         trainer.train()
+
+        if val_dataset is not None:
+            val_loader = DataLoader(val_dataset, batch_size=training["batch_size"])
+            ppl = perplexity(model, val_loader, device=trainer.device)
+            logger.log_metric("val_perplexity", ppl)
 
         # --- Сохранение модели ---
         os.makedirs(os.path.dirname(config["model_weights"]), exist_ok=True)
@@ -136,11 +158,12 @@ def main():
         # --- Загрузка ---
         if not os.path.exists(config["model_weights"]):
             raise FileNotFoundError(f"Модель не найдена: {config['model_weights']}")
-        if not os.path.exists(config["bpe_tokenizer"]):
-            raise FileNotFoundError(f"Токенизатор не найден: {config['bpe_tokenizer']}")
+        tokenizer_path = config.get("bpe_tokenizer") or config["data"]["tokenizer"]
+        if not os.path.exists(tokenizer_path):
+            raise FileNotFoundError(f"Токенизатор не найден: {tokenizer_path}")
         with open(config["model_config_path"], "r", encoding="utf-8") as f:
             model_config = json.load(f)
-        tokenizer = BPETokenizer.load(config["bpe_tokenizer"])
+        tokenizer = BPETokenizer.load(tokenizer_path)
         model = ModelClass(model_config)
         model.load_state_dict(torch.load(config["model_weights"], map_location="cpu"))
         model.eval()

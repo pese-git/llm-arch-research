@@ -50,7 +50,7 @@ llm-arch-research/
 │   │   ├── tokenizers/         # BaseTokenizer, BPETokenizer, SimpleBPETokenizer
 │   │   ├── datasets/           # TextDataset, StreamingTextDataset, TextWithSpecialTokensDataset
 │   │   ├── training/           # Trainer, get_optimizer, линейный warmup-шедулер
-│   │   └── evaluation/         # заготовка, пока пустая
+│   │   └── evaluation/         # perplexity
 │   └── tests/                  # pytest: core/, models/, tokenizers/, datasets/, training/
 │
 ├── hf-proxy/src/hf_proxy/      # HFAdapter, HFGPTAdapter, HFTokenizerAdapter, HFUtils
@@ -197,7 +197,7 @@ flowchart TB
 Проект учебный; перед использованием для чего-то серьёзного учтите:
 
 - **hf-proxy поддерживает только `GPT`.**
-- Модуль `llm.evaluation` пока пустой.
+- Из метрик только перплексия (`llm.evaluation`).
 
 Полный список — в [Ограничениях](docs/guide/limitations.md).
 

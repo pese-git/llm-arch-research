@@ -1,0 +1,8 @@
+{
+    "data": { "tokenizer": "data/corpus/tokenizer.json" },
+    "test_prompts": ["Машинное обучение", "Мир программирования"],
+    "model_config_path": "checkpoints/llama-corpus/config.json",
+    "model_weights": "checkpoints/llama-corpus/model.pt",
+    "generation": { "max_new_tokens": 60, "temperature": 0.8, "do_sample": true, "top_k": 50, "top_p": null },
+    "log_path": "checkpoints/llama_corpus_generation_logs.json"
+}
