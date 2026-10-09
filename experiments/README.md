@@ -84,7 +84,7 @@ uv run python experiments/llm_only/run_llm_experiment.py --model llama --action 
 uv run python experiments/llm_only/run_llm_experiment.py --model llama --action generate --config experiments/llm_only/configs/llama_corpus_generate.json
 ```
 
-`prepare_corpus.py` делит строки на train и val по хвосту файла (`--val-ratio`, 1 % по умолчанию), обучает BPE на первых `--tokenizer-lines` строках (или берёт готовый `--tokenizer`) и пишет `train.bin`, `val.bin`, `tokenizer.json` в `--out`. Каталог `data/` в `.gitignore`.
+Где взять текст — в разделе [«Где взять корпус»](../docs/guide/data.md#где-взять-корпус) руководства. `prepare_corpus.py` делит строки на train и val по хвосту файла (`--val-ratio`, 1 % по умолчанию), обучает BPE на первых `--tokenizer-lines` строках (или берёт готовый `--tokenizer`) и пишет `train.bin`, `val.bin`, `tokenizer.json` в `--out`. Каталог `data/` в `.gitignore`.
 
 Конфиг обучения вместо `bpe_*` содержит секцию `data`; `block_size` блоков равен `max_position_embeddings` модели:
 
