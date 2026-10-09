@@ -86,6 +86,8 @@ uv run python experiments/llm_only/run_llm_experiment.py --model mistral --actio
 
 `--model`: `gpt`, `gpt2`, `llama`, `mistral`, `mixtral`, `gemma`. Подробнее — в [experiments/README.md](experiments/README.md).
 
+Обучение на реальном тексте — от корпуса до генерации, с прерыванием и продолжением — разобрано в [Быстром старте](docs/guide/quickstart.md).
+
 ## 🧩 Использование в коде
 
 ```python
